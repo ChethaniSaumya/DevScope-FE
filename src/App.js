@@ -324,7 +324,7 @@ function App() {
     // WebSocket connection
     const connectWebSocket = useCallback(() => {
         try {
-            const ws = new WebSocket('ws://devscope-be.onrender.com');
+            const ws = new WebSocket('wss://devscope-be.onrender.com');
 
             ws.onopen = () => {
                 console.log('WebSocket connected');
