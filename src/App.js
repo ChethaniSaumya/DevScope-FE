@@ -23,7 +23,7 @@ import {
 } from 'lucide-react';
 import './App.css';
 
-const API_BASE = 'https://devscope-be.onrender.com/api';
+const API_BASE = 'http://localhost:3001/api';
 
 function App() {
     // State management
@@ -61,7 +61,7 @@ function App() {
     const [notifications, setNotifications] = useState([]);
     const [detectedTokens, setDetectedTokens] = useState([]);
     const [copiedStates, setCopiedStates] = useState({});
-
+    const [tokenPairStatus, setTokenPairStatus] = useState({}); // Track pair status for each token
     const [demoTemplates, setDemoTemplates] = useState([]);
     const [selectedTemplate, setSelectedTemplate] = useState(0);
     const [customWallet, setCustomWallet] = useState('');
@@ -70,7 +70,8 @@ function App() {
     const [usedCommunities, setUsedCommunities] = useState([]);
     const [showCommunityModal, setShowCommunityModal] = useState(false);
     const [customCommunity, setCustomCommunity] = useState('');
-
+    const [soundFiles, setSoundFiles] = useState([]);
+    const [uploadingSound, setUploadingSound] = useState(false);
 
     const STORAGE_KEYS = {
         SETTINGS: 'devscope_settings',
@@ -124,7 +125,14 @@ function App() {
         { value: 'success.wav', label: '✅ Success Tone', file: 'success.wav' },
         { value: 'alert.wav', label: '⚠️ Alert Tone', file: 'alert.wav' },
         { value: 'chime.wav', label: '🔔 Chime Tone', file: 'chime.wav' },
-        { value: 'none', label: '🔇 No Sound', file: null }
+        { value: 'none', label: '🔇 No Sound', file: null },
+        // Add uploaded sounds
+        ...soundFiles.map(file => ({
+            value: file.filename,
+            label: `🎵 ${file.originalName || file.filename}`,
+            file: file.filename,
+            isUploaded: true
+        }))
     ];
 
     const previewSound = (soundFile) => {
@@ -220,10 +228,23 @@ function App() {
 
             } else {
                 console.log('🔊 Attempting to play HTML5 audio file:', soundFile);
-                console.log('🔊 Audio file path:', `/sounds/${soundFile}`);
 
-                // Try to play HTML5 audio from public folder
-                const audio = new Audio(`/sounds/${soundFile}`);
+                // Determine the correct URL path for the audio file
+                let audioUrl;
+
+                // Check if it's an uploaded custom sound (contains 'sound-' prefix)
+                if (soundFile.includes('sound-')) {
+                    console.log('🔊 Playing uploaded custom sound');
+                    audioUrl = `${API_BASE}/sounds/${soundFile}`;
+                } else {
+                    console.log('🔊 Playing built-in sound');
+                    audioUrl = `/sounds/${soundFile}`;
+                }
+
+                console.log('🔊 Audio file URL:', audioUrl);
+
+                // Try to play HTML5 audio
+                const audio = new Audio(audioUrl);
                 console.log('🔊 Audio element created:', audio);
 
                 audio.volume = 0.5;
@@ -235,18 +256,28 @@ function App() {
                 audio.addEventListener('canplay', () => console.log('🔊 Audio: canplay'));
                 audio.addEventListener('play', () => console.log('🔊 Audio: play event'));
                 audio.addEventListener('ended', () => console.log('🔊 Audio: ended'));
-                audio.addEventListener('error', (e) => console.error('❌ Audio error event:', e));
+                audio.addEventListener('error', (e) => {
+                    console.error('❌ Audio error event:', e);
+                    console.error('❌ Audio error details:', {
+                        error: audio.error,
+                        networkState: audio.networkState,
+                        readyState: audio.readyState,
+                        currentSrc: audio.currentSrc
+                    });
+                });
 
                 console.log('🔊 Calling audio.play()...');
 
                 audio.play().then(() => {
                     console.log('✅ Audio.play() promise resolved successfully');
-                    addNotification('success', `🔊 Playing ${soundFile}`);
+                    const soundDisplayName = soundFile.includes('sound-') ?
+                        `custom sound (${soundFile})` : soundFile;
+                    addNotification('success', `🔊 Playing ${soundDisplayName}`);
                 }).catch(error => {
                     console.error('❌ Audio.play() promise rejected:', error);
                     console.log('🔊 Falling back to system beep...');
 
-                    // Fallback to system beep
+                    // Fallback to system beep for both built-in and custom sounds
                     try {
                         const AudioContextClass = window.AudioContext || window.webkitAudioContext;
                         if (!AudioContextClass) {
@@ -261,31 +292,53 @@ function App() {
                         if (context.state === 'suspended') {
                             console.log('🔊 Resuming suspended fallback AudioContext...');
                             context.resume().then(() => {
-                                playFallbackBeep(context);
+                                playFallbackBeep(context, soundFile);
                             }).catch(err => {
                                 console.error('❌ Failed to resume fallback AudioContext:', err);
+                                addNotification('error', '❌ Failed to play sound');
                             });
                         } else {
-                            playFallbackBeep(context);
+                            playFallbackBeep(context, soundFile);
                         }
 
-                        function playFallbackBeep(ctx) {
+                        function playFallbackBeep(ctx, originalSoundFile) {
                             const oscillator = ctx.createOscillator();
                             const gainNode = ctx.createGain();
 
                             oscillator.connect(gainNode);
                             gainNode.connect(ctx.destination);
 
-                            oscillator.frequency.value = 600;
+                            // Different tones for different sound types
+                            if (originalSoundFile.includes('success')) {
+                                oscillator.frequency.value = 800; // Higher pitch for success
+                                gainNode.gain.setValueAtTime(0.3, ctx.currentTime);
+                            } else if (originalSoundFile.includes('alert')) {
+                                oscillator.frequency.value = 400; // Lower pitch for alerts
+                                gainNode.gain.setValueAtTime(0.4, ctx.currentTime);
+                            } else if (originalSoundFile.includes('chime')) {
+                                oscillator.frequency.value = 1000; // Even higher for chimes
+                                gainNode.gain.setValueAtTime(0.2, ctx.currentTime);
+                            } else if (originalSoundFile.includes('sound-')) {
+                                oscillator.frequency.value = 600; // Custom sound fallback
+                                gainNode.gain.setValueAtTime(0.3, ctx.currentTime);
+                            } else {
+                                oscillator.frequency.value = 600; // Default fallback
+                                gainNode.gain.setValueAtTime(0.2, ctx.currentTime);
+                            }
+
                             oscillator.type = 'square';
-                            gainNode.gain.setValueAtTime(0.2, ctx.currentTime);
                             gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
 
                             oscillator.start(ctx.currentTime);
                             oscillator.stop(ctx.currentTime + 0.3);
 
-                            console.log('🔊 Fallback beep played');
-                            addNotification('info', `🔊 Playing fallback beep (${soundFile} not found)`);
+                            console.log('🔊 Fallback beep played for:', originalSoundFile);
+
+                            const fallbackMessage = originalSoundFile.includes('sound-') ?
+                                `🔊 Playing fallback beep (custom sound "${soundFile}" not accessible)` :
+                                `🔊 Playing fallback beep ("${soundFile}" not found)`;
+
+                            addNotification('info', fallbackMessage);
                         }
                     } catch (fallbackError) {
                         console.error('❌ Fallback beep also failed:', fallbackError);
@@ -324,7 +377,7 @@ function App() {
     // WebSocket connection
     const connectWebSocket = useCallback(() => {
         try {
-            const ws = new WebSocket('wss://devscope-be.onrender.com');
+            const ws = new WebSocket('ws://localhost:3001');
 
             ws.onopen = () => {
                 console.log('WebSocket connected');
@@ -366,6 +419,7 @@ function App() {
         fetchLists();
         fetchDetectedTokens();
         fetchUsedCommunities(); // Add this line
+        fetchSoundFiles();
         connectWebSocket();
 
         return () => {
@@ -463,7 +517,7 @@ function App() {
         tokenData: null
     });
 
-    
+
     // Auto-play sound when secondary popup appears
     useEffect(() => {
         if (secondaryPopup.show && secondaryPopup.tokenData) {
@@ -708,19 +762,54 @@ function App() {
         }
     };
 
-    const viewToken = (token) => {
+    // Fixed viewToken function in App.js
+    const viewToken = async (token) => {
+        console.log('🌐 Opening token page for:', token.tokenAddress);
+
+        // Clear previous status for this token
+        setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: null }));
+
         let url;
 
-        // Simple check: if pool is 'bonk', use letsbonk.fun
-        if (token.pool === 'bonk') {
-            url = `https://letsbonk.fun/token/${token.tokenAddress}`;
+        // Check user's preference for token page destination
+        if (settings.tokenPageDestination === 'axiom') {
+            try {
+                // Use the backend API to get the proper Axiom URL with pair address
+                const response = await apiCall(`/pair-address/${token.tokenAddress}`);
+
+                console.log('🔍 Backend response:', response); // Debug log
+
+                if (response.success && response.pairData && response.pairData.pairAddress) {
+                    console.log(`✅ Backend found pair for Axiom: ${response.pairData.pairAddress}`);
+                    url = response.axiomUrl; // Use the pre-generated Axiom URL from backend
+                    addNotification('success', `🎯 Opening Axiom with pair: ${response.pairData.pairAddress.substring(0, 8)}...`);
+                    setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: 'success' }));
+                } else {
+                    console.log('⚠️ Backend found no pair, using token address for Axiom');
+                    url = response.fallbackAxiomUrl || `https://axiom.trade/meme/${token.tokenAddress}`;
+                    setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: 'no-pair' }));
+                }
+            } catch (error) {
+                console.error('❌ Error fetching pair from backend for Axiom:', error);
+                url = `https://axiom.trade/meme/${token.tokenAddress}`;
+                setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: 'error' }));
+            }
         } else {
+            // Neo BullX or other destinations
+            url = `https://neo.bullx.io/terminal?chainId=1399811149&address=${token.tokenAddress}`;
+        }
+
+        // Simple check for platform-specific URLs (keep existing logic for pump.fun/letsbonk.fun)
+        if (token.pool === 'bonk' && settings.tokenPageDestination !== 'axiom') {
+            url = `https://letsbonk.fun/token/${token.tokenAddress}`;
+        } else if (token.pool === 'pump' && settings.tokenPageDestination !== 'axiom') {
             url = `https://pump.fun/${token.tokenAddress}`;
         }
 
         console.log('TOKEN DEBUG:', {
             pool: token.pool,
             tokenAddress: token.tokenAddress,
+            destination: settings.tokenPageDestination,
             finalURL: url
         });
 
@@ -732,6 +821,76 @@ function App() {
         }
 
         addNotification('success', `🌐 Opening token page: ${url}`);
+
+        // Clear status after 5 seconds
+        setTimeout(() => {
+            setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: null }));
+        }, 10000);
+    };
+
+    const viewTokenPageFromPopup = async (token) => {
+        console.log('🌐 Opening token page from popup for:', token.tokenAddress);
+
+        // Clear previous status for this token
+        setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: null }));
+
+        let url;
+
+        // Check user's preference for token page destination
+        if (settings.tokenPageDestination === 'axiom') {
+            try {
+                // Use the backend API to get the proper Axiom URL with pair address
+                const response = await apiCall(`/pair-address/${token.tokenAddress}`);
+
+                console.log('🔍 Backend response:', response); // Debug log
+
+                if (response.success && response.pairData && response.pairData.pairAddress) {
+                    console.log(`✅ Backend found pair for Axiom: ${response.pairData.pairAddress}`);
+                    url = response.axiomUrl; // Use the pre-generated Axiom URL from backend
+                    addNotification('success', `🎯 Opening Axiom with pair: ${response.pairData.pairAddress.substring(0, 8)}...`);
+                    setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: 'success' }));
+                } else {
+                    console.log('⚠️ Backend found no pair, using token address for Axiom');
+                    url = response.fallbackAxiomUrl || `https://axiom.trade/meme/${token.tokenAddress}`;
+                    setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: 'no-pair' }));
+                }
+            } catch (error) {
+                console.error('❌ Error fetching pair from backend for Axiom:', error);
+                url = `https://axiom.trade/meme/${token.tokenAddress}`;
+                setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: 'error' }));
+            }
+        } else {
+            // Neo BullX or other destinations
+            url = `https://neo.bullx.io/terminal?chainId=1399811149&address=${token.tokenAddress}`;
+        }
+
+        // Simple check for platform-specific URLs (keep existing logic for pump.fun/letsbonk.fun)
+        if (token.pool === 'bonk' && settings.tokenPageDestination !== 'axiom') {
+            url = `https://letsbonk.fun/token/${token.tokenAddress}`;
+        } else if (token.pool === 'pump' && settings.tokenPageDestination !== 'axiom') {
+            url = `https://pump.fun/${token.tokenAddress}`;
+        }
+
+        console.log('POPUP TOKEN DEBUG:', {
+            pool: token.pool,
+            tokenAddress: token.tokenAddress,
+            destination: settings.tokenPageDestination,
+            finalURL: url
+        });
+
+        // Open the URL
+        if (window.electronAPI && window.electronAPI.openExternalURL) {
+            window.electronAPI.openExternalURL(url);
+        } else {
+            window.open(url, '_blank');
+        }
+
+        addNotification('success', `🌐 Opening token page: ${url}`);
+
+        // Clear status after 5 seconds
+        setTimeout(() => {
+            setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: null }));
+        }, 10000);
     };
 
     // Format numbers for display
@@ -1001,9 +1160,100 @@ function App() {
         try {
             await apiCall(`/snipe-with-global-settings/${tokenAddress}`, { method: 'POST' });
             addNotification('success', `🎯 Token sniped using global settings: ${tokenAddress.substring(0, 8)}...`);
+
+            // Close popup
             setSecondaryPopup({ show: false, tokenData: null });
+
+            // Open token page with pair address lookup
+            if (settings.tokenPageDestination === 'axiom') {
+                try {
+                    const response = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${tokenAddress}`);
+                    const data = await response.json();
+
+                    if (data.pairs && data.pairs.length > 0) {
+                        const bestPair = data.pairs.find(pair =>
+                            pair.dexId === 'raydium' ||
+                            pair.dexId.toLowerCase().includes('raydium')
+                        ) || data.pairs[0];
+
+                        const axiomUrl = `https://axiom.trade/meme/${bestPair.pairAddress}`;
+
+                        if (window.electronAPI && window.electronAPI.openExternalURL) {
+                            window.electronAPI.openExternalURL(axiomUrl);
+                        } else {
+                            window.open(axiomUrl, '_blank');
+                        }
+
+                        addNotification('success', `🌐 Opening Axiom with pair: ${bestPair.pairAddress.substring(0, 8)}...`);
+                    }
+                } catch (error) {
+                    console.error('Error opening Axiom with pair:', error);
+                    addNotification('error', '❌ Error opening token page');
+                }
+            }
         } catch (error) {
             addNotification('error', `❌ Failed to snipe token: ${error.message}`);
+        }
+    };
+
+
+    const uploadSoundFile = async (file) => {
+        if (!file) return;
+
+        console.log('🔧 uploadSoundFile called with:', file.name); // ADD THIS
+
+        const formData = new FormData();
+        formData.append('soundFile', file);
+
+        try {
+            setUploadingSound(true);
+            console.log('🔧 Making API call to upload sound...'); // ADD THIS
+
+            const response = await fetch(`${API_BASE}/upload-sound`, {
+                method: 'POST',
+                body: formData
+            });
+
+            console.log('🔧 API response status:', response.status); // ADD THIS
+
+            if (!response.ok) {
+                throw new Error('Upload failed');
+            }
+
+            const result = await response.json();
+            console.log('🔧 API response data:', result); // ADD THIS
+
+            // Refresh sound files list
+            console.log('🔧 Calling fetchSoundFiles...'); // ADD THIS
+            await fetchSoundFiles();
+
+            addNotification('success', `🔊 Sound uploaded: ${result.filename}`);
+            return result;
+        } catch (error) {
+            console.log('🔧 Upload error occurred:', error); // ADD THIS
+            addNotification('error', `❌ Upload failed: ${error.message}`);
+            throw error;
+        } finally {
+            setUploadingSound(false);
+        }
+    };
+
+    const fetchSoundFiles = async () => {
+        try {
+            const data = await apiCall('/sound-files');
+            setSoundFiles(data.files || []);
+        } catch (error) {
+            console.error('Failed to fetch sound files');
+        }
+    };
+
+    const deleteSoundFile = async (filename) => {
+        try {
+            await apiCall(`/sound-files/${filename}`, { method: 'DELETE' });
+            await fetchSoundFiles();
+            addNotification('success', `🗑️ Sound deleted: ${filename}`);
+        } catch (error) {
+            addNotification('error', `❌ Failed to delete sound: ${error.message}`);
         }
     };
 
@@ -1253,7 +1503,7 @@ function App() {
 
                     <div>
                         <label className="block text-sm font-medium text-gray-300 mb-2">
-                            Custom Wallet (Optional)
+                            Custom Wallet/X Handle/X Community
                         </label>
                         <input
                             type="text"
@@ -1265,33 +1515,6 @@ function App() {
                         />
                     </div>
 
-                    <div>
-                        <label className="block text-sm font-medium text-gray-300 mb-2">
-                            Custom Twitter (Optional)
-                        </label>
-                        <input
-                            type="text"
-                            value={customTwitter}
-                            onChange={(e) => setCustomTwitter(e.target.value)}
-                            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
-                            placeholder="Override Twitter handle"
-                            disabled={!botStatus.isRunning}
-                        />
-                    </div>
-
-                    <div>
-                        <label className="block text-sm font-medium text-gray-300 mb-2">
-                            Custom Twitter Community (Optional)
-                        </label>
-                        <input
-                            type="text"
-                            value={customCommunity}
-                            onChange={(e) => setCustomCommunity(e.target.value)}
-                            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
-                            placeholder="Community ID (e.g., 1234567890)"
-                            disabled={!botStatus.isRunning}
-                        />
-                    </div>
                 </div>
 
                 {/* Quick Action Buttons */}
@@ -1662,6 +1885,138 @@ function App() {
         </div>
     );
 
+    // Add this new function after renderGlobalSnipeSettings()
+    const renderSoundManagement = () => (
+        <div className="bg-gray-800 rounded-lg p-4 md:p-6">
+            <h2 className="text-lg md:text-xl font-semibold text-white mb-4">🔊 Sound Management</h2>
+            <p className="text-sm text-gray-400 mb-6">
+                Upload custom notification sounds for your snipe alerts
+            </p>
+
+            {/* Upload Section */}
+            <div className="bg-gray-700 rounded-lg p-4 mb-6">
+                <h3 className="text-lg font-semibold text-white mb-3">Upload New Sound</h3>
+
+                <div className="space-y-4">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-2">
+                            Choose Sound File
+                        </label>
+                        <input
+                            type="file"
+                            accept="audio/*,.wav,.mp3,.ogg,.m4a"
+                            onChange={async (e) => {
+                                const file = e.target.files[0];
+                                console.log('🔧 File selected:', file); // ADD THIS LINE
+                                if (file) {
+                                    console.log('🔧 File details:', {
+                                        name: file.name,
+                                        size: file.size,
+                                        type: file.type
+                                    }); // ADD THIS LINE
+                                    try {
+                                        console.log('🔧 Starting upload...'); // ADD THIS LINE
+                                        await uploadSoundFile(file);
+                                        e.target.value = ''; // Clear input
+                                        console.log('🔧 Upload completed successfully'); // ADD THIS LINE
+                                    } catch (error) {
+                                        console.error('🔧 Upload error:', error);
+                                    }
+                                }
+                            }}
+                            disabled={uploadingSound}
+                            className="w-full px-3 py-2 bg-gray-600 border border-gray-500 rounded-lg text-white focus:ring-2 focus:ring-blue-500 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:bg-blue-600 file:text-white hover:file:bg-blue-700"
+                        />
+                        <p className="text-xs text-gray-400 mt-1">
+                            Supported formats: WAV, MP3, OGG, M4A (Max 5MB)
+                        </p>
+                    </div>
+
+                    {uploadingSound && (
+                        <div className="flex items-center space-x-2 text-blue-400">
+                            <div className="animate-spin w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full"></div>
+                            <span className="text-sm">Uploading sound...</span>
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            {/* Uploaded Sounds List */}
+            <div className="bg-gray-700 rounded-lg p-4">
+                <h3 className="text-lg font-semibold text-white mb-3">
+                    Uploaded Sounds ({soundFiles.length})
+                </h3>
+
+                {soundFiles.length === 0 ? (
+                    <div className="text-center py-8">
+                        <div className="text-gray-400 mb-4">
+                            <Bell size={48} className="mx-auto mb-2" />
+                            <p>No custom sounds uploaded</p>
+                            <p className="text-sm">Upload audio files to use as notification sounds</p>
+                        </div>
+                    </div>
+                ) : (
+                    <div className="space-y-3">
+                        {soundFiles.map(file => (
+                            <div key={file.filename} className="flex items-center justify-between p-3 bg-gray-600 rounded-lg">
+                                <div className="flex-1">
+                                    <h4 className="text-white font-medium">{file.originalName || file.filename}</h4>
+                                    <div className="flex items-center space-x-4 text-sm text-gray-400 mt-1">
+                                        <span>Size: {(file.size / 1024).toFixed(1)} KB</span>
+                                        <span>Format: {file.mimetype}</span>
+                                        <span>Uploaded: {new Date(file.uploadedAt).toLocaleDateString()}</span>
+                                    </div>
+                                </div>
+
+                                <div className="flex items-center space-x-2">
+                                    <button
+                                        onClick={() => previewSound(file.filename)}
+                                        className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm"
+                                    >
+                                        🔊 Play
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            if (window.confirm(`Delete "${file.originalName || file.filename}"?`)) {
+                                                deleteSoundFile(file.filename);
+                                            }
+                                        }}
+                                        className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-sm"
+                                    >
+                                        🗑️ Delete
+                                    </button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+
+            {/* Default Sounds */}
+            <div className="bg-gray-700 rounded-lg p-4 mt-4">
+                <h3 className="text-lg font-semibold text-white mb-3">Built-in Sounds</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {[
+                        { value: 'default.wav', label: '🔊 System Beep' },
+                        { value: 'success.wav', label: '✅ Success Tone' },
+                        { value: 'alert.wav', label: '⚠️ Alert Tone' },
+                        { value: 'chime.wav', label: '🔔 Chime Tone' }
+                    ].map(sound => (
+                        <div key={sound.value} className="flex items-center justify-between p-2 bg-gray-600 rounded">
+                            <span className="text-white text-sm">{sound.label}</span>
+                            <button
+                                onClick={() => previewSound(sound.value)}
+                                className="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs"
+                            >
+                                🔊 Play
+                            </button>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        </div>
+    );
+
     const renderSecondaryPopup = () => {
         if (!secondaryPopup.show || !secondaryPopup.tokenData) return null;
 
@@ -1696,7 +2051,7 @@ function App() {
                             <div>
                                 <h3 className="text-xl font-bold text-white">{token.name || 'Unknown Token'}</h3>
                                 <p className="text-gray-300">${token.symbol || 'UNKNOWN'}</p>
-                                <p className="text-sm text-gray-400">Matched: @{token.matchedEntity}</p>
+                                <p className="text-sm text-gray-400">Matched: {token.matchedEntity}</p>
                             </div>
                         </div>
 
@@ -1730,7 +2085,6 @@ function App() {
                     </div>
 
                     {/* Current Global Snipe Settings Display */}
-                    {/* Current Global Snipe Settings Display */}
                     <div className="bg-gray-700 p-4 rounded mb-6">
                         <h4 className="text-lg font-semibold text-white mb-3">Current Global Snipe Settings:</h4>
                         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
@@ -1746,24 +2100,19 @@ function App() {
                                 <p className="text-sm text-gray-400">MEV Protection</p>
                                 <p className="text-white font-bold">{settings.globalSnipeSettings.mevProtection ? '🛡️ ON' : '❌ OFF'}</p>
                             </div>
-                         
                         </div>
                     </div>
 
                     {/* Action Buttons */}
                     <div className="flex flex-col space-y-3 md:flex-row md:space-y-0 md:space-x-4">
-                        <button
-                            onClick={() => {
-                                const url = settings.tokenPageDestination === 'neo_bullx'
-                                    ? `https://bullx.io/terminal?chainId=1399811149&address=${token.tokenAddress}`
-                                    : `https://axiom.trade/meme/${token.tokenAddress}`;
-                                window.open(url, '_blank');
-                                addNotification('success', `🌐 Opening token on ${settings.tokenPageDestination === 'neo_bullx' ? 'Neo BullX' : 'Axiom'}`);
-                            }}
-                            className="flex-1 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
-                        >
-                            🌐 View Token Page
-                        </button>
+                        <div className="flex-1">
+                            <button
+                                onClick={() => viewTokenPageFromPopup(token)}
+                                className="w-full px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                            >
+                                🌐 View Token Page
+                            </button>
+                        </div>
 
                         <button
                             onClick={() => snipeWithGlobalSettings(token.tokenAddress)}
@@ -1773,11 +2122,29 @@ function App() {
                             <span>SNIPE ({settings.globalSnipeSettings.amount} SOL)</span>
                         </button>
                     </div>
+
+                    {/* Status message under popup button */}
+                    {tokenPairStatus[token.tokenAddress] === 'no-pair' && (
+                        <div className="mt-2 p-2 bg-yellow-900/20 border border-yellow-500/30 rounded text-xs text-yellow-400 text-center">
+                            🔍 No pair found yet, check again in few seconds
+                        </div>
+                    )}
+                    {tokenPairStatus[token.tokenAddress] === 'error' && (
+                        <div className="mt-2 p-2 bg-red-900/20 border border-red-500/30 rounded text-xs text-red-400 text-center">
+                            ❌ Error fetching pair data, using token address
+                        </div>
+                    )}
+                    {tokenPairStatus[token.tokenAddress] === 'success' && (
+                        <div className="mt-2 p-2 bg-green-900/20 border border-green-500/30 rounded text-xs text-green-400 text-center">
+                            ✅ Pair found! Opening with liquidity pool
+                        </div>
+                    )}
+
                 </div>
             </div>
         );
     };
- 
+
     // Render components
     const renderStatusIndicator = () => (
         <div className="flex items-center space-x-2">
@@ -2215,24 +2582,38 @@ function App() {
                                         )}
 
                                         {/* Action Buttons */}
+                                        {/* Action Buttons */}
                                         <div className="flex flex-col md:flex-row gap-3 mt-4">
-                                            <button
-                                                onClick={() => viewToken(token)}
-                                                className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center justify-center space-x-2"
-                                            >
-                                                <ExternalLink size={16} />
-                                                <span>{token.pool === 'bonk' ? 'View on LetsBonk.fun' : 'View on Pump.fun'}</span>
-                                            </button>
+                                            {/* Action Buttons */}
+                                            <div className="flex flex-col md:flex-row gap-3 mt-4">
+                                                <div className="flex-1">
+                                                    <button
+                                                        onClick={() => viewToken(token)}
+                                                        className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center justify-center space-x-2"
+                                                    >
+                                                        <ExternalLink size={16} />
+                                                        <span>{token.pool === 'bonk' ? 'View on LetsBonk.fun' : 'View on Pump.fun'}</span>
+                                                    </button>
 
-                                            {token.config && (
-                                                <button
-                                                    onClick={() => snipeDetectedToken(token.tokenAddress)}
-                                                    className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors flex items-center justify-center space-x-2"
-                                                >
-                                                    <Target size={16} />
-                                                    <span>Manual Snipe</span>
-                                                </button>
-                                            )}
+                                                    {/* Status message under button */}
+                                                    {tokenPairStatus[token.tokenAddress] === 'no-pair' && (
+                                                        <div className="mt-2 p-2 bg-yellow-900/20 border border-yellow-500/30 rounded text-xs text-yellow-400">
+                                                            🔍 No pair found yet, check again in few seconds
+                                                        </div>
+                                                    )}
+                                                    {tokenPairStatus[token.tokenAddress] === 'error' && (
+                                                        <div className="mt-2 p-2 bg-red-900/20 border border-red-500/30 rounded text-xs text-red-400">
+                                                            ❌ Error fetching pair data, using token address
+                                                        </div>
+                                                    )}
+                                                    {tokenPairStatus[token.tokenAddress] === 'success' && (
+                                                        <div className="mt-2 p-2 bg-green-900/20 border border-green-500/30 rounded text-xs text-green-400">
+                                                            ✅ Pair found! Opening with liquidity pool
+                                                        </div>
+                                                    )}
+                                                </div>
+
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -2524,7 +2905,7 @@ function App() {
                                 >
                                     🔊
                                 </button>
- 
+
                             </div>
                         </div>
 
@@ -2822,7 +3203,7 @@ function App() {
                                 }`}
                         >
                             🧪 Demo
-                        </button>
+                        </button> 
                     </div>
                 </div>
             </nav>
@@ -2838,6 +3219,7 @@ function App() {
                     <div className="space-y-6">
                         {renderSettings()}
                         {renderGlobalSnipeSettings()}
+                        {renderSoundManagement()}
                     </div>
                 )}
             </main>
@@ -2884,4 +3266,3 @@ function App() {
 }
 
 export default App;
-
