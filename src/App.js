@@ -23,7 +23,7 @@ import {
 } from 'lucide-react';
 import './App.css';
 
-const API_BASE = 'https://devscope-be.onrender.com/api';
+const API_BASE = 'http://localhost:3001/api';
 
 function App() {
     // State management
@@ -72,6 +72,7 @@ function App() {
     const [customCommunity, setCustomCommunity] = useState('');
     const [soundFiles, setSoundFiles] = useState([]);
     const [uploadingSound, setUploadingSound] = useState(false);
+    const [isCommunity, setIsCommunity] = useState(false);
 
     const STORAGE_KEYS = {
         SETTINGS: 'devscope_settings',
@@ -377,7 +378,7 @@ function App() {
     // WebSocket connection
     const connectWebSocket = useCallback(() => {
         try {
-            const ws = new WebSocket('wss://devscope-be.onrender.com');
+            const ws = new WebSocket('ws://localhost:3001');
 
             ws.onopen = () => {
                 console.log('WebSocket connected');
@@ -784,10 +785,20 @@ function App() {
                     url = response.axiomUrl; // Use the pre-generated Axiom URL from backend
                     addNotification('success', `🎯 Opening Axiom with pair: ${response.pairData.pairAddress.substring(0, 8)}...`);
                     setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: 'success' }));
+
+                    // Open the URL only if pair was found
+                    if (window.electronAPI && window.electronAPI.openExternalURL) {
+                        window.electronAPI.openExternalURL(url);
+                    } else {
+                        window.open(url, '_blank');
+                    }
                 } else {
                     console.log('⚠️ Backend found no pair, using token address for Axiom');
                     url = response.fallbackAxiomUrl || `https://axiom.trade/meme/${token.tokenAddress}`;
                     setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: 'no-pair' }));
+                    // Don't open the URL in this case, just show the message
+                    addNotification('warning', '🔍 No pair found yet, check again in few seconds');
+                    return; // Add this return to prevent opening the page
                 }
             } catch (error) {
                 console.error('❌ Error fetching pair from backend for Axiom:', error);
@@ -813,7 +824,7 @@ function App() {
             finalURL: url
         });
 
-        // Open the URL
+        // Open the URL (only if we haven't returned earlier)
         if (window.electronAPI && window.electronAPI.openExternalURL) {
             window.electronAPI.openExternalURL(url);
         } else {
@@ -852,12 +863,21 @@ function App() {
                 } else {
                     console.log('⚠️ Backend found no pair, using token address for Axiom');
                     url = response.fallbackAxiomUrl || `https://axiom.trade/meme/${token.tokenAddress}`;
-                    setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: 'no-pair' }));
+                    setTokenPairStatus(prev => ({
+                        ...prev,
+                        [token.tokenAddress]: 'no-pair'
+                    }));
+                    // Don't open the page, just show the message and return
+                    addNotification('warning', '🔍 No pair found yet, check again in few seconds');
+                    return;
                 }
             } catch (error) {
                 console.error('❌ Error fetching pair from backend for Axiom:', error);
                 url = `https://axiom.trade/meme/${token.tokenAddress}`;
-                setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: 'error' }));
+                setTokenPairStatus(prev => ({
+                    ...prev,
+                    [token.tokenAddress]: 'error'
+                }));
             }
         } else {
             // Neo BullX or other destinations
@@ -1511,6 +1531,35 @@ function App() {
                             onChange={(e) => setCustomWallet(e.target.value)}
                             className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
                             placeholder="Override creator wallet"
+                            disabled={!botStatus.isRunning}
+                        />
+                    </div>
+
+
+                    <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-2">
+                            Custom Twitter (Optional)
+                        </label>
+                        <input
+                            type="text"
+                            value={customTwitter}
+                            onChange={(e) => setCustomTwitter(e.target.value)}
+                            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
+                            placeholder="Override Twitter handle"
+                            disabled={!botStatus.isRunning}
+                        />
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-2">
+                            Custom Twitter Community (Optional)
+                        </label>
+                        <input
+                            type="text"
+                            value={customCommunity}
+                            onChange={(e) => setCustomCommunity(e.target.value)}
+                            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
+                            placeholder="Community ID (e.g., 1234567890)"
                             disabled={!botStatus.isRunning}
                         />
                     </div>
@@ -2812,6 +2861,7 @@ function App() {
     // App.js - Parts 8 & 9: Lists, Forms, and Main Component
     const renderAddForm = (listType) => {
         const isWalletList = true; // Always treat as wallet input now
+        // Remove the useState call from here - it should be in your main component
 
         return (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -2843,6 +2893,7 @@ function App() {
                                 className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                 placeholder="e.g., HJdauMU7e8... or @username or 1234567890"
                             />
+                          
                             <div className="mt-2 text-xs text-gray-400">
                                 <p>• Wallet: Base58 address (HJdauMU7e8...)</p>
                                 <p>• Twitter: @username or username</p>
@@ -2905,7 +2956,6 @@ function App() {
                                 >
                                     🔊
                                 </button>
-
                             </div>
                         </div>
 
@@ -2929,7 +2979,8 @@ function App() {
                                 amount: formData.amount,
                                 fees: formData.fees,
                                 mevProtection: formData.mevProtection,
-                                soundNotification: formData.soundNotification
+                                soundNotification: formData.soundNotification,
+                                isCommunity: isCommunity // Add this field
                             })}
                             disabled={!formData.address || !formData.amount || !formData.fees}
                             className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors flex items-center justify-center space-x-2"
@@ -3195,7 +3246,7 @@ function App() {
                         >
                             ⚙️ Settings
                         </button>
-                        {/*<button
+                        <button
                             onClick={() => setActiveTab('demo')}
                             className={`py-3 md:py-4 px-2 border-b-2 transition-colors whitespace-nowrap text-sm md:text-base ${activeTab === 'demo'
                                 ? 'border-blue-500 text-blue-400'
@@ -3203,7 +3254,7 @@ function App() {
                                 }`}
                         >
                             🧪 Demo
-                        </button> */}
+                        </button>
                     </div>
                 </div>
             </nav>
