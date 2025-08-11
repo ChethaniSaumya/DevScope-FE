@@ -23,7 +23,7 @@ import {
 } from 'lucide-react';
 import './App.css';
 
-const API_BASE = 'http://localhost:3001/api';
+const API_BASE = 'https://devscope-be.onrender.com/api';
 
 function App() {
     // State management
@@ -378,7 +378,7 @@ function App() {
     // WebSocket connection
     const connectWebSocket = useCallback(() => {
         try {
-            const ws = new WebSocket('ws://localhost:3001');
+            const ws = new WebSocket('wss://devscope-be.onrender.com');
 
             ws.onopen = () => {
                 console.log('WebSocket connected');
@@ -3246,7 +3246,7 @@ function App() {
                         >
                             ⚙️ Settings
                         </button>
-                        <button
+                        {/*<button
                             onClick={() => setActiveTab('demo')}
                             className={`py-3 md:py-4 px-2 border-b-2 transition-colors whitespace-nowrap text-sm md:text-base ${activeTab === 'demo'
                                 ? 'border-blue-500 text-blue-400'
@@ -3254,7 +3254,7 @@ function App() {
                                 }`}
                         >
                             🧪 Demo
-                        </button>
+                        </button>*/}
                     </div>
                 </div>
             </nav>
