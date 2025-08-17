@@ -23,7 +23,7 @@ import {
 } from 'lucide-react';
 import './App.css';
 
-const API_BASE = 'https://devscope-be.onrender.com/api';
+const API_BASE = 'http://localhost:3001/api';
 //const API_BASE = 'https://devscope-be.onrender.com/api';
 
 function App() {
@@ -68,14 +68,14 @@ function App() {
     const [customWallet, setCustomWallet] = useState('');
     const [customTwitter, setCustomTwitter] = useState('');
 
-    const [pairDetectionStatus, setPairDetectionStatus] = useState({});
-    const [autoRetryTimers, setAutoRetryTimers] = useState({});
     const [usedCommunities, setUsedCommunities] = useState([]);
     const [showCommunityModal, setShowCommunityModal] = useState(false);
     const [customCommunity, setCustomCommunity] = useState('');
     const [soundFiles, setSoundFiles] = useState([]);
     const [uploadingSound, setUploadingSound] = useState(false);
     const [isCommunity, setIsCommunity] = useState(false);
+    const [pairDetectionStatus, setPairDetectionStatus] = useState({});
+    const [autoRetryTimers, setAutoRetryTimers] = useState({});
     const [twitterSessionStatus, setTwitterSessionStatus] = useState({
         initialized: false,
         loggedIn: false,
@@ -90,6 +90,7 @@ function App() {
         tokenAddress: '',
         reason: ''
     });
+
     const STORAGE_KEYS = {
         SETTINGS: 'devscope_settings',
         GLOBAL_SNIPE: 'devscope_global_snipe',
@@ -433,7 +434,7 @@ function App() {
     // WebSocket connection
     const connectWebSocket = useCallback(() => {
         try {
-            const ws = new WebSocket('wss://devscope-be.onrender.com');
+            const ws = new WebSocket('ws://localhost:3001');
 
             ws.onopen = () => {
                 console.log('WebSocket connected');
@@ -464,148 +465,6 @@ function App() {
         }
     }, []);
 
-    const attemptPopupWithDetection = async (url, tokenAddress, openType) => {
-        console.log(`🚀 ATTEMPTING POPUP OPENING (${openType.toUpperCase()})`);
-        console.log('🔗 URL:', url);
-        console.log('🔍 Environment check:');
-        console.log('  🖥️ Electron API available:', !!window.electronAPI);
-        console.log('  🌍 User agent:', navigator.userAgent.substring(0, 50) + '...');
-
-        try {
-            // TRY ELECTRON FIRST
-            if (window.electronAPI && window.electronAPI.openExternalURL) {
-                console.log('🖥️ USING ELECTRON API METHOD');
-                console.log('📞 Calling window.electronAPI.openExternalURL()...');
-
-                window.electronAPI.openExternalURL(url);
-
-                console.log('✅ ELECTRON API CALL COMPLETED');
-                return {
-                    success: true,
-                    method: 'electron',
-                    reason: 'Opened via Electron API'
-                };
-            }
-
-            // TRY BROWSER POPUP WITH ENHANCED DETECTION
-            console.log('🌍 USING BROWSER WINDOW.OPEN() METHOD');
-            console.log('🔍 Popup blocker detection strategy:');
-            console.log('  📊 Method: window.open() return value check');
-            console.log('  ⏱️ Timing: immediate + delayed checks');
-            console.log('  🎯 Type:', openType);
-
-            // ATTEMPT 1: Direct window.open()
-            console.log('📞 Attempting window.open()...');
-            const newWindow = window.open(url, '_blank', 'noopener,noreferrer');
-
-            console.log('📋 window.open() immediate result:', newWindow);
-            console.log('📋 Result type:', typeof newWindow);
-            console.log('📋 Result truthiness:', !!newWindow);
-
-            // IMMEDIATE CHECK
-            if (!newWindow) {
-                console.error('❌ IMMEDIATE POPUP BLOCK DETECTED');
-                console.error('🚫 window.open() returned null/undefined immediately');
-                return {
-                    success: false,
-                    method: 'browser_blocked_immediate',
-                    reason: 'Popup blocked immediately by browser'
-                };
-            }
-
-            // DELAYED CHECK (some browsers return object but still block)
-            console.log('⏱️ Performing delayed popup block check...');
-
-            const delayedCheck = await new Promise((resolve) => {
-                setTimeout(() => {
-                    try {
-                        // Try to access window properties
-                        if (newWindow.closed) {
-                            console.warn('⚠️ Window was closed immediately (likely blocked)');
-                            resolve({
-                                success: false,
-                                method: 'browser_blocked_delayed',
-                                reason: 'Popup was closed immediately after opening'
-                            });
-                        } else {
-                            console.log('✅ Window appears to be open and accessible');
-                            resolve({
-                                success: true,
-                                method: 'browser_success',
-                                reason: 'Opened successfully'
-                            });
-                        }
-                    } catch (accessError) {
-                        console.log('🔒 Cannot access window properties (cross-origin) - this is normal');
-                        console.log('✅ Assuming popup opened successfully');
-                        resolve({
-                            success: true,
-                            method: 'browser_success_restricted',
-                            reason: 'Opened successfully (access restricted by CORS)'
-                        });
-                    }
-                }, 500); // Check after 500ms
-            });
-
-            return delayedCheck;
-
-        } catch (openError) {
-            console.error('❌ EXCEPTION DURING POPUP ATTEMPT:', openError);
-            console.error('🔍 Error type:', openError.constructor.name);
-            console.error('💬 Error message:', openError.message);
-
-            return {
-                success: false,
-                method: 'exception',
-                reason: `Exception occurred: ${openError.message}`
-            };
-        }
-    };
-
-    const handlePopupBlockedScenario = (url, tokenAddress, reason, openType) => {
-        console.error('🚫 POPUP BLOCKED - HANDLING SCENARIO');
-        console.error('🔗 Blocked URL:', url);
-        console.error('💬 Block reason:', reason);
-        console.error('🎯 Open type:', openType);
-
-        // DETERMINE USER-FRIENDLY MESSAGE BASED ON REASON
-        let userMessage = '';
-        let technicalReason = '';
-
-        if (reason.includes('immediately')) {
-            userMessage = 'Chrome blocked the popup immediately';
-            technicalReason = 'Browser popup blocker is active';
-        } else if (reason.includes('closed immediately')) {
-            userMessage = 'Popup was closed right after opening';
-            technicalReason = 'Browser detected and closed popup automatically';
-        } else if (reason.includes('Exception')) {
-            userMessage = 'Browser security prevented opening';
-            technicalReason = reason;
-        } else {
-            userMessage = 'Browser blocked the popup';
-            technicalReason = reason;
-        }
-
-        // SHOW APPROPRIATE NOTIFICATIONS
-        if (openType === 'auto-open') {
-            addNotification('warning', '🚫 Auto-open blocked by Chrome - Click "View Token Page" in popup');
-            addNotification('info', '💡 Or allow popups for this site to enable auto-opening');
-        } else {
-            addNotification('error', '🚫 Chrome blocked the popup - Please allow popups for this site');
-        }
-
-        // SHOW POPUP BLOCKER GUIDANCE MODAL
-        setPopupBlockerModal({
-            show: true,
-            tokenUrl: url,
-            tokenAddress: tokenAddress,
-            reason: userMessage,
-            technicalReason: technicalReason,
-            openType: openType
-        });
-
-        console.log('📱 Popup blocker guidance modal triggered');
-    };
 
     // Add this useEffect to fetch demo templates
     useEffect(() => {
@@ -783,248 +642,6 @@ function App() {
         }
     };
 
-    const autoOpenTokenPageForSecondary = async (token) => {
-        console.log('🤖 AUTO-OPEN FUNCTION STARTED');
-        console.log('='.repeat(60));
-        console.log('📊 Token data for auto-open:', token);
-        console.log('🎯 Token address:', token.tokenAddress);
-        console.log('📋 User destination preference:', settings.tokenPageDestination);
-        console.log('🏊 Token pool type:', token.pool);
-        console.log('🚀 Token platform:', token.platform);
-
-        // Set status to indicate auto-opening
-        setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: 'auto-opening' }));
-
-        let url;
-
-        try {
-            console.log('🎯 DESTINATION ROUTING FOR AUTO-OPEN - User selected:', settings.tokenPageDestination);
-
-            // Check user's preference for token page destination
-            if (settings.tokenPageDestination === 'axiom') {
-                console.log('🔥 AXIOM SELECTED FOR AUTO-OPEN - Starting pair address lookup...');
-                console.log('📡 Making API call to backend for pair data...');
-
-                try {
-                    const apiUrl = `${API_BASE}/pair-address/${token.tokenAddress}`;
-                    console.log('🌐 API URL for auto-open:', apiUrl);
-                    console.log('⏳ Fetching pair data from backend for auto-open...');
-
-                    const response = await apiCall(`/pair-address/${token.tokenAddress}`);
-
-                    console.log('📡 BACKEND API RESPONSE FOR AUTO-OPEN:');
-                    console.log('✅ Response received:', response);
-                    console.log('🔍 Response success flag:', response.success);
-
-                    if (response.success && response.pairData && response.pairData.pairAddress) {
-                        console.log('🎉 PAIR FOUND FOR AUTO-OPEN!');
-                        console.log('💎 Pair address:', response.pairData.pairAddress);
-                        console.log('🏪 DEX ID:', response.pairData.dexId);
-                        console.log('💧 Liquidity info:', response.pairData.liquidity);
-
-                        url = response.axiomUrl;
-                        console.log('🚀 Generated Axiom URL for auto-open:', url);
-
-                        addNotification('success', `🤖 Auto-opening Axiom with pair: ${response.pairData.pairAddress.substring(0, 8)}...`);
-                        setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: 'success' }));
-
-                    } else {
-                        console.warn('⚠️ NO PAIR FOUND FOR AUTO-OPEN - Using fallback strategy');
-                        console.warn('📊 Response data breakdown:');
-                        console.warn('  - success:', response.success);
-                        console.warn('  - pairData exists:', !!response.pairData);
-                        console.warn('  - pairAddress exists:', !!(response.pairData && response.pairData.pairAddress));
-
-                        url = response.fallbackAxiomUrl || `https://axiom.trade/meme/${token.tokenAddress}`;
-                        console.log('🔄 Fallback Axiom URL for auto-open:', url);
-
-                        setTokenPairStatus(prev => ({
-                            ...prev,
-                            [token.tokenAddress]: 'no-pair'
-                        }));
-
-                        addNotification('info', '🤖 Auto-opening with token address (no pair found yet)');
-                        // Continue with opening even without pair for secondary matches
-                    }
-
-                } catch (error) {
-                    console.error('❌ BACKEND API ERROR DURING AUTO-OPEN:');
-                    console.error('🔍 Error type:', error.constructor.name);
-                    console.error('💬 Error message:', error.message);
-                    console.error('📚 Full error object:', error);
-                    console.error('🌐 API endpoint that failed:', `/pair-address/${token.tokenAddress}`);
-
-                    url = `https://axiom.trade/meme/${token.tokenAddress}`;
-                    console.log('🆘 Emergency fallback URL for auto-open:', url);
-
-                    setTokenPairStatus(prev => ({
-                        ...prev,
-                        [token.tokenAddress]: 'error'
-                    }));
-
-                    addNotification('warning', `🤖 Auto-opening with fallback URL (API error: ${error.message})`);
-                }
-
-            } else {
-                console.log('📈 BULLX SELECTED FOR AUTO-OPEN - Generating BullX URL...');
-                // Neo BullX or other destinations
-                url = `https://neo.bullx.io/terminal?chainId=1399811149&address=${token.tokenAddress}`;
-                console.log('✅ Generated BullX URL for auto-open:', url);
-            }
-
-            // Platform-specific URL overrides for auto-open
-            console.log('🔄 CHECKING PLATFORM-SPECIFIC OVERRIDES FOR AUTO-OPEN...');
-            console.log('🏊 Token pool:', token.pool);
-            console.log('🎯 User destination:', settings.tokenPageDestination);
-
-            if (token.pool === 'bonk' && settings.tokenPageDestination !== 'axiom') {
-                const originalUrl = url;
-                url = `https://letsbonk.fun/token/${token.tokenAddress}`;
-                console.log('🟠 LETSBONK OVERRIDE FOR AUTO-OPEN:');
-                console.log('  📜 Original URL:', originalUrl);
-                console.log('  🔄 New URL:', url);
-            } else if (token.pool === 'pump' && settings.tokenPageDestination !== 'axiom') {
-                const originalUrl = url;
-                url = `https://pump.fun/${token.tokenAddress}`;
-                console.log('🟣 PUMP.FUN OVERRIDE FOR AUTO-OPEN:');
-                console.log('  📜 Original URL:', originalUrl);
-                console.log('  🔄 New URL:', url);
-            } else {
-                console.log('✅ No platform override needed for auto-open');
-            }
-
-            console.log('🔗 FINAL URL TO AUTO-OPEN:', url);
-            console.log('='.repeat(60));
-
-            // AUTO-OPEN THE URL WITH DETAILED LOGGING
-            console.log('🚀 ATTEMPTING AUTO-OPEN OF TOKEN PAGE...');
-            console.log('🔍 Environment detection for auto-open:');
-            console.log('  🖥️ Electron API available:', !!window.electronAPI);
-            console.log('  🌍 User agent:', navigator.userAgent);
-            console.log('  📱 Platform:', navigator.platform);
-
-            try {
-                if (window.electronAPI && window.electronAPI.openExternalURL) {
-                    console.log('🖥️ USING ELECTRON API METHOD FOR AUTO-OPEN');
-                    console.log('📞 Calling window.electronAPI.openExternalURL() for auto-open...');
-                    console.log('🔗 URL being passed to Electron for auto-open:', url);
-
-                    window.electronAPI.openExternalURL(url);
-
-                    console.log('✅ ELECTRON API AUTO-OPEN COMPLETED SUCCESSFULLY');
-                    addNotification('success', '🤖 Token page auto-opened in external browser via Electron');
-
-                } else {
-                    console.log('🌍 USING BROWSER WINDOW.OPEN() METHOD FOR AUTO-OPEN');
-                    console.log('🔍 Auto-open popup considerations:');
-                    console.log('  📊 This is automatic (not user-triggered)');
-                    console.log('  ⚠️ May be blocked by popup blockers');
-                    console.log('  🎯 Some browsers allow popups for recent user interaction');
-
-                    console.log('📞 Calling window.open() for auto-open...');
-                    console.log('🔗 URL:', url);
-                    console.log('🎯 Target: _blank');
-
-                    const newWindow = window.open(url, '_blank');
-
-                    console.log('📋 window.open() auto-open result:', newWindow);
-
-                    if (newWindow) {
-                        console.log('✅ AUTO-OPEN WINDOW.OPEN() SUCCEEDED');
-                        console.log('🆕 New window/tab object created:', typeof newWindow);
-                        addNotification('success', '🤖 Token page auto-opened in new tab');
-
-                        // Check if window stays open
-                        setTimeout(() => {
-                            try {
-                                if (newWindow.closed) {
-                                    console.warn('⚠️ Auto-opened window was closed immediately (possible popup block)');
-                                    addNotification('warning', '⚠️ Auto-opened tab may have been blocked');
-                                } else {
-                                    console.log('✅ Auto-opened window is still open - success confirmed');
-                                }
-                            } catch (e) {
-                                console.log('🔒 Cannot check auto-opened window state (cross-origin) - this is normal');
-                            }
-                        }, 1000);
-
-                    } else {
-                        console.error('❌ AUTO-OPEN POPUP BLOCKED OR FAILED');
-                        console.error('🚫 window.open() returned null/undefined for auto-open');
-                        console.error('💡 Common causes for auto-open failure:');
-                        console.error('  - Browser popup blocker blocking automatic popups');
-                        console.error('  - No recent user interaction (required by some browsers)');
-                        console.error('  - Strict popup settings');
-                        console.error('  - Ad blocker interference');
-
-                        addNotification('warning', '🤖 Auto-open blocked by browser - use "View Token Page" button in popup');
-
-                        // Don't provide clipboard fallback for auto-open (too intrusive)
-                        console.log('💡 User can still use "View Token Page" button in the popup');
-                    }
-                }
-            } catch (openError) {
-                console.error('❌ CRITICAL ERROR DURING AUTO-OPEN:');
-                console.error('🔍 Error type:', openError.constructor.name);
-                console.error('💬 Error message:', openError.message);
-                console.error('📚 Error stack:', openError.stack);
-                console.error('🔗 URL that failed to auto-open:', url);
-                console.error('🖥️ Electron API status:', !!window.electronAPI);
-
-                addNotification('error', `🤖 Auto-open failed: ${openError.message}`);
-                addNotification('info', '💡 Use "View Token Page" button in popup as fallback');
-            }
-
-            console.log('⏰ Setting auto-open status clear timeout (10 seconds)...');
-            // Clear status after 10 seconds
-            setTimeout(() => {
-                console.log('🧹 Clearing auto-open token pair status after timeout');
-                setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: null }));
-            }, 10000);
-
-        } catch (error) {
-            console.error('❌ CRITICAL ERROR IN autoOpenTokenPageForSecondary:');
-            console.error('🔍 Error type:', error.constructor.name);
-            console.error('💬 Error message:', error.message);
-            console.error('📚 Error stack:', error.stack);
-            console.error('🎯 Token that caused auto-open error:', token.tokenAddress);
-            console.error('📊 Token data:', token);
-            console.error('⚙️ Settings at time of auto-open error:', settings);
-
-            addNotification('error', `🤖 Auto-open critical error: ${error.message}`);
-            addNotification('info', '💡 Use "View Token Page" button in popup as fallback');
-        }
-
-        console.log('🏁 autoOpenTokenPageForSecondary function completed');
-        console.log('='.repeat(60));
-    };
-
-    const autoOpenTokenPageWithPairAddress = async (tokenAddress, url) => {
-        console.log(`🚀 AUTO-OPENING TOKEN PAGE WITH PAIR ADDRESS`);
-        console.log(`🔗 URL: ${url}`);
-        console.log(`🎯 Token: ${tokenAddress}`);
-
-        try {
-            const popupResult = await attemptPopupWithDetection(url, tokenAddress, 'auto-open-with-pair');
-
-            if (popupResult.success) {
-                console.log('✅ AUTO-OPEN WITH PAIR SUCCEEDED');
-                addNotification('success', '🚀 Token page auto-opened with pair address!');
-
-                // Close the popup since we successfully opened the page
-                setSecondaryPopup({ show: false, tokenData: null });
-
-            } else {
-                console.error('❌ AUTO-OPEN WITH PAIR FAILED:', popupResult.reason);
-                addNotification('warning', '🚫 Auto-open blocked - use "View Token Page" button');
-                handlePopupBlockedScenario(url, tokenAddress, popupResult.reason, 'auto-open-with-pair');
-            }
-        } catch (error) {
-            console.error('❌ Error in auto-open with pair:', error);
-            addNotification('error', `❌ Auto-open error: ${error.message}`);
-        }
-    };
-
     const handleWebSocketMessage = (data) => {
         switch (data.type) {
             case 'bot_status':
@@ -1063,6 +680,11 @@ function App() {
                 addNotification('info', `🗑️ ${data.data.listType.replace('_', ' ')} cleared from Firebase`);
                 break;
 
+            case 'community_scraping_info':
+                console.log('ℹ️ COMMUNITY INFO:', data.data);
+                addNotification('info', `ℹ️ Community ${data.data.communityId}: ${data.data.reason}`);
+                break;
+
             case 'community_scraping_failed':
                 console.log('❌ COMMUNITY SCRAPING FAILED:', data.data);
 
@@ -1073,7 +695,7 @@ function App() {
                         loggedIn: false,
                         error: 'Session expired - manual login required'
                     }));
-                    addNotification('warning', '🔑 Twitter session expired - please login again');
+                    addNotification('warning', '🔒 Twitter session expired - please login again');
                 } else {
                     addNotification('warning', `❌ Community ${data.data.communityId} scraping failed: ${data.data.reason}`);
                 }
@@ -1107,16 +729,25 @@ function App() {
                 addNotification('info', `🏘️ Community ${data.data.communityId} scraped: ${data.data.totalAdmins} admins found - check console`);
                 break;
 
-            case 'community_scraping_failed':
-                console.log('❌ COMMUNITY SCRAPING FAILED:', data.data);
-                console.log(`🔍 Community ID ${data.data.communityId} checked against your lists:`);
-                console.log('📋 Your Primary List:', data.data.yourPrimaryList);
-                console.log('📋 Your Secondary List:', data.data.yourSecondaryList);
-                console.log(`🎯 Community ID in Primary: ${data.data.communityIdInPrimary ? 'YES' : 'NO'}`);
-                console.log(`🔔 Community ID in Secondary: ${data.data.communityIdInSecondary ? 'YES' : 'NO'}`);
-                console.log(`❌ Failure reason: ${data.data.reason} (step: ${data.data.step})`);
+            case 'secondary_popup_trigger':
+                console.log('🔔 SECONDARY ADMIN MATCH DETECTED');
+                console.log('📊 Token data:', data.data.tokenData);
 
-                addNotification('warning', `❌ Community ${data.data.communityId} scraping failed: ${data.data.reason}`);
+                const tokenData = data.data.tokenData;
+
+                // Show popup modal immediately
+                setSecondaryPopup({
+                    show: true,
+                    tokenData: tokenData,
+                    globalSettings: data.data.globalSnipeSettings
+                });
+
+                addNotification('info', `🔔 Secondary match found: ${tokenData.tokenAddress.substring(0, 8)}...`);
+
+                // 🚀 START PAIR ADDRESS DETECTION IMMEDIATELY
+                console.log('🔍 Starting pair address detection for secondary match...');
+                checkPairAddressWithRetry(tokenData.tokenAddress);
+
                 break;
 
             case 'community_admin_match_found':
@@ -1156,72 +787,41 @@ function App() {
                 addNotification('info', `❌ Community ${data.data.communityId}: ${data.data.totalScrapedAdmins} admins scraped, no matches`);
                 break;
 
-            case 'twitter_logout_success':
-                console.log('✅ WebSocket: Twitter logout successful');
-                addNotification('success', '🔓 Twitter logout completed successfully');
-                setTwitterSessionStatus(prev => ({
-                    ...prev,
-                    loggedIn: false,
-                    sessionActive: false
-                }));
-                break;
-
-            case 'twitter_logout_partial':
-                console.log('⚠️ WebSocket: Twitter logout partial success');
-                addNotification('info', '🔓 Twitter logout attempted - session marked inactive');
-                setTwitterSessionStatus(prev => ({
-                    ...prev,
-                    loggedIn: false,
-                    sessionActive: false
-                }));
-                break;
-
-            case 'twitter_logout_error':
-                console.log('❌ WebSocket: Twitter logout error');
-                addNotification('warning', '⚠️ Twitter logout had issues - session marked inactive');
-                setTwitterSessionStatus(prev => ({
-                    ...prev,
-                    loggedIn: false,
-                    sessionActive: false
-                }));
-                break;
-
             case 'community_scraping_error':
                 console.log('💥 COMMUNITY SCRAPING ERROR:', data.data);
                 addNotification('error', `💥 Community ${data.data.communityId} error: ${data.data.error}`);
                 break;
 
-            case 'secondary_popup_trigger':
-                console.log('🔔 SECONDARY ADMIN MATCH DETECTED');
-                console.log('📊 Token data:', data.data.tokenData);
-
-                const tokenData = data.data.tokenData;
-
-                // Show popup modal immediately
-                setSecondaryPopup({
-                    show: true,
-                    tokenData: tokenData,
-                    globalSettings: data.data.globalSnipeSettings
-                });
-
-                addNotification('info', `🔔 Secondary match found: ${tokenData.tokenAddress.substring(0, 8)}...`);
-
-                // 🚀 START PAIR ADDRESS DETECTION IMMEDIATELY
-                console.log('🔍 Starting pair address detection for secondary match...');
-                checkPairAddressWithRetry(tokenData.tokenAddress);
-
-                break;
-
             case 'snipe_success':
                 addNotification('success', `🎯 Token sniped successfully: ${data.data.tokenAddress.substring(0, 8)}...`);
+
+                // ✅ AUTOMATICALLY OPEN TOKEN PAGE AFTER SUCCESSFUL SNIPE
                 if (data.data.openTokenPage && data.data.tokenPageUrl) {
-                    if (window.electronAPI && window.electronAPI.openExternalURL) {
-                        window.electronAPI.openExternalURL(data.data.tokenPageUrl);
-                        addNotification('info', '🌐 Token page opened in external browser');
-                    } else {
-                        window.open(data.data.tokenPageUrl, '_blank');
-                        addNotification('info', '🌐 Token page opened in new tab');
-                    }
+                    console.log('🌐 Auto-opening token page:', data.data.tokenPageUrl);
+
+                    // Use a small delay to ensure the snipe notification shows first
+                    setTimeout(() => {
+                        if (window.electronAPI && window.electronAPI.openExternalURL) {
+                            window.electronAPI.openExternalURL(data.data.tokenPageUrl);
+                            addNotification('info', '🌐 Token page opened automatically');
+                        } else {
+                            window.open(data.data.tokenPageUrl, '_blank');
+                            addNotification('info', '🌐 Token page opened automatically in new tab');
+                        }
+                    }, 500); // 500ms delay
+                }
+                break;
+
+            // 🔥 NEW CASE FOR AUTO-OPENING TOKEN PAGES
+            case 'auto_open_token_page':
+                console.log('🌐 Auto-opening token page:', data.data);
+
+                if (window.electronAPI && window.electronAPI.openExternalURL) {
+                    window.electronAPI.openExternalURL(data.data.tokenPageUrl);
+                    addNotification('info', `🌐 ${data.data.destination === 'axiom' ? 'Axiom' : 'Neo BullX'} opened automatically`);
+                } else {
+                    window.open(data.data.tokenPageUrl, '_blank');
+                    addNotification('info', `🌐 ${data.data.destination === 'axiom' ? 'Axiom' : 'Neo BullX'} opened automatically`);
                 }
                 break;
 
@@ -1234,6 +834,16 @@ function App() {
                 if (data.data.soundNotification && window.electronAPI) {
                     window.electronAPI.playSound(data.data.soundNotification);
                 }
+                break;
+
+            case 'secondary_popup_trigger':
+                // Show popup modal with token details
+                setSecondaryPopup({
+                    show: true,
+                    tokenData: data.data.tokenData,
+                    globalSettings: data.data.globalSnipeSettings
+                });
+                addNotification('info', `🔔 Secondary match found: ${data.data.tokenData.tokenAddress.substring(0, 8)}...`);
                 break;
 
             case 'token_detected':
@@ -1276,6 +886,27 @@ function App() {
                 console.log('Unknown message type:', data.type);
         }
     };
+
+    const cleanupAutoRetryTimer = (tokenAddress) => {
+        if (autoRetryTimers[tokenAddress]) {
+            clearTimeout(autoRetryTimers[tokenAddress]);
+            setAutoRetryTimers(prev => {
+                const newTimers = { ...prev };
+                delete newTimers[tokenAddress];
+                return newTimers;
+            });
+        }
+    };
+
+
+    useEffect(() => {
+        return () => {
+            // Cleanup all timers on unmount
+            Object.values(autoRetryTimers).forEach(timer => {
+                if (timer) clearTimeout(timer);
+            });
+        };
+    }, [autoRetryTimers]);
 
     const clearGlobalSettingsMessage = (delay = 3000) => {
         setTimeout(() => {
@@ -1695,28 +1326,6 @@ function App() {
         }
     };
 
-    // 6. DEBUG HELPER for testing auto-open
-    window.debugAutoOpenSecondary = (tokenAddress) => {
-        console.log('🐛 MANUAL DEBUG TEST FOR AUTO-OPEN SECONDARY');
-
-        const testToken = {
-            tokenAddress: tokenAddress || 'TEST123456789',
-            name: 'Test Auto-Open Token',
-            symbol: 'AUTOTEST',
-            pool: 'pump',
-            platform: 'pumpfun',
-            marketCapSol: 15.7,
-            matchType: 'secondary_admin',
-            matchedEntity: 'test_admin'
-        };
-
-        console.log('🧪 Test token data for auto-open:', testToken);
-        console.log('⚙️ Current settings:', settings);
-
-        // Trigger the auto-open function
-        autoOpenTokenPageForSecondary(testToken);
-    };
-
     const removeListItem = async (listType, id) => {
         try {
             await apiCall(`/lists/${listType}/${id}`, { method: 'DELETE' });
@@ -1724,17 +1333,6 @@ function App() {
             addNotification('success', '🗑️ Item removed from list');
         } catch (error) {
             addNotification('error', '❌ Failed to remove item');
-        }
-    };
-
-    const cleanupAutoRetryTimer = (tokenAddress) => {
-        if (autoRetryTimers[tokenAddress]) {
-            clearTimeout(autoRetryTimers[tokenAddress]);
-            setAutoRetryTimers(prev => {
-                const newTimers = { ...prev };
-                delete newTimers[tokenAddress];
-                return newTimers;
-            });
         }
     };
 
@@ -1748,15 +1346,6 @@ function App() {
             soundNotification: 'default.wav'
         });
     };
-
-    useEffect(() => {
-        return () => {
-            // Cleanup all timers on unmount
-            Object.values(autoRetryTimers).forEach(timer => {
-                if (timer) clearTimeout(timer);
-            });
-        };
-    }, [autoRetryTimers]);
 
     // Effects
     useEffect(() => {
@@ -1808,38 +1397,54 @@ function App() {
             // Close popup
             setSecondaryPopup({ show: false, tokenData: null });
 
-            // Open token page with pair address lookup
-            if (settings.tokenPageDestination === 'axiom') {
-                try {
-                    const response = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${tokenAddress}`);
-                    const data = await response.json();
+            // ✅ AUTOMATICALLY OPEN TOKEN PAGE AFTER SECONDARY SNIPE
+            console.log('🌐 Auto-opening token page after secondary snipe...');
 
-                    if (data.pairs && data.pairs.length > 0) {
-                        const bestPair = data.pairs.find(pair =>
-                            pair.dexId === 'raydium' ||
-                            pair.dexId.toLowerCase().includes('raydium')
-                        ) || data.pairs[0];
+            // Use a small delay
+            setTimeout(async () => {
+                if (settings.tokenPageDestination === 'axiom') {
+                    try {
+                        const response = await apiCall(`/pair-address/${tokenAddress}`);
 
-                        const axiomUrl = `https://axiom.trade/meme/${bestPair.pairAddress}`;
+                        if (response.success && response.pairData && response.pairData.pairAddress) {
+                            const axiomUrl = `https://axiom.trade/meme/${response.pairData.pairAddress}`;
 
-                        if (window.electronAPI && window.electronAPI.openExternalURL) {
-                            window.electronAPI.openExternalURL(axiomUrl);
+                            if (window.electronAPI && window.electronAPI.openExternalURL) {
+                                window.electronAPI.openExternalURL(axiomUrl);
+                            } else {
+                                window.open(axiomUrl, '_blank');
+                            }
+
+                            addNotification('success', `🌐 Axiom opened automatically with pair: ${response.pairData.pairAddress.substring(0, 8)}...`);
                         } else {
-                            window.open(axiomUrl, '_blank');
+                            const fallbackUrl = `https://axiom.trade/meme/${tokenAddress}`;
+                            if (window.electronAPI && window.electronAPI.openExternalURL) {
+                                window.electronAPI.openExternalURL(fallbackUrl);
+                            } else {
+                                window.open(fallbackUrl, '_blank');
+                            }
+                            addNotification('warning', '🔍 No pair found yet, opening Axiom with token address');
                         }
-
-                        addNotification('success', `🌐 Opening Axiom with pair: ${bestPair.pairAddress.substring(0, 8)}...`);
+                    } catch (error) {
+                        console.error('Error opening Axiom with pair:', error);
+                        addNotification('error', '❌ Error opening token page');
                     }
-                } catch (error) {
-                    console.error('Error opening Axiom with pair:', error);
-                    addNotification('error', '❌ Error opening token page');
+                } else {
+                    // Neo BullX
+                    const neoBullxUrl = `https://neo.bullx.io/terminal?chainId=1399811149&address=${tokenAddress}`;
+                    if (window.electronAPI && window.electronAPI.openExternalURL) {
+                        window.electronAPI.openExternalURL(neoBullxUrl);
+                    } else {
+                        window.open(neoBullxUrl, '_blank');
+                    }
+                    addNotification('success', `🌐 Neo BullX opened automatically`);
                 }
-            }
+            }, 1000); // 1 second delay for secondary snipes
+
         } catch (error) {
             addNotification('error', `❌ Failed to snipe token: ${error.message}`);
         }
     };
-
 
     const uploadSoundFile = async (file) => {
         if (!file) return;
@@ -2690,125 +2295,35 @@ function App() {
         </div>
     );
 
-    const PairDetectionCountdown = ({ tokenAddress, onRetry }) => {
-        const [countdown, setCountdown] = useState(3);
-        const [isActive, setIsActive] = useState(true);
+    const performTwitterLogout = async () => {
+        try {
+            setTwitterSessionStatus(prev => ({ ...prev, checking: true }));
 
-        useEffect(() => {
-            if (!isActive) return;
+            const response = await apiCall('/twitter-logout', { method: 'POST' });
 
-            const timer = setInterval(() => {
-                setCountdown(prev => {
-                    if (prev <= 1) {
-                        setIsActive(false);
-                        onRetry();
-                        return 0;
-                    }
-                    return prev - 1;
-                });
-            }, 1000);
+            // Update status based on actual logout result
+            setTwitterSessionStatus(prev => ({
+                ...prev,
+                loggedIn: false, // Always set to false after logout attempt
+                checking: false,
+                lastChecked: new Date().toISOString()
+            }));
 
-            return () => clearInterval(timer);
-        }, [isActive, onRetry]);
+            if (response.loggedOut) {
+                addNotification('success', '✅ Successfully logged out from Twitter');
+            } else {
+                addNotification('warning', '⚠️ Please complete logout manually in browser window');
+            }
 
-        if (!isActive) {
-            return (
-                <div className="flex items-center space-x-2 text-blue-400">
-                    <div className="animate-spin w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full"></div>
-                    <span className="text-sm">🔄 Retrying pair detection...</span>
-                </div>
-            );
+            // Auto-check status after 3 seconds to confirm
+            setTimeout(() => {
+                checkTwitterSession();
+            }, 3000);
+
+        } catch (error) {
+            setTwitterSessionStatus(prev => ({ ...prev, checking: false, error: error.message }));
+            addNotification('error', '❌ Failed to logout from Twitter');
         }
-
-        return (
-            <div className="flex items-center space-x-2 text-blue-400">
-                <div className="w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center">
-                    <span className="text-white text-xs">{countdown}</span>
-                </div>
-                <span className="text-sm">⏰ Auto-retry in {countdown} seconds...</span>
-            </div>
-        );
-    };
-
-    const renderPopupBlockerModal = () => {
-        if (!popupBlockerModal.show) return null;
-
-        return (
-            <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
-                <div className="bg-gray-800 rounded-lg p-6 w-full max-w-2xl max-h-screen overflow-y-auto border-2 border-red-500">
-                    {/* Header */}
-                    <div className="flex items-center justify-between mb-6">
-                        <div className="flex items-center space-x-3">
-                            <div className="w-12 h-12 bg-red-600 rounded-full flex items-center justify-center">
-                                <span className="text-2xl">🚫</span>
-                            </div>
-                            <div>
-                                <h2 className="text-2xl font-bold text-white">Popup Blocked by Chrome</h2>
-                                <p className="text-red-400">Token page couldn't open automatically</p>
-                            </div>
-                        </div>
-                        <button
-                            onClick={() => setPopupBlockerModal({ show: false, tokenUrl: '', tokenAddress: '', reason: '' })}
-                            className="text-gray-400 hover:text-white text-2xl"
-                        >
-                            ✖️
-                        </button>
-                    </div>
-
-                    {/* Manual Link */}
-                    <div className="bg-blue-900/20 border border-blue-500/30 rounded-lg p-4 mb-6">
-                        <h3 className="text-lg font-semibold text-blue-400 mb-3">🔗 Manual Link (Click to Open)</h3>
-                        <div className="flex items-center space-x-2">
-                            <input
-                                type="text"
-                                value={popupBlockerModal.tokenUrl}
-                                readOnly
-                                className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white text-sm"
-                            />
-                            <button
-                                onClick={() => {
-                                    window.open(popupBlockerModal.tokenUrl, '_blank');
-                                    addNotification('info', '🔗 Manual link clicked - check for new tab');
-                                }}
-                                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors"
-                            >
-                                🌐 Open
-                            </button>
-                            <button
-                                onClick={() => {
-                                    copyToClipboard(popupBlockerModal.tokenUrl, 'Token page URL');
-                                }}
-                                className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded transition-colors"
-                            >
-                                📋 Copy
-                            </button>
-                        </div>
-                    </div>
-
-                    {/* Action Buttons */}
-                    <div className="flex flex-col space-y-3 md:flex-row md:space-y-0 md:space-x-4">
-                        <button
-                            onClick={() => {
-                                window.open(popupBlockerModal.tokenUrl, '_blank');
-                                setPopupBlockerModal({ show: false, tokenUrl: '', tokenAddress: '', reason: '' });
-                            }}
-                            className="flex-1 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-bold"
-                        >
-                            🌐 Try Opening Again
-                        </button>
-                        <button
-                            onClick={() => {
-                                copyToClipboard(popupBlockerModal.tokenUrl, 'Token page URL');
-                                setPopupBlockerModal({ show: false, tokenUrl: '', tokenAddress: '', reason: '' });
-                            }}
-                            className="flex-1 px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors font-bold"
-                        >
-                            📋 Copy Link & Close
-                        </button>
-                    </div>
-                </div>
-            </div>
-        );
     };
 
     const renderSecondaryPopup = () => {
@@ -3057,6 +2572,49 @@ function App() {
         );
     };
 
+    // 3. COUNTDOWN TIMER COMPONENT
+    const PairDetectionCountdown = ({ tokenAddress, onRetry }) => {
+        const [countdown, setCountdown] = useState(3);
+        const [isActive, setIsActive] = useState(true);
+
+        useEffect(() => {
+            if (!isActive) return;
+
+            const timer = setInterval(() => {
+                setCountdown(prev => {
+                    if (prev <= 1) {
+                        setIsActive(false);
+                        onRetry();
+                        return 0;
+                    }
+                    return prev - 1;
+                });
+            }, 1000);
+
+            return () => clearInterval(timer);
+        }, [isActive, onRetry]);
+
+        if (!isActive) {
+            return (
+                <div className="flex items-center space-x-2 text-blue-400">
+                    <div className="animate-spin w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full"></div>
+                    <span className="text-sm">🔄 Retrying pair detection...</span>
+                </div>
+            );
+        }
+
+        return (
+            <div className="flex items-center space-x-2 text-blue-400">
+                <div className="w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center">
+                    <span className="text-white text-xs">{countdown}</span>
+                </div>
+                <span className="text-sm">⏰ Auto-retry in {countdown} seconds...</span>
+            </div>
+        );
+    };
+
+
+    // 4. ENHANCED PAIR ADDRESS CHECKING WITH RETRY
     const checkPairAddressWithRetry = async (tokenAddress, maxRetries = 3, currentRetry = 0) => {
         console.log(`🔍 Checking pair address for ${tokenAddress} (attempt ${currentRetry + 1}/${maxRetries})`);
 
@@ -3148,6 +2706,147 @@ function App() {
     };
 
 
+    const reopenTwitterBrowser = async () => {
+        try {
+            setTwitterSessionStatus(prev => ({ ...prev, checking: true }));
+
+            const response = await apiCall('/twitter-reopen-browser', { method: 'POST' });
+
+            setTwitterSessionStatus({
+                initialized: true,
+                loggedIn: false,
+                url: 'https://twitter.com/login',
+                error: null,
+                checking: false
+            });
+
+            addNotification('success', '🔄 Browser reopened - login page ready');
+        } catch (error) {
+            setTwitterSessionStatus(prev => ({ ...prev, checking: false, error: error.message }));
+            addNotification('error', '❌ Failed to reopen browser');
+        }
+    };
+
+    // Replace the attemptPopupWithDetection function with this simplified version
+const attemptPopupWithDetection = async (url, tokenAddress, openType) => {
+    console.log(`🚀 ATTEMPTING POPUP OPENING (${openType.toUpperCase()})`);
+    
+    try {
+        // TRY ELECTRON FIRST
+        if (window.electronAPI && window.electronAPI.openExternalURL) {
+            console.log('🖥️ USING ELECTRON API METHOD');
+            window.electronAPI.openExternalURL(url);
+            return {
+                success: true,
+                method: 'electron',
+                reason: 'Opened via Electron API'
+            };
+        }
+
+        // TRY BROWSER - SIMPLIFIED DETECTION
+        console.log('🌐 USING BROWSER WINDOW.OPEN() METHOD');
+        const newWindow = window.open(url, '_blank');
+
+        // SIMPLE CHECK - if window.open returns null, it's blocked
+        if (!newWindow) {
+            console.error('❌ POPUP BLOCKED - window.open returned null');
+            return {
+                success: false,
+                method: 'browser_blocked',
+                reason: 'Popup blocked by browser'
+            };
+        }
+
+        // SUCCESS - popup opened
+        console.log('✅ POPUP OPENED SUCCESSFULLY');
+        return {
+            success: true,
+            method: 'browser_success',
+            reason: 'Opened successfully'
+        };
+
+    } catch (openError) {
+        console.error('❌ EXCEPTION DURING POPUP ATTEMPT:', openError);
+        return {
+            success: false,
+            method: 'exception',
+            reason: `Exception occurred: ${openError.message}`
+        };
+    }
+};
+
+    const handlePopupBlockedScenario = (url, tokenAddress, reason, openType) => {
+        console.error('🚫 POPUP BLOCKED - HANDLING SCENARIO');
+        console.error('🔗 Blocked URL:', url);
+        console.error('💬 Block reason:', reason);
+        console.error('🎯 Open type:', openType);
+
+        // DETERMINE USER-FRIENDLY MESSAGE BASED ON REASON
+        let userMessage = '';
+        let technicalReason = '';
+
+        if (reason.includes('immediately')) {
+            userMessage = 'Chrome blocked the popup immediately';
+            technicalReason = 'Browser popup blocker is active';
+        } else if (reason.includes('closed immediately')) {
+            userMessage = 'Popup was closed right after opening';
+            technicalReason = 'Browser detected and closed popup automatically';
+        } else if (reason.includes('Exception')) {
+            userMessage = 'Browser security prevented opening';
+            technicalReason = reason;
+        } else {
+            userMessage = 'Browser blocked the popup';
+            technicalReason = reason;
+        }
+
+        // SHOW APPROPRIATE NOTIFICATIONS
+        if (openType === 'auto-open') {
+            addNotification('warning', '🚫 Auto-open blocked by Chrome - Click "View Token Page" in popup');
+            addNotification('info', '💡 Or allow popups for this site to enable auto-opening');
+        } else {
+            addNotification('error', '🚫 Chrome blocked the popup - Please allow popups for this site');
+        }
+
+        // SHOW POPUP BLOCKER GUIDANCE MODAL
+        setPopupBlockerModal({
+            show: true,
+            tokenUrl: url,
+            tokenAddress: tokenAddress,
+            reason: userMessage,
+            technicalReason: technicalReason,
+            openType: openType
+        });
+
+        console.log('📱 Popup blocker guidance modal triggered');
+    };
+
+    // 5. AUTO-OPEN WITH PAIR ADDRESS
+    const autoOpenTokenPageWithPairAddress = async (tokenAddress, url) => {
+        console.log(`🚀 AUTO-OPENING TOKEN PAGE WITH PAIR ADDRESS`);
+        console.log(`🔗 URL: ${url}`);
+        console.log(`🎯 Token: ${tokenAddress}`);
+
+        try {
+            const popupResult = await attemptPopupWithDetection(url, tokenAddress, 'auto-open-with-pair');
+
+            if (popupResult.success) {
+                console.log('✅ AUTO-OPEN WITH PAIR SUCCEEDED');
+                addNotification('success', '🚀 Token page auto-opened with pair address!');
+
+                // Close the popup since we successfully opened the page
+                setSecondaryPopup({ show: false, tokenData: null });
+
+            } else {
+                console.error('❌ AUTO-OPEN WITH PAIR FAILED:', popupResult.reason);
+                addNotification('warning', '🚫 Auto-open blocked - use "View Token Page" button');
+                handlePopupBlockedScenario(url, tokenAddress, popupResult.reason, 'auto-open-with-pair');
+            }
+        } catch (error) {
+            console.error('❌ Error in auto-open with pair:', error);
+            addNotification('error', `❌ Auto-open error: ${error.message}`);
+        }
+    };
+
     // Render components
     const renderStatusIndicator = () => (
         <div className="flex items-center space-x-2">
@@ -3160,6 +2859,87 @@ function App() {
             </span>
         </div>
     );
+
+    const renderPopupBlockerModal = () => {
+        if (!popupBlockerModal.show) return null;
+
+        return (
+            <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+                <div className="bg-gray-800 rounded-lg p-6 w-full max-w-2xl max-h-screen overflow-y-auto border-2 border-red-500">
+                    {/* Header */}
+                    <div className="flex items-center justify-between mb-6">
+                        <div className="flex items-center space-x-3">
+                            <div className="w-12 h-12 bg-red-600 rounded-full flex items-center justify-center">
+                                <span className="text-2xl">🚫</span>
+                            </div>
+                            <div>
+                                <h2 className="text-2xl font-bold text-white">Popup Blocked by Chrome</h2>
+                                <p className="text-red-400">Token page couldn't open automatically</p>
+                            </div>
+                        </div>
+                        <button
+                            onClick={() => setPopupBlockerModal({ show: false, tokenUrl: '', tokenAddress: '', reason: '' })}
+                            className="text-gray-400 hover:text-white text-2xl"
+                        >
+                            ✖️
+                        </button>
+                    </div>
+
+                    {/* Manual Link */}
+                    <div className="bg-blue-900/20 border border-blue-500/30 rounded-lg p-4 mb-6">
+                        <h3 className="text-lg font-semibold text-blue-400 mb-3">🔗 Manual Link (Click to Open)</h3>
+                        <div className="flex items-center space-x-2">
+                            <input
+                                type="text"
+                                value={popupBlockerModal.tokenUrl}
+                                readOnly
+                                className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white text-sm"
+                            />
+                            <button
+                                onClick={() => {
+                                    window.open(popupBlockerModal.tokenUrl, '_blank');
+                                    addNotification('info', '🔗 Manual link clicked - check for new tab');
+                                }}
+                                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors"
+                            >
+                                🌐 Open
+                            </button>
+                            <button
+                                onClick={() => {
+                                    copyToClipboard(popupBlockerModal.tokenUrl, 'Token page URL');
+                                }}
+                                className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded transition-colors"
+                            >
+                                📋 Copy
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Action Buttons */}
+                    <div className="flex flex-col space-y-3 md:flex-row md:space-y-0 md:space-x-4">
+                        <button
+                            onClick={() => {
+                                window.open(popupBlockerModal.tokenUrl, '_blank');
+                                setPopupBlockerModal({ show: false, tokenUrl: '', tokenAddress: '', reason: '' });
+                            }}
+                            className="flex-1 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-bold"
+                        >
+                            🌐 Try Opening Again
+                        </button>
+                        <button
+                            onClick={() => {
+                                copyToClipboard(popupBlockerModal.tokenUrl, 'Token page URL');
+                                setPopupBlockerModal({ show: false, tokenUrl: '', tokenAddress: '', reason: '' });
+                            }}
+                            className="flex-1 px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors font-bold"
+                        >
+                            📋 Copy Link & Close
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
+    };
 
     const renderDashboard = () => (
         <div className="space-y-4 md:space-y-6">
@@ -3630,47 +3410,6 @@ function App() {
 
     // App.js - Part 7: Settings Render Function
 
-    const logoutFromTwitter = async () => {
-        try {
-            console.log('🔓 Frontend: Requesting Twitter logout...');
-
-            // Show loading notification
-            addNotification('info', '🔓 Logging out from Twitter...');
-
-            const response = await apiCall('/twitter-logout', { method: 'POST' });
-
-            if (response.success) {
-                addNotification('success', '✅ Logged out from Twitter successfully');
-            } else {
-                addNotification('warning', '⚠️ Logout completed with issues');
-            }
-
-            // Update session status regardless of response
-            setTwitterSessionStatus(prev => ({
-                ...prev,
-                loggedIn: false,
-                sessionActive: false
-            }));
-
-            // Auto-check status after 3 seconds
-            setTimeout(() => {
-                console.log('🔍 Auto-checking Twitter session status after logout...');
-                checkTwitterSession();
-            }, 3000);
-
-        } catch (error) {
-            console.error('❌ Frontend: Twitter logout error:', error);
-            addNotification('error', '❌ Failed to logout from Twitter');
-
-            // Still update status since logout was attempted
-            setTwitterSessionStatus(prev => ({
-                ...prev,
-                loggedIn: false,
-                sessionActive: false
-            }));
-        }
-    };
-
     const renderSettings = () => (
         <div className="space-y-4 md:space-y-6">
             {/* Bot Settings */}
@@ -3859,8 +3598,8 @@ function App() {
             <div className="bg-gray-800 rounded-lg p-4 md:p-6">
                 <div className="flex flex-col space-y-4 md:flex-row md:items-center md:justify-between md:space-y-0 mb-4">
                     <div>
-                        <h2 className="text-lg md:text-xl font-semibold text-white">🤖 Twitter Session Management</h2>
-                        <p className="text-sm text-gray-400">Manage Twitter login for community admin scraping</p>
+                        <h2 className="text-lg md:text-xl font-semibold text-white">🐦 Twitter Session Management</h2>
+                        <p className="text-sm text-gray-400">Manage Twitter login session for community admin scraping</p>
                     </div>
                     <div className="flex items-center space-x-2">
                         <div className={`w-3 h-3 rounded-full ${twitterSessionStatus.loggedIn ? 'bg-green-500' :
@@ -3893,27 +3632,11 @@ function App() {
                                 </span>
                             </div>
                         </div>
-                        <div>
-                            <span className="text-gray-400 text-sm">Browser Mode:</span>
-                            <div className="flex items-center space-x-2">
-                                <span className="font-medium text-blue-400">
-                                    {twitterSessionStatus.loggedIn ? '🤖 Auto-Headless' : '👁️ Visible (for Login)'}
-                                </span>
-                            </div>
-                        </div>
-                        <div>
-                            <span className="text-gray-400 text-sm">Session Active:</span>
-                            <div className="flex items-center space-x-2">
-                                <span className={`font-medium ${twitterSessionStatus.loggedIn ? 'text-green-400' : 'text-gray-400'}`}>
-                                    {twitterSessionStatus.loggedIn ? '✅ Ready to Scrape' : '⏸️ Inactive'}
-                                </span>
-                            </div>
-                        </div>
                         {twitterSessionStatus.url && (
                             <div className="md:col-span-2">
                                 <span className="text-gray-400 text-sm">Current URL:</span>
                                 <div className="mt-1">
-                                    <code className="text-xs bg-gray-600 px-2 py-1 rounded text-white break-all">
+                                    <code className="text-xs bg-gray-600 px-2 py-1 rounded text-white">
                                         {twitterSessionStatus.url}
                                     </code>
                                 </div>
@@ -3932,7 +3655,6 @@ function App() {
                     </div>
                 </div>
 
-                {/* Action Buttons - WITH LOGOUT BUTTON */}
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                     <button
                         onClick={checkTwitterSession}
@@ -3947,78 +3669,61 @@ function App() {
                         disabled={twitterSessionStatus.loggedIn}
                         className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white rounded-lg transition-colors"
                     >
-                        🌐 Open Login
+                        {twitterSessionStatus.loggedIn ? '✅ Logged In' : '🌐 Login'}
                     </button>
 
                     <button
-                        onClick={logoutFromTwitter}
-                        disabled={!twitterSessionStatus.loggedIn}
+                        onClick={performTwitterLogout}
+                        disabled={!twitterSessionStatus.loggedIn || twitterSessionStatus.checking}
                         className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-gray-600 text-white rounded-lg transition-colors"
                     >
-                        🔓 Logout
+                        {twitterSessionStatus.checking ? '🔄 Logging out...' : '🚪 Logout'}
                     </button>
 
                     <button
-                        onClick={() => {
-                            if (twitterSessionStatus.url) {
-                                if (window.electronAPI && window.electronAPI.openExternalURL) {
-                                    window.electronAPI.openExternalURL(twitterSessionStatus.url);
-                                } else {
-                                    window.open(twitterSessionStatus.url, '_blank');
-                                }
-                            } else {
-                                addNotification('info', 'No active browser session to open');
-                            }
-                        }}
-                        disabled={!twitterSessionStatus.url}
+                        onClick={reopenTwitterBrowser}
+                        disabled={twitterSessionStatus.checking}
                         className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white rounded-lg transition-colors"
                     >
-                        🔗 Open Browser
+                        {twitterSessionStatus.checking ? '🔄 Opening...' : '🔄 Reopen Browser'}
                     </button>
                 </div>
             </div>
 
             {/* Instructions */}
             <div className="bg-gray-800 rounded-lg p-4 md:p-6">
-                <h3 className="text-lg font-semibold text-white mb-4">📋 How Auto-Headless Mode Works</h3>
+                <h3 className="text-lg font-semibold text-white mb-4">📋 How to Setup Twitter Session</h3>
                 <div className="space-y-4">
-                    <div className="bg-green-900/20 border border-green-500/30 rounded-lg p-4">
-                        <h4 className="text-green-400 font-medium mb-2">✅ First Time Setup</h4>
-                        <div className="text-sm text-green-300 space-y-1">
-                            <p><strong>1.</strong> Click "Open Login" → Visible browser window opens</p>
-                            <p><strong>2.</strong> Login to Twitter manually → Enter credentials, complete 2FA</p>
-                            <p><strong>3.</strong> Bot detects login → "LOGIN DETECTED! Switching to headless mode..."</p>
-                            <p><strong>4.</strong> Browser disappears → All future scraping happens invisibly! 🎉</p>
-                        </div>
+                    <div className="bg-gray-700 rounded-lg p-4">
+                        <h4 className="text-white font-medium mb-2">Step 1: Open Login Page</h4>
+                        <p className="text-sm text-gray-300 mb-2">
+                            Click "Open Login Page" to launch a browser window with Twitter login.
+                        </p>
+                    </div>
+
+                    <div className="bg-gray-700 rounded-lg p-4">
+                        <h4 className="text-white font-medium mb-2">Step 2: Login Manually</h4>
+                        <p className="text-sm text-gray-300 mb-2">
+                            In the opened browser window, login to Twitter using your credentials.
+                            The session will be saved automatically.
+                        </p>
+                    </div>
+
+                    <div className="bg-gray-700 rounded-lg p-4">
+                        <h4 className="text-white font-medium mb-2">Step 3: Verify Session</h4>
+                        <p className="text-sm text-gray-300 mb-2">
+                            Click "Check Status" to verify your login was successful.
+                            The status should show "Logged In: ✅ Yes".
+                        </p>
                     </div>
 
                     <div className="bg-blue-900/20 border border-blue-500/30 rounded-lg p-4">
-                        <h4 className="text-blue-400 font-medium mb-2">🔄 Subsequent Startups</h4>
-                        <div className="text-sm text-blue-300 space-y-1">
-                            <p><strong>•</strong> Bot finds existing session → Starts directly in headless mode</p>
-                            <p><strong>•</strong> No visible browser needed → Community scraping works invisibly</p>
-                            <p><strong>•</strong> Session persists for weeks/months → Rarely need to re-login</p>
-                        </div>
-                    </div>
-
-                    <div className="bg-yellow-900/20 border border-yellow-500/30 rounded-lg p-4">
-                        <h4 className="text-yellow-400 font-medium mb-2">🔓 Simple Logout</h4>
-                        <div className="text-sm text-yellow-300 space-y-1">
-                            <p><strong>•</strong> Logs out from Twitter website programmatically</p>
-                            <p><strong>•</strong> Keeps session files on disk (not deleted)</p>
-                            <p><strong>•</strong> You may need to login manually again next time</p>
-                            <p><strong>•</strong> Quick and simple logout process</p>
-                        </div>
-                    </div>
-
-                    <div className="bg-purple-900/20 border border-purple-500/30 rounded-lg p-4">
-                        <h4 className="text-purple-400 font-medium mb-2">💡 Tips</h4>
-                        <ul className="text-sm text-purple-300 space-y-1">
-                            <li>• Only need to login once (session persists for weeks)</li>
-                            <li>• All community scraping happens invisibly after setup</li>
-                            <li>• Check status anytime to verify session is active</li>
-                            <li>• If session expires, just repeat login process</li>
-                            <li>• Use logout button when you want to switch accounts</li>
+                        <h4 className="text-blue-400 font-medium mb-2">💡 Tips</h4>
+                        <ul className="text-sm text-blue-300 space-y-1">
+                            <li>• The browser window must stay open for community scraping to work</li>
+                            <li>• Session persists across server restarts</li>
+                            <li>• If session expires, just login again manually</li>
+                            <li>• Community scraping will automatically use this session</li>
                         </ul>
                     </div>
                 </div>
@@ -4030,17 +3735,6 @@ function App() {
                 <div className="text-center py-8 text-gray-400">
                     <p>Twitter scraping activity will appear here when communities are detected.</p>
                     <p className="text-sm mt-2">Check the browser console for detailed scraping logs.</p>
-                </div>
-            </div>
-
-            {/* Debug Information */}
-            <div className="bg-gray-800 rounded-lg p-4 md:p-6">
-                <h3 className="text-lg font-semibold text-white mb-4">🐛 Debug Information</h3>
-                <div className="bg-gray-700 rounded p-3">
-                    <h4 className="text-white font-medium mb-2">Current Twitter Session State:</h4>
-                    <pre className="text-xs text-gray-300 whitespace-pre-wrap">
-                        {JSON.stringify(twitterSessionStatus, null, 2)}
-                    </pre>
                 </div>
             </div>
         </div>
@@ -4434,7 +4128,7 @@ function App() {
                         >
                             ⚙️ Settings
                         </button>
-                        {/*<button
+                        <button
                             onClick={() => setActiveTab('demo')}
                             className={`py-3 md:py-4 px-2 border-b-2 transition-colors whitespace-nowrap text-sm md:text-base ${activeTab === 'demo'
                                 ? 'border-blue-500 text-blue-400'
@@ -4442,7 +4136,7 @@ function App() {
                                 }`}
                         >
                             🧪 Demo
-                        </button>*/}
+                        </button>
                         <button
                             onClick={() => setActiveTab('twitter')}
                             className={`py-3 md:py-4 px-2 border-b-2 transition-colors whitespace-nowrap text-sm md:text-base ${activeTab === 'twitter'
