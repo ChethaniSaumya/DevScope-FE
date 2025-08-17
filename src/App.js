@@ -1156,6 +1156,36 @@ function App() {
                 addNotification('info', `❌ Community ${data.data.communityId}: ${data.data.totalScrapedAdmins} admins scraped, no matches`);
                 break;
 
+            case 'twitter_logout_success':
+                console.log('✅ WebSocket: Twitter logout successful');
+                addNotification('success', '🔓 Twitter logout completed successfully');
+                setTwitterSessionStatus(prev => ({
+                    ...prev,
+                    loggedIn: false,
+                    sessionActive: false
+                }));
+                break;
+
+            case 'twitter_logout_partial':
+                console.log('⚠️ WebSocket: Twitter logout partial success');
+                addNotification('info', '🔓 Twitter logout attempted - session marked inactive');
+                setTwitterSessionStatus(prev => ({
+                    ...prev,
+                    loggedIn: false,
+                    sessionActive: false
+                }));
+                break;
+
+            case 'twitter_logout_error':
+                console.log('❌ WebSocket: Twitter logout error');
+                addNotification('warning', '⚠️ Twitter logout had issues - session marked inactive');
+                setTwitterSessionStatus(prev => ({
+                    ...prev,
+                    loggedIn: false,
+                    sessionActive: false
+                }));
+                break;
+
             case 'community_scraping_error':
                 console.log('💥 COMMUNITY SCRAPING ERROR:', data.data);
                 addNotification('error', `💥 Community ${data.data.communityId} error: ${data.data.error}`);
@@ -3600,6 +3630,47 @@ function App() {
 
     // App.js - Part 7: Settings Render Function
 
+    const logoutFromTwitter = async () => {
+        try {
+            console.log('🔓 Frontend: Requesting Twitter logout...');
+
+            // Show loading notification
+            addNotification('info', '🔓 Logging out from Twitter...');
+
+            const response = await apiCall('/twitter-logout', { method: 'POST' });
+
+            if (response.success) {
+                addNotification('success', '✅ Logged out from Twitter successfully');
+            } else {
+                addNotification('warning', '⚠️ Logout completed with issues');
+            }
+
+            // Update session status regardless of response
+            setTwitterSessionStatus(prev => ({
+                ...prev,
+                loggedIn: false,
+                sessionActive: false
+            }));
+
+            // Auto-check status after 3 seconds
+            setTimeout(() => {
+                console.log('🔍 Auto-checking Twitter session status after logout...');
+                checkTwitterSession();
+            }, 3000);
+
+        } catch (error) {
+            console.error('❌ Frontend: Twitter logout error:', error);
+            addNotification('error', '❌ Failed to logout from Twitter');
+
+            // Still update status since logout was attempted
+            setTwitterSessionStatus(prev => ({
+                ...prev,
+                loggedIn: false,
+                sessionActive: false
+            }));
+        }
+    };
+
     const renderSettings = () => (
         <div className="space-y-4 md:space-y-6">
             {/* Bot Settings */}
@@ -3788,8 +3859,8 @@ function App() {
             <div className="bg-gray-800 rounded-lg p-4 md:p-6">
                 <div className="flex flex-col space-y-4 md:flex-row md:items-center md:justify-between md:space-y-0 mb-4">
                     <div>
-                        <h2 className="text-lg md:text-xl font-semibold text-white">🐦 Twitter Session Management</h2>
-                        <p className="text-sm text-gray-400">Manage Twitter login session for community admin scraping</p>
+                        <h2 className="text-lg md:text-xl font-semibold text-white">🤖 Twitter Session Management</h2>
+                        <p className="text-sm text-gray-400">Manage Twitter login for community admin scraping</p>
                     </div>
                     <div className="flex items-center space-x-2">
                         <div className={`w-3 h-3 rounded-full ${twitterSessionStatus.loggedIn ? 'bg-green-500' :
@@ -3822,11 +3893,27 @@ function App() {
                                 </span>
                             </div>
                         </div>
+                        <div>
+                            <span className="text-gray-400 text-sm">Browser Mode:</span>
+                            <div className="flex items-center space-x-2">
+                                <span className="font-medium text-blue-400">
+                                    {twitterSessionStatus.loggedIn ? '🤖 Auto-Headless' : '👁️ Visible (for Login)'}
+                                </span>
+                            </div>
+                        </div>
+                        <div>
+                            <span className="text-gray-400 text-sm">Session Active:</span>
+                            <div className="flex items-center space-x-2">
+                                <span className={`font-medium ${twitterSessionStatus.loggedIn ? 'text-green-400' : 'text-gray-400'}`}>
+                                    {twitterSessionStatus.loggedIn ? '✅ Ready to Scrape' : '⏸️ Inactive'}
+                                </span>
+                            </div>
+                        </div>
                         {twitterSessionStatus.url && (
                             <div className="md:col-span-2">
                                 <span className="text-gray-400 text-sm">Current URL:</span>
                                 <div className="mt-1">
-                                    <code className="text-xs bg-gray-600 px-2 py-1 rounded text-white">
+                                    <code className="text-xs bg-gray-600 px-2 py-1 rounded text-white break-all">
                                         {twitterSessionStatus.url}
                                     </code>
                                 </div>
@@ -3845,8 +3932,8 @@ function App() {
                     </div>
                 </div>
 
-                {/* Action Buttons */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                {/* Action Buttons - WITH LOGOUT BUTTON */}
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                     <button
                         onClick={checkTwitterSession}
                         disabled={twitterSessionStatus.checking}
@@ -3857,9 +3944,18 @@ function App() {
 
                     <button
                         onClick={openTwitterLogin}
-                        className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors"
+                        disabled={twitterSessionStatus.loggedIn}
+                        className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white rounded-lg transition-colors"
                     >
-                        🌐 Open Login Page
+                        🌐 Open Login
+                    </button>
+
+                    <button
+                        onClick={logoutFromTwitter}
+                        disabled={!twitterSessionStatus.loggedIn}
+                        className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-gray-600 text-white rounded-lg transition-colors"
+                    >
+                        🔓 Logout
                     </button>
 
                     <button
@@ -3884,38 +3980,45 @@ function App() {
 
             {/* Instructions */}
             <div className="bg-gray-800 rounded-lg p-4 md:p-6">
-                <h3 className="text-lg font-semibold text-white mb-4">📋 How to Setup Twitter Session</h3>
+                <h3 className="text-lg font-semibold text-white mb-4">📋 How Auto-Headless Mode Works</h3>
                 <div className="space-y-4">
-                    <div className="bg-gray-700 rounded-lg p-4">
-                        <h4 className="text-white font-medium mb-2">Step 1: Open Login Page</h4>
-                        <p className="text-sm text-gray-300 mb-2">
-                            Click "Open Login Page" to launch a browser window with Twitter login.
-                        </p>
-                    </div>
-
-                    <div className="bg-gray-700 rounded-lg p-4">
-                        <h4 className="text-white font-medium mb-2">Step 2: Login Manually</h4>
-                        <p className="text-sm text-gray-300 mb-2">
-                            In the opened browser window, login to Twitter using your credentials.
-                            The session will be saved automatically.
-                        </p>
-                    </div>
-
-                    <div className="bg-gray-700 rounded-lg p-4">
-                        <h4 className="text-white font-medium mb-2">Step 3: Verify Session</h4>
-                        <p className="text-sm text-gray-300 mb-2">
-                            Click "Check Status" to verify your login was successful.
-                            The status should show "Logged In: ✅ Yes".
-                        </p>
+                    <div className="bg-green-900/20 border border-green-500/30 rounded-lg p-4">
+                        <h4 className="text-green-400 font-medium mb-2">✅ First Time Setup</h4>
+                        <div className="text-sm text-green-300 space-y-1">
+                            <p><strong>1.</strong> Click "Open Login" → Visible browser window opens</p>
+                            <p><strong>2.</strong> Login to Twitter manually → Enter credentials, complete 2FA</p>
+                            <p><strong>3.</strong> Bot detects login → "LOGIN DETECTED! Switching to headless mode..."</p>
+                            <p><strong>4.</strong> Browser disappears → All future scraping happens invisibly! 🎉</p>
+                        </div>
                     </div>
 
                     <div className="bg-blue-900/20 border border-blue-500/30 rounded-lg p-4">
-                        <h4 className="text-blue-400 font-medium mb-2">💡 Tips</h4>
-                        <ul className="text-sm text-blue-300 space-y-1">
-                            <li>• The browser window must stay open for community scraping to work</li>
-                            <li>• Session persists across server restarts</li>
-                            <li>• If session expires, just login again manually</li>
-                            <li>• Community scraping will automatically use this session</li>
+                        <h4 className="text-blue-400 font-medium mb-2">🔄 Subsequent Startups</h4>
+                        <div className="text-sm text-blue-300 space-y-1">
+                            <p><strong>•</strong> Bot finds existing session → Starts directly in headless mode</p>
+                            <p><strong>•</strong> No visible browser needed → Community scraping works invisibly</p>
+                            <p><strong>•</strong> Session persists for weeks/months → Rarely need to re-login</p>
+                        </div>
+                    </div>
+
+                    <div className="bg-yellow-900/20 border border-yellow-500/30 rounded-lg p-4">
+                        <h4 className="text-yellow-400 font-medium mb-2">🔓 Simple Logout</h4>
+                        <div className="text-sm text-yellow-300 space-y-1">
+                            <p><strong>•</strong> Logs out from Twitter website programmatically</p>
+                            <p><strong>•</strong> Keeps session files on disk (not deleted)</p>
+                            <p><strong>•</strong> You may need to login manually again next time</p>
+                            <p><strong>•</strong> Quick and simple logout process</p>
+                        </div>
+                    </div>
+
+                    <div className="bg-purple-900/20 border border-purple-500/30 rounded-lg p-4">
+                        <h4 className="text-purple-400 font-medium mb-2">💡 Tips</h4>
+                        <ul className="text-sm text-purple-300 space-y-1">
+                            <li>• Only need to login once (session persists for weeks)</li>
+                            <li>• All community scraping happens invisibly after setup</li>
+                            <li>• Check status anytime to verify session is active</li>
+                            <li>• If session expires, just repeat login process</li>
+                            <li>• Use logout button when you want to switch accounts</li>
                         </ul>
                     </div>
                 </div>
@@ -3927,6 +4030,17 @@ function App() {
                 <div className="text-center py-8 text-gray-400">
                     <p>Twitter scraping activity will appear here when communities are detected.</p>
                     <p className="text-sm mt-2">Check the browser console for detailed scraping logs.</p>
+                </div>
+            </div>
+
+            {/* Debug Information */}
+            <div className="bg-gray-800 rounded-lg p-4 md:p-6">
+                <h3 className="text-lg font-semibold text-white mb-4">🐛 Debug Information</h3>
+                <div className="bg-gray-700 rounded p-3">
+                    <h4 className="text-white font-medium mb-2">Current Twitter Session State:</h4>
+                    <pre className="text-xs text-gray-300 whitespace-pre-wrap">
+                        {JSON.stringify(twitterSessionStatus, null, 2)}
+                    </pre>
                 </div>
             </div>
         </div>
