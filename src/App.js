@@ -23,7 +23,8 @@ import {
 } from 'lucide-react';
 import './App.css';
 
-const API_BASE = 'https://devscope-be.onrender.com/api';
+const API_BASE = 'http://localhost:3001/api';
+//const API_BASE = 'https://devscope-be.onrender.com/api';
 
 function App() {
     // State management
@@ -67,13 +68,28 @@ function App() {
     const [customWallet, setCustomWallet] = useState('');
     const [customTwitter, setCustomTwitter] = useState('');
 
+    const [pairDetectionStatus, setPairDetectionStatus] = useState({});
+    const [autoRetryTimers, setAutoRetryTimers] = useState({});
     const [usedCommunities, setUsedCommunities] = useState([]);
     const [showCommunityModal, setShowCommunityModal] = useState(false);
     const [customCommunity, setCustomCommunity] = useState('');
     const [soundFiles, setSoundFiles] = useState([]);
     const [uploadingSound, setUploadingSound] = useState(false);
     const [isCommunity, setIsCommunity] = useState(false);
+    const [twitterSessionStatus, setTwitterSessionStatus] = useState({
+        initialized: false,
+        loggedIn: false,
+        url: '',
+        error: null,
+        checking: false
+    });
 
+    const [popupBlockerModal, setPopupBlockerModal] = useState({
+        show: false,
+        tokenUrl: '',
+        tokenAddress: '',
+        reason: ''
+    });
     const STORAGE_KEYS = {
         SETTINGS: 'devscope_settings',
         GLOBAL_SNIPE: 'devscope_global_snipe',
@@ -375,10 +391,49 @@ function App() {
         }
     };
 
+    // Twitter session management functions
+    const checkTwitterSession = async () => {
+        try {
+            setTwitterSessionStatus(prev => ({ ...prev, checking: true }));
+            const response = await apiCall('/twitter-session-status');
+            setTwitterSessionStatus({
+                ...response,
+                checking: false
+            });
+
+            if (response.loggedIn) {
+                addNotification('success', '✅ Twitter session is active');
+            } else {
+                addNotification('info', '🔑 Twitter session not active - manual login required');
+            }
+        } catch (error) {
+            setTwitterSessionStatus(prev => ({
+                ...prev,
+                checking: false,
+                error: error.message
+            }));
+            addNotification('error', 'Failed to check Twitter session status');
+        }
+    };
+
+    const openTwitterLogin = async () => {
+        try {
+            const response = await apiCall('/twitter-open-login', { method: 'POST' });
+            addNotification('success', '🌐 Twitter login page opened in browser window');
+
+            // Auto-check session status after 5 seconds
+            setTimeout(() => {
+                checkTwitterSession();
+            }, 5000);
+        } catch (error) {
+            addNotification('error', 'Failed to open Twitter login page');
+        }
+    };
+
     // WebSocket connection
     const connectWebSocket = useCallback(() => {
         try {
-            const ws = new WebSocket('wss://devscope-be.onrender.com');
+            const ws = new WebSocket('ws://localhost:3001');
 
             ws.onopen = () => {
                 console.log('WebSocket connected');
@@ -409,10 +464,156 @@ function App() {
         }
     }, []);
 
+    const attemptPopupWithDetection = async (url, tokenAddress, openType) => {
+        console.log(`🚀 ATTEMPTING POPUP OPENING (${openType.toUpperCase()})`);
+        console.log('🔗 URL:', url);
+        console.log('🔍 Environment check:');
+        console.log('  🖥️ Electron API available:', !!window.electronAPI);
+        console.log('  🌍 User agent:', navigator.userAgent.substring(0, 50) + '...');
+
+        try {
+            // TRY ELECTRON FIRST
+            if (window.electronAPI && window.electronAPI.openExternalURL) {
+                console.log('🖥️ USING ELECTRON API METHOD');
+                console.log('📞 Calling window.electronAPI.openExternalURL()...');
+
+                window.electronAPI.openExternalURL(url);
+
+                console.log('✅ ELECTRON API CALL COMPLETED');
+                return {
+                    success: true,
+                    method: 'electron',
+                    reason: 'Opened via Electron API'
+                };
+            }
+
+            // TRY BROWSER POPUP WITH ENHANCED DETECTION
+            console.log('🌍 USING BROWSER WINDOW.OPEN() METHOD');
+            console.log('🔍 Popup blocker detection strategy:');
+            console.log('  📊 Method: window.open() return value check');
+            console.log('  ⏱️ Timing: immediate + delayed checks');
+            console.log('  🎯 Type:', openType);
+
+            // ATTEMPT 1: Direct window.open()
+            console.log('📞 Attempting window.open()...');
+            const newWindow = window.open(url, '_blank', 'noopener,noreferrer');
+
+            console.log('📋 window.open() immediate result:', newWindow);
+            console.log('📋 Result type:', typeof newWindow);
+            console.log('📋 Result truthiness:', !!newWindow);
+
+            // IMMEDIATE CHECK
+            if (!newWindow) {
+                console.error('❌ IMMEDIATE POPUP BLOCK DETECTED');
+                console.error('🚫 window.open() returned null/undefined immediately');
+                return {
+                    success: false,
+                    method: 'browser_blocked_immediate',
+                    reason: 'Popup blocked immediately by browser'
+                };
+            }
+
+            // DELAYED CHECK (some browsers return object but still block)
+            console.log('⏱️ Performing delayed popup block check...');
+
+            const delayedCheck = await new Promise((resolve) => {
+                setTimeout(() => {
+                    try {
+                        // Try to access window properties
+                        if (newWindow.closed) {
+                            console.warn('⚠️ Window was closed immediately (likely blocked)');
+                            resolve({
+                                success: false,
+                                method: 'browser_blocked_delayed',
+                                reason: 'Popup was closed immediately after opening'
+                            });
+                        } else {
+                            console.log('✅ Window appears to be open and accessible');
+                            resolve({
+                                success: true,
+                                method: 'browser_success',
+                                reason: 'Opened successfully'
+                            });
+                        }
+                    } catch (accessError) {
+                        console.log('🔒 Cannot access window properties (cross-origin) - this is normal');
+                        console.log('✅ Assuming popup opened successfully');
+                        resolve({
+                            success: true,
+                            method: 'browser_success_restricted',
+                            reason: 'Opened successfully (access restricted by CORS)'
+                        });
+                    }
+                }, 500); // Check after 500ms
+            });
+
+            return delayedCheck;
+
+        } catch (openError) {
+            console.error('❌ EXCEPTION DURING POPUP ATTEMPT:', openError);
+            console.error('🔍 Error type:', openError.constructor.name);
+            console.error('💬 Error message:', openError.message);
+
+            return {
+                success: false,
+                method: 'exception',
+                reason: `Exception occurred: ${openError.message}`
+            };
+        }
+    };
+
+    const handlePopupBlockedScenario = (url, tokenAddress, reason, openType) => {
+        console.error('🚫 POPUP BLOCKED - HANDLING SCENARIO');
+        console.error('🔗 Blocked URL:', url);
+        console.error('💬 Block reason:', reason);
+        console.error('🎯 Open type:', openType);
+
+        // DETERMINE USER-FRIENDLY MESSAGE BASED ON REASON
+        let userMessage = '';
+        let technicalReason = '';
+
+        if (reason.includes('immediately')) {
+            userMessage = 'Chrome blocked the popup immediately';
+            technicalReason = 'Browser popup blocker is active';
+        } else if (reason.includes('closed immediately')) {
+            userMessage = 'Popup was closed right after opening';
+            technicalReason = 'Browser detected and closed popup automatically';
+        } else if (reason.includes('Exception')) {
+            userMessage = 'Browser security prevented opening';
+            technicalReason = reason;
+        } else {
+            userMessage = 'Browser blocked the popup';
+            technicalReason = reason;
+        }
+
+        // SHOW APPROPRIATE NOTIFICATIONS
+        if (openType === 'auto-open') {
+            addNotification('warning', '🚫 Auto-open blocked by Chrome - Click "View Token Page" in popup');
+            addNotification('info', '💡 Or allow popups for this site to enable auto-opening');
+        } else {
+            addNotification('error', '🚫 Chrome blocked the popup - Please allow popups for this site');
+        }
+
+        // SHOW POPUP BLOCKER GUIDANCE MODAL
+        setPopupBlockerModal({
+            show: true,
+            tokenUrl: url,
+            tokenAddress: tokenAddress,
+            reason: userMessage,
+            technicalReason: technicalReason,
+            openType: openType
+        });
+
+        console.log('📱 Popup blocker guidance modal triggered');
+    };
 
     // Add this useEffect to fetch demo templates
     useEffect(() => {
         fetchDemoTemplates();
+    }, []);
+
+    useEffect(() => {
+        checkTwitterSession();
     }, []);
 
     useEffect(() => {
@@ -582,6 +783,248 @@ function App() {
         }
     };
 
+    const autoOpenTokenPageForSecondary = async (token) => {
+        console.log('🤖 AUTO-OPEN FUNCTION STARTED');
+        console.log('='.repeat(60));
+        console.log('📊 Token data for auto-open:', token);
+        console.log('🎯 Token address:', token.tokenAddress);
+        console.log('📋 User destination preference:', settings.tokenPageDestination);
+        console.log('🏊 Token pool type:', token.pool);
+        console.log('🚀 Token platform:', token.platform);
+
+        // Set status to indicate auto-opening
+        setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: 'auto-opening' }));
+
+        let url;
+
+        try {
+            console.log('🎯 DESTINATION ROUTING FOR AUTO-OPEN - User selected:', settings.tokenPageDestination);
+
+            // Check user's preference for token page destination
+            if (settings.tokenPageDestination === 'axiom') {
+                console.log('🔥 AXIOM SELECTED FOR AUTO-OPEN - Starting pair address lookup...');
+                console.log('📡 Making API call to backend for pair data...');
+
+                try {
+                    const apiUrl = `${API_BASE}/pair-address/${token.tokenAddress}`;
+                    console.log('🌐 API URL for auto-open:', apiUrl);
+                    console.log('⏳ Fetching pair data from backend for auto-open...');
+
+                    const response = await apiCall(`/pair-address/${token.tokenAddress}`);
+
+                    console.log('📡 BACKEND API RESPONSE FOR AUTO-OPEN:');
+                    console.log('✅ Response received:', response);
+                    console.log('🔍 Response success flag:', response.success);
+
+                    if (response.success && response.pairData && response.pairData.pairAddress) {
+                        console.log('🎉 PAIR FOUND FOR AUTO-OPEN!');
+                        console.log('💎 Pair address:', response.pairData.pairAddress);
+                        console.log('🏪 DEX ID:', response.pairData.dexId);
+                        console.log('💧 Liquidity info:', response.pairData.liquidity);
+
+                        url = response.axiomUrl;
+                        console.log('🚀 Generated Axiom URL for auto-open:', url);
+
+                        addNotification('success', `🤖 Auto-opening Axiom with pair: ${response.pairData.pairAddress.substring(0, 8)}...`);
+                        setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: 'success' }));
+
+                    } else {
+                        console.warn('⚠️ NO PAIR FOUND FOR AUTO-OPEN - Using fallback strategy');
+                        console.warn('📊 Response data breakdown:');
+                        console.warn('  - success:', response.success);
+                        console.warn('  - pairData exists:', !!response.pairData);
+                        console.warn('  - pairAddress exists:', !!(response.pairData && response.pairData.pairAddress));
+
+                        url = response.fallbackAxiomUrl || `https://axiom.trade/meme/${token.tokenAddress}`;
+                        console.log('🔄 Fallback Axiom URL for auto-open:', url);
+
+                        setTokenPairStatus(prev => ({
+                            ...prev,
+                            [token.tokenAddress]: 'no-pair'
+                        }));
+
+                        addNotification('info', '🤖 Auto-opening with token address (no pair found yet)');
+                        // Continue with opening even without pair for secondary matches
+                    }
+
+                } catch (error) {
+                    console.error('❌ BACKEND API ERROR DURING AUTO-OPEN:');
+                    console.error('🔍 Error type:', error.constructor.name);
+                    console.error('💬 Error message:', error.message);
+                    console.error('📚 Full error object:', error);
+                    console.error('🌐 API endpoint that failed:', `/pair-address/${token.tokenAddress}`);
+
+                    url = `https://axiom.trade/meme/${token.tokenAddress}`;
+                    console.log('🆘 Emergency fallback URL for auto-open:', url);
+
+                    setTokenPairStatus(prev => ({
+                        ...prev,
+                        [token.tokenAddress]: 'error'
+                    }));
+
+                    addNotification('warning', `🤖 Auto-opening with fallback URL (API error: ${error.message})`);
+                }
+
+            } else {
+                console.log('📈 BULLX SELECTED FOR AUTO-OPEN - Generating BullX URL...');
+                // Neo BullX or other destinations
+                url = `https://neo.bullx.io/terminal?chainId=1399811149&address=${token.tokenAddress}`;
+                console.log('✅ Generated BullX URL for auto-open:', url);
+            }
+
+            // Platform-specific URL overrides for auto-open
+            console.log('🔄 CHECKING PLATFORM-SPECIFIC OVERRIDES FOR AUTO-OPEN...');
+            console.log('🏊 Token pool:', token.pool);
+            console.log('🎯 User destination:', settings.tokenPageDestination);
+
+            if (token.pool === 'bonk' && settings.tokenPageDestination !== 'axiom') {
+                const originalUrl = url;
+                url = `https://letsbonk.fun/token/${token.tokenAddress}`;
+                console.log('🟠 LETSBONK OVERRIDE FOR AUTO-OPEN:');
+                console.log('  📜 Original URL:', originalUrl);
+                console.log('  🔄 New URL:', url);
+            } else if (token.pool === 'pump' && settings.tokenPageDestination !== 'axiom') {
+                const originalUrl = url;
+                url = `https://pump.fun/${token.tokenAddress}`;
+                console.log('🟣 PUMP.FUN OVERRIDE FOR AUTO-OPEN:');
+                console.log('  📜 Original URL:', originalUrl);
+                console.log('  🔄 New URL:', url);
+            } else {
+                console.log('✅ No platform override needed for auto-open');
+            }
+
+            console.log('🔗 FINAL URL TO AUTO-OPEN:', url);
+            console.log('='.repeat(60));
+
+            // AUTO-OPEN THE URL WITH DETAILED LOGGING
+            console.log('🚀 ATTEMPTING AUTO-OPEN OF TOKEN PAGE...');
+            console.log('🔍 Environment detection for auto-open:');
+            console.log('  🖥️ Electron API available:', !!window.electronAPI);
+            console.log('  🌍 User agent:', navigator.userAgent);
+            console.log('  📱 Platform:', navigator.platform);
+
+            try {
+                if (window.electronAPI && window.electronAPI.openExternalURL) {
+                    console.log('🖥️ USING ELECTRON API METHOD FOR AUTO-OPEN');
+                    console.log('📞 Calling window.electronAPI.openExternalURL() for auto-open...');
+                    console.log('🔗 URL being passed to Electron for auto-open:', url);
+
+                    window.electronAPI.openExternalURL(url);
+
+                    console.log('✅ ELECTRON API AUTO-OPEN COMPLETED SUCCESSFULLY');
+                    addNotification('success', '🤖 Token page auto-opened in external browser via Electron');
+
+                } else {
+                    console.log('🌍 USING BROWSER WINDOW.OPEN() METHOD FOR AUTO-OPEN');
+                    console.log('🔍 Auto-open popup considerations:');
+                    console.log('  📊 This is automatic (not user-triggered)');
+                    console.log('  ⚠️ May be blocked by popup blockers');
+                    console.log('  🎯 Some browsers allow popups for recent user interaction');
+
+                    console.log('📞 Calling window.open() for auto-open...');
+                    console.log('🔗 URL:', url);
+                    console.log('🎯 Target: _blank');
+
+                    const newWindow = window.open(url, '_blank');
+
+                    console.log('📋 window.open() auto-open result:', newWindow);
+
+                    if (newWindow) {
+                        console.log('✅ AUTO-OPEN WINDOW.OPEN() SUCCEEDED');
+                        console.log('🆕 New window/tab object created:', typeof newWindow);
+                        addNotification('success', '🤖 Token page auto-opened in new tab');
+
+                        // Check if window stays open
+                        setTimeout(() => {
+                            try {
+                                if (newWindow.closed) {
+                                    console.warn('⚠️ Auto-opened window was closed immediately (possible popup block)');
+                                    addNotification('warning', '⚠️ Auto-opened tab may have been blocked');
+                                } else {
+                                    console.log('✅ Auto-opened window is still open - success confirmed');
+                                }
+                            } catch (e) {
+                                console.log('🔒 Cannot check auto-opened window state (cross-origin) - this is normal');
+                            }
+                        }, 1000);
+
+                    } else {
+                        console.error('❌ AUTO-OPEN POPUP BLOCKED OR FAILED');
+                        console.error('🚫 window.open() returned null/undefined for auto-open');
+                        console.error('💡 Common causes for auto-open failure:');
+                        console.error('  - Browser popup blocker blocking automatic popups');
+                        console.error('  - No recent user interaction (required by some browsers)');
+                        console.error('  - Strict popup settings');
+                        console.error('  - Ad blocker interference');
+
+                        addNotification('warning', '🤖 Auto-open blocked by browser - use "View Token Page" button in popup');
+
+                        // Don't provide clipboard fallback for auto-open (too intrusive)
+                        console.log('💡 User can still use "View Token Page" button in the popup');
+                    }
+                }
+            } catch (openError) {
+                console.error('❌ CRITICAL ERROR DURING AUTO-OPEN:');
+                console.error('🔍 Error type:', openError.constructor.name);
+                console.error('💬 Error message:', openError.message);
+                console.error('📚 Error stack:', openError.stack);
+                console.error('🔗 URL that failed to auto-open:', url);
+                console.error('🖥️ Electron API status:', !!window.electronAPI);
+
+                addNotification('error', `🤖 Auto-open failed: ${openError.message}`);
+                addNotification('info', '💡 Use "View Token Page" button in popup as fallback');
+            }
+
+            console.log('⏰ Setting auto-open status clear timeout (10 seconds)...');
+            // Clear status after 10 seconds
+            setTimeout(() => {
+                console.log('🧹 Clearing auto-open token pair status after timeout');
+                setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: null }));
+            }, 10000);
+
+        } catch (error) {
+            console.error('❌ CRITICAL ERROR IN autoOpenTokenPageForSecondary:');
+            console.error('🔍 Error type:', error.constructor.name);
+            console.error('💬 Error message:', error.message);
+            console.error('📚 Error stack:', error.stack);
+            console.error('🎯 Token that caused auto-open error:', token.tokenAddress);
+            console.error('📊 Token data:', token);
+            console.error('⚙️ Settings at time of auto-open error:', settings);
+
+            addNotification('error', `🤖 Auto-open critical error: ${error.message}`);
+            addNotification('info', '💡 Use "View Token Page" button in popup as fallback');
+        }
+
+        console.log('🏁 autoOpenTokenPageForSecondary function completed');
+        console.log('='.repeat(60));
+    };
+
+    const autoOpenTokenPageWithPairAddress = async (tokenAddress, url) => {
+        console.log(`🚀 AUTO-OPENING TOKEN PAGE WITH PAIR ADDRESS`);
+        console.log(`🔗 URL: ${url}`);
+        console.log(`🎯 Token: ${tokenAddress}`);
+
+        try {
+            const popupResult = await attemptPopupWithDetection(url, tokenAddress, 'auto-open-with-pair');
+
+            if (popupResult.success) {
+                console.log('✅ AUTO-OPEN WITH PAIR SUCCEEDED');
+                addNotification('success', '🚀 Token page auto-opened with pair address!');
+
+                // Close the popup since we successfully opened the page
+                setSecondaryPopup({ show: false, tokenData: null });
+
+            } else {
+                console.error('❌ AUTO-OPEN WITH PAIR FAILED:', popupResult.reason);
+                addNotification('warning', '🚫 Auto-open blocked - use "View Token Page" button');
+                handlePopupBlockedScenario(url, tokenAddress, popupResult.reason, 'auto-open-with-pair');
+            }
+        } catch (error) {
+            console.error('❌ Error in auto-open with pair:', error);
+            addNotification('error', `❌ Auto-open error: ${error.message}`);
+        }
+    };
+
     const handleWebSocketMessage = (data) => {
         switch (data.type) {
             case 'bot_status':
@@ -620,6 +1063,125 @@ function App() {
                 addNotification('info', `🗑️ ${data.data.listType.replace('_', ' ')} cleared from Firebase`);
                 break;
 
+            case 'community_scraping_failed':
+                console.log('❌ COMMUNITY SCRAPING FAILED:', data.data);
+
+                // If it's a session issue, update Twitter session status
+                if (data.data.needsManualLogin) {
+                    setTwitterSessionStatus(prev => ({
+                        ...prev,
+                        loggedIn: false,
+                        error: 'Session expired - manual login required'
+                    }));
+                    addNotification('warning', '🔑 Twitter session expired - please login again');
+                } else {
+                    addNotification('warning', `❌ Community ${data.data.communityId} scraping failed: ${data.data.reason}`);
+                }
+                break;
+            // 🔥 NEW COMMUNITY DEBUGGING CASES:
+            case 'community_admins_scraped':
+                console.log('🏘️ COMMUNITY ADMINS SCRAPED:', data.data);
+                console.table(data.data.admins); // Nice table view
+                console.log('📋 Your Primary Admin List:', data.data.yourPrimaryList);
+                console.log('📋 Your Secondary Admin List:', data.data.yourSecondaryList);
+
+                // Show detailed comparison
+                console.log('🔍 DETAILED COMPARISON CHECK:');
+                data.data.admins.forEach(admin => {
+                    const adminLower = admin.username.toLowerCase().trim();
+                    const adminWithAt = `@${adminLower}`;
+
+                    const inPrimary = data.data.yourPrimaryList.some(item => {
+                        const itemLower = item.toLowerCase().trim();
+                        return itemLower === adminLower || itemLower === adminWithAt;
+                    });
+
+                    const inSecondary = data.data.yourSecondaryList.some(item => {
+                        const itemLower = item.toLowerCase().trim();
+                        return itemLower === adminLower || itemLower === adminWithAt;
+                    });
+
+                    console.log(`${inPrimary ? '🎯' : inSecondary ? '🔔' : '❌'} @${admin.username} - ${admin.badgeType} ${inPrimary ? '(PRIMARY MATCH!)' : inSecondary ? '(SECONDARY MATCH!)' : '(NO MATCH)'}`);
+                });
+
+                addNotification('info', `🏘️ Community ${data.data.communityId} scraped: ${data.data.totalAdmins} admins found - check console`);
+                break;
+
+            case 'community_scraping_failed':
+                console.log('❌ COMMUNITY SCRAPING FAILED:', data.data);
+                console.log(`🔍 Community ID ${data.data.communityId} checked against your lists:`);
+                console.log('📋 Your Primary List:', data.data.yourPrimaryList);
+                console.log('📋 Your Secondary List:', data.data.yourSecondaryList);
+                console.log(`🎯 Community ID in Primary: ${data.data.communityIdInPrimary ? 'YES' : 'NO'}`);
+                console.log(`🔔 Community ID in Secondary: ${data.data.communityIdInSecondary ? 'YES' : 'NO'}`);
+                console.log(`❌ Failure reason: ${data.data.reason} (step: ${data.data.step})`);
+
+                addNotification('warning', `❌ Community ${data.data.communityId} scraping failed: ${data.data.reason}`);
+                break;
+
+            case 'community_admin_match_found':
+                console.log('🎯 COMMUNITY ADMIN MATCH FOUND!', data.data);
+                console.log(`✅ Matched Admin: @${data.data.matchedAdmin.username} (${data.data.matchedAdmin.badgeType})`);
+                console.log(`📋 Match Type: ${data.data.matchType.toUpperCase()}`);
+                console.log(`🔍 Matched As: ${data.data.matchedAs}`);
+                if (data.data.matchedVariation) {
+                    console.log(`🔄 Matched Variation: ${data.data.matchedVariation}`);
+                }
+                console.log('👥 All Scraped Admins:', data.data.allScrapedAdmins);
+
+                addNotification('success', `🎯 Community admin match: @${data.data.matchedAdmin.username} (${data.data.matchType})`);
+                break;
+
+            case 'community_id_match_found':
+                console.log('🆔 COMMUNITY ID DIRECT MATCH!', data.data);
+                console.log(`✅ Community ID ${data.data.communityId} found directly in ${data.data.matchType} list`);
+                console.log('📋 Your Primary List:', data.data.yourPrimaryList);
+                console.log('📋 Your Secondary List:', data.data.yourSecondaryList);
+
+                addNotification('success', `🆔 Community ID ${data.data.communityId} matched directly (${data.data.matchType})`);
+                break;
+
+            case 'community_admins_no_match':
+                console.log('❌ COMMUNITY ADMINS - NO MATCHES FOUND:', data.data);
+                console.log(`📊 Community ${data.data.communityId} - Scraped ${data.data.totalScrapedAdmins} admins`);
+                console.table(data.data.scrapedAdmins);
+                console.log('📋 Your Primary List:', data.data.yourPrimaryList);
+                console.log('📋 Your Secondary List:', data.data.yourSecondaryList);
+
+                console.log('🔍 WHY NO MATCHES:');
+                data.data.scrapedAdmins.forEach(admin => {
+                    console.log(`❌ @${admin.username} not found in your lists`);
+                });
+
+                addNotification('info', `❌ Community ${data.data.communityId}: ${data.data.totalScrapedAdmins} admins scraped, no matches`);
+                break;
+
+            case 'community_scraping_error':
+                console.log('💥 COMMUNITY SCRAPING ERROR:', data.data);
+                addNotification('error', `💥 Community ${data.data.communityId} error: ${data.data.error}`);
+                break;
+
+            case 'secondary_popup_trigger':
+                console.log('🔔 SECONDARY ADMIN MATCH DETECTED');
+                console.log('📊 Token data:', data.data.tokenData);
+
+                const tokenData = data.data.tokenData;
+
+                // Show popup modal immediately
+                setSecondaryPopup({
+                    show: true,
+                    tokenData: tokenData,
+                    globalSettings: data.data.globalSnipeSettings
+                });
+
+                addNotification('info', `🔔 Secondary match found: ${tokenData.tokenAddress.substring(0, 8)}...`);
+
+                // 🚀 START PAIR ADDRESS DETECTION IMMEDIATELY
+                console.log('🔍 Starting pair address detection for secondary match...');
+                checkPairAddressWithRetry(tokenData.tokenAddress);
+
+                break;
+
             case 'snipe_success':
                 addNotification('success', `🎯 Token sniped successfully: ${data.data.tokenAddress.substring(0, 8)}...`);
                 if (data.data.openTokenPage && data.data.tokenPageUrl) {
@@ -642,16 +1204,6 @@ function App() {
                 if (data.data.soundNotification && window.electronAPI) {
                     window.electronAPI.playSound(data.data.soundNotification);
                 }
-                break;
-
-            case 'secondary_popup_trigger':
-                // Show popup modal with token details
-                setSecondaryPopup({
-                    show: true,
-                    tokenData: data.data.tokenData,
-                    globalSettings: data.data.globalSnipeSettings
-                });
-                addNotification('info', `🔔 Secondary match found: ${data.data.tokenData.tokenAddress.substring(0, 8)}...`);
                 break;
 
             case 'token_detected':
@@ -1113,6 +1665,28 @@ function App() {
         }
     };
 
+    // 6. DEBUG HELPER for testing auto-open
+    window.debugAutoOpenSecondary = (tokenAddress) => {
+        console.log('🐛 MANUAL DEBUG TEST FOR AUTO-OPEN SECONDARY');
+
+        const testToken = {
+            tokenAddress: tokenAddress || 'TEST123456789',
+            name: 'Test Auto-Open Token',
+            symbol: 'AUTOTEST',
+            pool: 'pump',
+            platform: 'pumpfun',
+            marketCapSol: 15.7,
+            matchType: 'secondary_admin',
+            matchedEntity: 'test_admin'
+        };
+
+        console.log('🧪 Test token data for auto-open:', testToken);
+        console.log('⚙️ Current settings:', settings);
+
+        // Trigger the auto-open function
+        autoOpenTokenPageForSecondary(testToken);
+    };
+
     const removeListItem = async (listType, id) => {
         try {
             await apiCall(`/lists/${listType}/${id}`, { method: 'DELETE' });
@@ -1120,6 +1694,17 @@ function App() {
             addNotification('success', '🗑️ Item removed from list');
         } catch (error) {
             addNotification('error', '❌ Failed to remove item');
+        }
+    };
+
+    const cleanupAutoRetryTimer = (tokenAddress) => {
+        if (autoRetryTimers[tokenAddress]) {
+            clearTimeout(autoRetryTimers[tokenAddress]);
+            setAutoRetryTimers(prev => {
+                const newTimers = { ...prev };
+                delete newTimers[tokenAddress];
+                return newTimers;
+            });
         }
     };
 
@@ -1133,6 +1718,15 @@ function App() {
             soundNotification: 'default.wav'
         });
     };
+
+    useEffect(() => {
+        return () => {
+            // Cleanup all timers on unmount
+            Object.values(autoRetryTimers).forEach(timer => {
+                if (timer) clearTimeout(timer);
+            });
+        };
+    }, [autoRetryTimers]);
 
     // Effects
     useEffect(() => {
@@ -2066,10 +2660,132 @@ function App() {
         </div>
     );
 
+    const PairDetectionCountdown = ({ tokenAddress, onRetry }) => {
+        const [countdown, setCountdown] = useState(3);
+        const [isActive, setIsActive] = useState(true);
+
+        useEffect(() => {
+            if (!isActive) return;
+
+            const timer = setInterval(() => {
+                setCountdown(prev => {
+                    if (prev <= 1) {
+                        setIsActive(false);
+                        onRetry();
+                        return 0;
+                    }
+                    return prev - 1;
+                });
+            }, 1000);
+
+            return () => clearInterval(timer);
+        }, [isActive, onRetry]);
+
+        if (!isActive) {
+            return (
+                <div className="flex items-center space-x-2 text-blue-400">
+                    <div className="animate-spin w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full"></div>
+                    <span className="text-sm">🔄 Retrying pair detection...</span>
+                </div>
+            );
+        }
+
+        return (
+            <div className="flex items-center space-x-2 text-blue-400">
+                <div className="w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center">
+                    <span className="text-white text-xs">{countdown}</span>
+                </div>
+                <span className="text-sm">⏰ Auto-retry in {countdown} seconds...</span>
+            </div>
+        );
+    };
+
+    const renderPopupBlockerModal = () => {
+        if (!popupBlockerModal.show) return null;
+
+        return (
+            <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+                <div className="bg-gray-800 rounded-lg p-6 w-full max-w-2xl max-h-screen overflow-y-auto border-2 border-red-500">
+                    {/* Header */}
+                    <div className="flex items-center justify-between mb-6">
+                        <div className="flex items-center space-x-3">
+                            <div className="w-12 h-12 bg-red-600 rounded-full flex items-center justify-center">
+                                <span className="text-2xl">🚫</span>
+                            </div>
+                            <div>
+                                <h2 className="text-2xl font-bold text-white">Popup Blocked by Chrome</h2>
+                                <p className="text-red-400">Token page couldn't open automatically</p>
+                            </div>
+                        </div>
+                        <button
+                            onClick={() => setPopupBlockerModal({ show: false, tokenUrl: '', tokenAddress: '', reason: '' })}
+                            className="text-gray-400 hover:text-white text-2xl"
+                        >
+                            ✖️
+                        </button>
+                    </div>
+
+                    {/* Manual Link */}
+                    <div className="bg-blue-900/20 border border-blue-500/30 rounded-lg p-4 mb-6">
+                        <h3 className="text-lg font-semibold text-blue-400 mb-3">🔗 Manual Link (Click to Open)</h3>
+                        <div className="flex items-center space-x-2">
+                            <input
+                                type="text"
+                                value={popupBlockerModal.tokenUrl}
+                                readOnly
+                                className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white text-sm"
+                            />
+                            <button
+                                onClick={() => {
+                                    window.open(popupBlockerModal.tokenUrl, '_blank');
+                                    addNotification('info', '🔗 Manual link clicked - check for new tab');
+                                }}
+                                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors"
+                            >
+                                🌐 Open
+                            </button>
+                            <button
+                                onClick={() => {
+                                    copyToClipboard(popupBlockerModal.tokenUrl, 'Token page URL');
+                                }}
+                                className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded transition-colors"
+                            >
+                                📋 Copy
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Action Buttons */}
+                    <div className="flex flex-col space-y-3 md:flex-row md:space-y-0 md:space-x-4">
+                        <button
+                            onClick={() => {
+                                window.open(popupBlockerModal.tokenUrl, '_blank');
+                                setPopupBlockerModal({ show: false, tokenUrl: '', tokenAddress: '', reason: '' });
+                            }}
+                            className="flex-1 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-bold"
+                        >
+                            🌐 Try Opening Again
+                        </button>
+                        <button
+                            onClick={() => {
+                                copyToClipboard(popupBlockerModal.tokenUrl, 'Token page URL');
+                                setPopupBlockerModal({ show: false, tokenUrl: '', tokenAddress: '', reason: '' });
+                            }}
+                            className="flex-1 px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors font-bold"
+                        >
+                            📋 Copy Link & Close
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
     const renderSecondaryPopup = () => {
         if (!secondaryPopup.show || !secondaryPopup.tokenData) return null;
 
         const token = secondaryPopup.tokenData;
+        const currentPairStatus = pairDetectionStatus[token.tokenAddress] || 'checking';
 
         return (
             <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
@@ -2078,7 +2794,18 @@ function App() {
                     <div className="flex items-center justify-between mb-6">
                         <h2 className="text-2xl font-bold text-white">🔔 Secondary Match Found!</h2>
                         <button
-                            onClick={() => setSecondaryPopup({ show: false, tokenData: null })}
+                            onClick={() => {
+                                setSecondaryPopup({ show: false, tokenData: null });
+                                // Clear any running timers
+                                if (autoRetryTimers[token.tokenAddress]) {
+                                    clearTimeout(autoRetryTimers[token.tokenAddress]);
+                                    setAutoRetryTimers(prev => {
+                                        const newTimers = { ...prev };
+                                        delete newTimers[token.tokenAddress];
+                                        return newTimers;
+                                    });
+                                }
+                            }}
                             className="text-gray-400 hover:text-white"
                         >
                             ✖️
@@ -2108,7 +2835,7 @@ function App() {
                         <div className="grid grid-cols-2 gap-4">
                             <div className="bg-gray-700 p-3 rounded">
                                 <p className="text-sm text-gray-400">Platform</p>
-                                <p className="text-white font-bold">{token.platform.toUpperCase()}</p>
+                                <p className="text-white font-bold">{token.platform?.toUpperCase() || 'UNKNOWN'}</p>
                             </div>
                             <div className="bg-gray-700 p-3 rounded">
                                 <p className="text-sm text-gray-400">Market Cap</p>
@@ -2133,6 +2860,111 @@ function App() {
                         </div>
                     </div>
 
+                    {/* 🚀 NEW: PAIR ADDRESS DETECTION STATUS SECTION */}
+                    <div className="bg-gray-700 p-4 rounded mb-6 border-l-4 border-blue-500">
+                        <h4 className="text-lg font-semibold text-white mb-3 flex items-center">
+                            <TrendingUp className="mr-2" size={16} />
+                            Pair Address Detection Status
+                        </h4>
+
+                        {currentPairStatus === 'checking' && (
+                            <div className="flex items-center space-x-3">
+                                <div className="animate-spin w-5 h-5 border-2 border-blue-400 border-t-transparent rounded-full"></div>
+                                <div>
+                                    <p className="text-blue-400 font-medium">🔍 Checking for pair address...</p>
+                                    <p className="text-sm text-gray-400">Scanning DexScreener for liquidity pool data</p>
+                                </div>
+                            </div>
+                        )}
+
+                        {currentPairStatus === 'found' && pairDetectionStatus[token.tokenAddress]?.pairData && (
+                            <div className="space-y-3">
+                                <div className="flex items-center space-x-3">
+                                    <div className="w-5 h-5 bg-green-500 rounded-full flex items-center justify-center">
+                                        <span className="text-white text-xs">✓</span>
+                                    </div>
+                                    <div>
+                                        <p className="text-green-400 font-medium">✅ Pair Address Found!</p>
+                                        <p className="text-sm text-gray-400">Liquidity pool detected on {pairDetectionStatus[token.tokenAddress]?.pairData?.dexId}</p>
+                                    </div>
+                                </div>
+
+                                <div className="bg-gray-600 p-3 rounded">
+                                    <p className="text-sm text-gray-400 mb-1">Pair Address:</p>
+                                    <div className="flex items-center space-x-2">
+                                        <code className="text-sm font-mono text-green-400 flex-1 break-all">
+                                            {pairDetectionStatus[token.tokenAddress]?.pairData?.pairAddress}
+                                        </code>
+                                        <button
+                                            onClick={() => copyToClipboard(
+                                                pairDetectionStatus[token.tokenAddress]?.pairData?.pairAddress,
+                                                'Pair address'
+                                            )}
+                                            className="text-blue-400 hover:text-blue-300 px-2 py-1 text-xs"
+                                        >
+                                            📋
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div className="bg-gray-600 p-2 rounded text-center">
+                                        <p className="text-xs text-gray-400">DEX</p>
+                                        <p className="text-white font-medium text-sm">{pairDetectionStatus[token.tokenAddress]?.pairData?.dexId}</p>
+                                    </div>
+                                    <div className="bg-gray-600 p-2 rounded text-center">
+                                        <p className="text-xs text-gray-400">Liquidity</p>
+                                        <p className="text-white font-medium text-sm">
+                                            {pairDetectionStatus[token.tokenAddress]?.pairData?.liquidity ?
+                                                `$${formatNumber(pairDetectionStatus[token.tokenAddress]?.pairData?.liquidity?.usd || 0)}` :
+                                                'Available'
+                                            }
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {currentPairStatus === 'not_found' && (
+                            <div className="space-y-3">
+                                <div className="flex items-center space-x-3">
+                                    <div className="w-5 h-5 bg-yellow-500 rounded-full flex items-center justify-center">
+                                        <span className="text-white text-xs">!</span>
+                                    </div>
+                                    <div>
+                                        <p className="text-yellow-400 font-medium">⚠️ Pair Address Not Detected Yet</p>
+                                        <p className="text-sm text-gray-400">No liquidity pool found - token might be too new</p>
+                                    </div>
+                                </div>
+
+                                <div className="bg-yellow-900/20 border border-yellow-500/30 rounded p-3">
+                                    <p className="text-yellow-300 text-sm">
+                                        💡 <strong>What this means:</strong> The token exists but hasn't been added to a liquidity pool yet.
+                                        This is normal for very new tokens. Auto-retry will check again in 3 seconds.
+                                    </p>
+                                </div>
+
+                                {/* Countdown Timer */}
+                                <PairDetectionCountdown
+                                    tokenAddress={token.tokenAddress}
+                                    onRetry={() => checkPairAddressWithRetry(token.tokenAddress)}
+                                />
+                            </div>
+                        )}
+
+                        {currentPairStatus === 'error' && (
+                            <div className="flex items-center space-x-3">
+                                <div className="w-5 h-5 bg-red-500 rounded-full flex items-center justify-center">
+                                    <span className="text-white text-xs">✗</span>
+                                </div>
+                                <div>
+                                    <p className="text-red-400 font-medium">❌ Error Checking Pair Address</p>
+                                    <p className="text-sm text-gray-400">API error occurred - will retry automatically</p>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
                     {/* Current Global Snipe Settings Display */}
                     <div className="bg-gray-700 p-4 rounded mb-6">
                         <h4 className="text-lg font-semibold text-white mb-3">Current Global Snipe Settings:</h4>
@@ -2152,14 +2984,16 @@ function App() {
                         </div>
                     </div>
 
-                    {/* Action Buttons */}
+                    {/* Enhanced Action Buttons */}
                     <div className="flex flex-col space-y-3 md:flex-row md:space-y-0 md:space-x-4">
                         <div className="flex-1">
                             <button
                                 onClick={() => viewTokenPageFromPopup(token)}
-                                className="w-full px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                                className="w-full px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center justify-center space-x-2"
                             >
-                                🌐 View Token Page
+                                <span>🌐 View Token Page</span>
+                                {currentPairStatus === 'found' && <span className="text-green-300">(With Pair)</span>}
+                                {currentPairStatus === 'not_found' && <span className="text-yellow-300">(Token Address)</span>}
                             </button>
                         </div>
 
@@ -2172,27 +3006,117 @@ function App() {
                         </button>
                     </div>
 
-                    {/* Status message under popup button */}
+                    {/* Status message under buttons */}
                     {tokenPairStatus[token.tokenAddress] === 'no-pair' && (
-                        <div className="mt-2 p-2 bg-yellow-900/20 border border-yellow-500/30 rounded text-xs text-yellow-400 text-center">
+                        <div className="mt-3 p-2 bg-yellow-900/20 border border-yellow-500/30 rounded text-xs text-yellow-400 text-center">
                             🔍 No pair found yet, check again in few seconds
                         </div>
                     )}
                     {tokenPairStatus[token.tokenAddress] === 'error' && (
-                        <div className="mt-2 p-2 bg-red-900/20 border border-red-500/30 rounded text-xs text-red-400 text-center">
+                        <div className="mt-3 p-2 bg-red-900/20 border border-red-500/30 rounded text-xs text-red-400 text-center">
                             ❌ Error fetching pair data, using token address
                         </div>
                     )}
                     {tokenPairStatus[token.tokenAddress] === 'success' && (
-                        <div className="mt-2 p-2 bg-green-900/20 border border-green-500/30 rounded text-xs text-green-400 text-center">
+                        <div className="mt-3 p-2 bg-green-900/20 border border-green-500/30 rounded text-xs text-green-400 text-center">
                             ✅ Pair found! Opening with liquidity pool
                         </div>
                     )}
-
                 </div>
             </div>
         );
     };
+
+    const checkPairAddressWithRetry = async (tokenAddress, maxRetries = 3, currentRetry = 0) => {
+        console.log(`🔍 Checking pair address for ${tokenAddress} (attempt ${currentRetry + 1}/${maxRetries})`);
+
+        // Set status to checking
+        setPairDetectionStatus(prev => ({
+            ...prev,
+            [tokenAddress]: 'checking'
+        }));
+
+        try {
+            const response = await apiCall(`/pair-address/${tokenAddress}`);
+            console.log(`📊 Pair check response:`, response);
+
+            if (response.success && response.pairData && response.pairData.pairAddress) {
+                console.log(`✅ Pair found for ${tokenAddress}:`, response.pairData.pairAddress);
+
+                // Update status to found
+                setPairDetectionStatus(prev => ({
+                    ...prev,
+                    [tokenAddress]: 'found',
+                    pairData: response.pairData
+                }));
+
+                // AUTO-OPEN WITH PAIR ADDRESS AFTER 3 SECONDS
+                console.log(`🚀 Starting 3-second auto-open countdown for ${tokenAddress}...`);
+                const autoOpenTimer = setTimeout(() => {
+                    console.log(`🚀 AUTO-OPENING TOKEN PAGE WITH PAIR ADDRESS`);
+                    autoOpenTokenPageWithPairAddress(tokenAddress, response.axiomUrl);
+                }, 3000);
+
+                // Store timer reference
+                setAutoRetryTimers(prev => ({
+                    ...prev,
+                    [tokenAddress]: autoOpenTimer
+                }));
+
+                addNotification('success', `✅ Pair found! Auto-opening in 3 seconds...`);
+
+            } else {
+                console.log(`⚠️ No pair found for ${tokenAddress}`);
+
+                // Update status to not found
+                setPairDetectionStatus(prev => ({
+                    ...prev,
+                    [tokenAddress]: 'not_found'
+                }));
+
+                // Retry if we haven't exceeded max retries
+                if (currentRetry < maxRetries - 1) {
+                    console.log(`🔄 Scheduling retry ${currentRetry + 2}/${maxRetries} in 5 seconds...`);
+
+                    const retryTimer = setTimeout(() => {
+                        checkPairAddressWithRetry(tokenAddress, maxRetries, currentRetry + 1);
+                    }, 5000);
+
+                    setAutoRetryTimers(prev => ({
+                        ...prev,
+                        [tokenAddress]: retryTimer
+                    }));
+                } else {
+                    console.log(`❌ Max retries reached for ${tokenAddress}`);
+                    addNotification('warning', `⚠️ Pair not found after ${maxRetries} attempts`);
+                }
+            }
+
+        } catch (error) {
+            console.error(`❌ Error checking pair for ${tokenAddress}:`, error);
+
+            // Update status to error
+            setPairDetectionStatus(prev => ({
+                ...prev,
+                [tokenAddress]: 'error'
+            }));
+
+            // Retry on error too
+            if (currentRetry < maxRetries - 1) {
+                console.log(`🔄 Retrying due to error in 5 seconds...`);
+
+                const retryTimer = setTimeout(() => {
+                    checkPairAddressWithRetry(tokenAddress, maxRetries, currentRetry + 1);
+                }, 5000);
+
+                setAutoRetryTimers(prev => ({
+                    ...prev,
+                    [tokenAddress]: retryTimer
+                }));
+            }
+        }
+    };
+
 
     // Render components
     const renderStatusIndicator = () => (
@@ -2858,6 +3782,156 @@ function App() {
         </div>
     );
 
+    const renderTwitterSession = () => (
+        <div className="space-y-4 md:space-y-6">
+            {/* Twitter Session Status */}
+            <div className="bg-gray-800 rounded-lg p-4 md:p-6">
+                <div className="flex flex-col space-y-4 md:flex-row md:items-center md:justify-between md:space-y-0 mb-4">
+                    <div>
+                        <h2 className="text-lg md:text-xl font-semibold text-white">🐦 Twitter Session Management</h2>
+                        <p className="text-sm text-gray-400">Manage Twitter login session for community admin scraping</p>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                        <div className={`w-3 h-3 rounded-full ${twitterSessionStatus.loggedIn ? 'bg-green-500' :
+                            twitterSessionStatus.checking ? 'bg-yellow-500' : 'bg-red-500'
+                            }`}></div>
+                        <span className="text-sm text-gray-300">
+                            {twitterSessionStatus.checking ? 'Checking...' :
+                                twitterSessionStatus.loggedIn ? 'Active' : 'Inactive'}
+                        </span>
+                    </div>
+                </div>
+
+                {/* Session Status Display */}
+                <div className="bg-gray-700 rounded-lg p-4 mb-4">
+                    <h3 className="text-lg font-semibold text-white mb-3">Current Status</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <span className="text-gray-400 text-sm">Scraper Initialized:</span>
+                            <div className="flex items-center space-x-2">
+                                <span className={`font-medium ${twitterSessionStatus.initialized ? 'text-green-400' : 'text-red-400'}`}>
+                                    {twitterSessionStatus.initialized ? '✅ Yes' : '❌ No'}
+                                </span>
+                            </div>
+                        </div>
+                        <div>
+                            <span className="text-gray-400 text-sm">Logged In:</span>
+                            <div className="flex items-center space-x-2">
+                                <span className={`font-medium ${twitterSessionStatus.loggedIn ? 'text-green-400' : 'text-red-400'}`}>
+                                    {twitterSessionStatus.loggedIn ? '✅ Yes' : '❌ No'}
+                                </span>
+                            </div>
+                        </div>
+                        {twitterSessionStatus.url && (
+                            <div className="md:col-span-2">
+                                <span className="text-gray-400 text-sm">Current URL:</span>
+                                <div className="mt-1">
+                                    <code className="text-xs bg-gray-600 px-2 py-1 rounded text-white">
+                                        {twitterSessionStatus.url}
+                                    </code>
+                                </div>
+                            </div>
+                        )}
+                        {twitterSessionStatus.error && (
+                            <div className="md:col-span-2">
+                                <span className="text-red-400 text-sm">Error:</span>
+                                <div className="mt-1">
+                                    <code className="text-xs bg-red-900/20 border border-red-500/30 px-2 py-1 rounded text-red-400">
+                                        {twitterSessionStatus.error}
+                                    </code>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <button
+                        onClick={checkTwitterSession}
+                        disabled={twitterSessionStatus.checking}
+                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white rounded-lg transition-colors"
+                    >
+                        {twitterSessionStatus.checking ? '🔄 Checking...' : '🔍 Check Status'}
+                    </button>
+
+                    <button
+                        onClick={openTwitterLogin}
+                        className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors"
+                    >
+                        🌐 Open Login Page
+                    </button>
+
+                    <button
+                        onClick={() => {
+                            if (twitterSessionStatus.url) {
+                                if (window.electronAPI && window.electronAPI.openExternalURL) {
+                                    window.electronAPI.openExternalURL(twitterSessionStatus.url);
+                                } else {
+                                    window.open(twitterSessionStatus.url, '_blank');
+                                }
+                            } else {
+                                addNotification('info', 'No active browser session to open');
+                            }
+                        }}
+                        disabled={!twitterSessionStatus.url}
+                        className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white rounded-lg transition-colors"
+                    >
+                        🔗 Open Browser
+                    </button>
+                </div>
+            </div>
+
+            {/* Instructions */}
+            <div className="bg-gray-800 rounded-lg p-4 md:p-6">
+                <h3 className="text-lg font-semibold text-white mb-4">📋 How to Setup Twitter Session</h3>
+                <div className="space-y-4">
+                    <div className="bg-gray-700 rounded-lg p-4">
+                        <h4 className="text-white font-medium mb-2">Step 1: Open Login Page</h4>
+                        <p className="text-sm text-gray-300 mb-2">
+                            Click "Open Login Page" to launch a browser window with Twitter login.
+                        </p>
+                    </div>
+
+                    <div className="bg-gray-700 rounded-lg p-4">
+                        <h4 className="text-white font-medium mb-2">Step 2: Login Manually</h4>
+                        <p className="text-sm text-gray-300 mb-2">
+                            In the opened browser window, login to Twitter using your credentials.
+                            The session will be saved automatically.
+                        </p>
+                    </div>
+
+                    <div className="bg-gray-700 rounded-lg p-4">
+                        <h4 className="text-white font-medium mb-2">Step 3: Verify Session</h4>
+                        <p className="text-sm text-gray-300 mb-2">
+                            Click "Check Status" to verify your login was successful.
+                            The status should show "Logged In: ✅ Yes".
+                        </p>
+                    </div>
+
+                    <div className="bg-blue-900/20 border border-blue-500/30 rounded-lg p-4">
+                        <h4 className="text-blue-400 font-medium mb-2">💡 Tips</h4>
+                        <ul className="text-sm text-blue-300 space-y-1">
+                            <li>• The browser window must stay open for community scraping to work</li>
+                            <li>• Session persists across server restarts</li>
+                            <li>• If session expires, just login again manually</li>
+                            <li>• Community scraping will automatically use this session</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            {/* Recent Twitter Activity */}
+            <div className="bg-gray-800 rounded-lg p-4 md:p-6">
+                <h3 className="text-lg font-semibold text-white mb-4">🔍 Recent Twitter Scraping Activity</h3>
+                <div className="text-center py-8 text-gray-400">
+                    <p>Twitter scraping activity will appear here when communities are detected.</p>
+                    <p className="text-sm mt-2">Check the browser console for detailed scraping logs.</p>
+                </div>
+            </div>
+        </div>
+    );
+
     // App.js - Parts 8 & 9: Lists, Forms, and Main Component
     const renderAddForm = (listType) => {
         const isWalletList = true; // Always treat as wallet input now
@@ -2893,7 +3967,7 @@ function App() {
                                 className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                 placeholder="e.g., HJdauMU7e8... or @username or 1234567890"
                             />
-                          
+
                             <div className="mt-2 text-xs text-gray-400">
                                 <p>• Wallet: Base58 address (HJdauMU7e8...)</p>
                                 <p>• Twitter: @username or username</p>
@@ -3246,7 +4320,7 @@ function App() {
                         >
                             ⚙️ Settings
                         </button>
-                        {/*<button
+                        <button
                             onClick={() => setActiveTab('demo')}
                             className={`py-3 md:py-4 px-2 border-b-2 transition-colors whitespace-nowrap text-sm md:text-base ${activeTab === 'demo'
                                 ? 'border-blue-500 text-blue-400'
@@ -3254,7 +4328,16 @@ function App() {
                                 }`}
                         >
                             🧪 Demo
-                        </button>*/}
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('twitter')}
+                            className={`py-3 md:py-4 px-2 border-b-2 transition-colors whitespace-nowrap text-sm md:text-base ${activeTab === 'twitter'
+                                ? 'border-blue-500 text-blue-400'
+                                : 'border-transparent text-gray-400 hover:text-white'
+                                }`}
+                        >
+                            🐦 Twitter Session
+                        </button>
                     </div>
                 </div>
             </nav>
@@ -3266,6 +4349,7 @@ function App() {
                 {activeTab === 'lists' && renderLists()}
                 {activeTab === 'communities' && renderCommunityManagement()}
                 {activeTab === 'demo' && renderDemoTab()}
+                {activeTab === 'twitter' && renderTwitterSession()}
                 {activeTab === 'settings' && (
                     <div className="space-y-6">
                         {renderSettings()}
@@ -3277,6 +4361,7 @@ function App() {
 
             {/* Enhanced Popups */}
             {renderSecondaryPopup()}
+            {renderPopupBlockerModal()}
 
             {/* Footer Info */}
             <footer className="bg-gray-800 border-t border-gray-700 px-4 md:px-6 py-3">
