@@ -23,7 +23,7 @@ import {
 } from 'lucide-react';
 import './App.css';
 
-const API_BASE = 'https://devscope.fun:3001/api';
+const API_BASE = 'https://devscope.fun:3002/api';
 //const API_BASE = 'https://devscope-be.onrender.com/api';
 
 function App() {
@@ -434,7 +434,7 @@ function App() {
     // WebSocket connection
     const connectWebSocket = useCallback(() => {
         try {
-            const ws = new WebSocket('wss://devscope.fun:3001');
+            const ws = new WebSocket('wss://devscope.fun:3002');
 
             ws.onopen = () => {
                 console.log('WebSocket connected');
