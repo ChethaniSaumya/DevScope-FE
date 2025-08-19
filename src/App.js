@@ -434,7 +434,7 @@ function App() {
     // WebSocket connection
     const connectWebSocket = useCallback(() => {
         try {
-            const ws = new WebSocket('wss://devscope.fun:3002');
+            const ws = new WebSocket('wss://devscope.fun:3001');
 
             ws.onopen = () => {
                 console.log('WebSocket connected');
