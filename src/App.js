@@ -83,7 +83,7 @@ function App() {
         error: null,
         checking: false
     });
-
+ 
     const [popupBlockerModal, setPopupBlockerModal] = useState({
         show: false,
         tokenUrl: '',
@@ -434,7 +434,7 @@ function App() {
     // WebSocket connection
     const connectWebSocket = useCallback(() => {
         try {
-            const ws = new WebSocket('wss://devscope.fun:3001');
+            const ws = new WebSocket('wss://devscope.fun:3002');
 
             ws.onopen = () => {
                 console.log('WebSocket connected');
