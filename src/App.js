@@ -3695,53 +3695,78 @@ function App() {
                 </div>
             </div>
 
-            {/* Instructions */}
+            {/* Updated Instructions */}
             <div className="bg-gray-800 rounded-lg p-4 md:p-6">
                 <h3 className="text-lg font-semibold text-white mb-4">📋 How to Setup Twitter Session</h3>
                 <div className="space-y-4">
                     <div className="bg-gray-700 rounded-lg p-4">
-                        <h4 className="text-white font-medium mb-2">Step 1: Open Login Page</h4>
+                        <h4 className="text-white font-medium mb-2">Step 1: Automatic Login</h4>
                         <p className="text-sm text-gray-300 mb-2">
-                            Click "Open Login Page" to launch a browser window with Twitter login.
+                            Click the "🌐 Login" button. The system will automatically log you in using the credentials configured in the server environment variables.
+                        </p>
+                        <div className="text-xs text-yellow-400 bg-yellow-900/20 p-2 rounded mt-2">
+                            <strong>Note:</strong> Twitter credentials must be configured in the server's .env file (TWITTER_USERNAME and TWITTER_PASSWORD)
+                        </div>
+                    </div>
+
+                    <div className="bg-gray-700 rounded-lg p-4">
+                        <h4 className="text-white font-medium mb-2">Step 2: Verify Login Success</h4>
+                        <p className="text-sm text-gray-300 mb-2">
+                            After clicking login, the system will automatically attempt to log in. Check the status above - it should show "Logged In: ✅ Yes".
+                        </p>
+                        <p className="text-sm text-gray-400">
+                            If login fails, check that the correct credentials are set in the server environment.
                         </p>
                     </div>
 
                     <div className="bg-gray-700 rounded-lg p-4">
-                        <h4 className="text-white font-medium mb-2">Step 2: Login Manually</h4>
+                        <h4 className="text-white font-medium mb-2">Step 3: Session Verification</h4>
                         <p className="text-sm text-gray-300 mb-2">
-                            In the opened browser window, login to Twitter using your credentials.
-                            The session will be saved automatically.
+                            Use "🔍 Check Status" to verify your session is active at any time. The session persists automatically and is saved for future use.
+                        </p>
+                        <p className="text-sm text-gray-400">
+                            If session expires, simply click "🌐 Login" again for automatic re-authentication.
                         </p>
                     </div>
 
-                    <div className="bg-gray-700 rounded-lg p-4">
-                        <h4 className="text-white font-medium mb-2">Step 3: Verify Session</h4>
-                        <p className="text-sm text-gray-300 mb-2">
-                            Click "Check Status" to verify your login was successful.
-                            The status should show "Logged In: ✅ Yes".
-                        </p>
+                    <div className="bg-green-900/20 border border-green-500/30 rounded-lg p-4">
+                        <h4 className="text-green-400 font-medium mb-2">✅ When Session is Active</h4>
+                        <ul className="text-sm text-green-300 space-y-1">
+                            <li>• Community scraping will work automatically when tokens are detected</li>
+                            <li>• The system can access Twitter community moderator pages</li>
+                            <li>• Admin detection from communities will function properly</li>
+                            <li>• Session data is saved and persists across server restarts</li>
+                        </ul>
                     </div>
 
                     <div className="bg-blue-900/20 border border-blue-500/30 rounded-lg p-4">
-                        <h4 className="text-blue-400 font-medium mb-2">💡 Tips</h4>
+                        <h4 className="text-blue-400 font-medium mb-2">🔧 Troubleshooting</h4>
                         <ul className="text-sm text-blue-300 space-y-1">
-                            <li>• The browser window must stay open for community scraping to work</li>
-                            <li>• Session persists across server restarts</li>
-                            <li>• If session expires, just login again manually</li>
-                            <li>• Community scraping will automatically use this session</li>
+                            <li>• If "🌐 Login" fails: Check server credentials in .env file</li>
+                            <li>• If session shows "Inactive": Click "🌐 Login" to re-authenticate</li>
+                            <li>• If browser crashes: Use "🔄 Reopen Browser" to restart</li>
+                            <li>• For manual logout: Use "🚪 Logout" button</li>
                         </ul>
+                    </div>
+
+                    <div className="bg-purple-900/20 border border-purple-500/30 rounded-lg p-4">
+                        <h4 className="text-purple-400 font-medium mb-2">🎯 Community Scraping Process</h4>
+                        <div className="text-sm text-purple-300 space-y-2">
+                            <p><strong>Automatic:</strong> When a token with a Twitter community is detected, the system will:</p>
+                            <ul className="list-disc list-inside space-y-1 ml-4">
+                                <li>Navigate to the community's moderators page</li>
+                                <li>Take a screenshot and extract text content</li>
+                                <li>Parse usernames and admin badges (Admin/Mod)</li>
+                                <li>Match found admins against your Primary/Secondary lists</li>
+                                <li>Trigger appropriate actions (auto-snipe or popup)</li>
+                            </ul>
+                            <p className="text-purple-400 font-medium mt-2">Example: Community with @Test (Admin) will be detected and matched</p>
+                        </div>
                     </div>
                 </div>
             </div>
+ 
 
-            {/* Recent Twitter Activity */}
-            <div className="bg-gray-800 rounded-lg p-4 md:p-6">
-                <h3 className="text-lg font-semibold text-white mb-4">🔍 Recent Twitter Scraping Activity</h3>
-                <div className="text-center py-8 text-gray-400">
-                    <p>Twitter scraping activity will appear here when communities are detected.</p>
-                    <p className="text-sm mt-2">Check the browser console for detailed scraping logs.</p>
-                </div>
-            </div>
         </div>
     );
 
@@ -4133,7 +4158,7 @@ function App() {
                         >
                             ⚙️ Settings
                         </button>
-{/*<button
+                        <button
                             onClick={() => setActiveTab('demo')}
                             className={`py-3 md:py-4 px-2 border-b-2 transition-colors whitespace-nowrap text-sm md:text-base ${activeTab === 'demo'
                                 ? 'border-blue-500 text-blue-400'
@@ -4141,7 +4166,7 @@ function App() {
                                 }`}
                         >
                             🧪 Demo
-                        </button>*/}
+                        </button>
                         <button
                             onClick={() => setActiveTab('twitter')}
                             className={`py-3 md:py-4 px-2 border-b-2 transition-colors whitespace-nowrap text-sm md:text-base ${activeTab === 'twitter'
@@ -4215,5 +4240,3 @@ function App() {
 }
 
 export default App;
-
-
