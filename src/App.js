@@ -1731,7 +1731,7 @@ function App() {
 
                 {!botStatus.isRunning && (
                     <div className="bg-red-900/20 border border-red-500/30 rounded-lg p-4 mb-6">
-                        <p className="text-red-400">⚠️ Bot must be running to inject demo tokens</p>
+                        <p className="text-red-400">⚠️ Bot will be running to inject demo tokens</p>
                     </div>
                 )}
 
@@ -3705,7 +3705,7 @@ function App() {
                             Click the "🌐 Login" button. The system will automatically log you in using the credentials configured in the server environment variables.
                         </p>
                         <div className="text-xs text-yellow-400 bg-yellow-900/20 p-2 rounded mt-2">
-                            <strong>Note:</strong> Twitter credentials must be configured in the server's .env file (TWITTER_USERNAME and TWITTER_PASSWORD)
+                            <strong>Note:</strong> Twitter credentials will be configured in the server's .env file (TWITTER_USERNAME and TWITTER_PASSWORD)
                         </div>
                     </div>
 
@@ -3745,24 +3745,10 @@ function App() {
                             <li>• If "🌐 Login" fails: Check server credentials in .env file</li>
                             <li>• If session shows "Inactive": Click "🌐 Login" to re-authenticate</li>
                             <li>• If browser crashes: Use "🔄 Reopen Browser" to restart</li>
-                            <li>• For manual logout: Use "🚪 Logout" button</li>
+                            <li>• For manual logout: Use "🚪 Logout" button. Do not logout if it isn't needed (multiple logins logout might ban your account from twitter)</li>
                         </ul>
                     </div>
-
-                    <div className="bg-purple-900/20 border border-purple-500/30 rounded-lg p-4">
-                        <h4 className="text-purple-400 font-medium mb-2">🎯 Community Scraping Process</h4>
-                        <div className="text-sm text-purple-300 space-y-2">
-                            <p><strong>Automatic:</strong> When a token with a Twitter community is detected, the system will:</p>
-                            <ul className="list-disc list-inside space-y-1 ml-4">
-                                <li>Navigate to the community's moderators page</li>
-                                <li>Take a screenshot and extract text content</li>
-                                <li>Parse usernames and admin badges (Admin/Mod)</li>
-                                <li>Match found admins against your Primary/Secondary lists</li>
-                                <li>Trigger appropriate actions (auto-snipe or popup)</li>
-                            </ul>
-                            <p className="text-purple-400 font-medium mt-2">Example: Community with @Test (Admin) will be detected and matched</p>
-                        </div>
-                    </div>
+ 
                 </div>
             </div>
  
