@@ -83,7 +83,7 @@ function App() {
         error: null,
         checking: false
     });
- 
+
     const [popupBlockerModal, setPopupBlockerModal] = useState({
         show: false,
         tokenUrl: '',
@@ -419,15 +419,20 @@ function App() {
 
     const openTwitterLogin = async () => {
         try {
-            const response = await apiCall('/twitter-open-login', { method: 'POST' });
-            addNotification('success', '🌐 Twitter login page opened in browser window');
+            setTwitterSessionStatus(prev => ({ ...prev, checking: true }));
 
-            // Auto-check session status after 5 seconds
+            const response = await apiCall('/twitter-open-login', { method: 'POST' });
+
+            addNotification('success', '🔐 Automatic Twitter login successful');
+
+            // Check session status immediately
             setTimeout(() => {
                 checkTwitterSession();
-            }, 5000);
+            }, 2000);
+
         } catch (error) {
-            addNotification('error', 'Failed to open Twitter login page');
+            addNotification('error', 'Automatic login failed - check server credentials');
+            setTwitterSessionStatus(prev => ({ ...prev, checking: false }));
         }
     };
 
@@ -2728,52 +2733,52 @@ function App() {
     };
 
     // Replace the attemptPopupWithDetection function with this simplified version
-const attemptPopupWithDetection = async (url, tokenAddress, openType) => {
-    console.log(`🚀 ATTEMPTING POPUP OPENING (${openType.toUpperCase()})`);
-    
-    try {
-        // TRY ELECTRON FIRST
-        if (window.electronAPI && window.electronAPI.openExternalURL) {
-            console.log('🖥️ USING ELECTRON API METHOD');
-            window.electronAPI.openExternalURL(url);
+    const attemptPopupWithDetection = async (url, tokenAddress, openType) => {
+        console.log(`🚀 ATTEMPTING POPUP OPENING (${openType.toUpperCase()})`);
+
+        try {
+            // TRY ELECTRON FIRST
+            if (window.electronAPI && window.electronAPI.openExternalURL) {
+                console.log('🖥️ USING ELECTRON API METHOD');
+                window.electronAPI.openExternalURL(url);
+                return {
+                    success: true,
+                    method: 'electron',
+                    reason: 'Opened via Electron API'
+                };
+            }
+
+            // TRY BROWSER - SIMPLIFIED DETECTION
+            console.log('🌐 USING BROWSER WINDOW.OPEN() METHOD');
+            const newWindow = window.open(url, '_blank');
+
+            // SIMPLE CHECK - if window.open returns null, it's blocked
+            if (!newWindow) {
+                console.error('❌ POPUP BLOCKED - window.open returned null');
+                return {
+                    success: false,
+                    method: 'browser_blocked',
+                    reason: 'Popup blocked by browser'
+                };
+            }
+
+            // SUCCESS - popup opened
+            console.log('✅ POPUP OPENED SUCCESSFULLY');
             return {
                 success: true,
-                method: 'electron',
-                reason: 'Opened via Electron API'
+                method: 'browser_success',
+                reason: 'Opened successfully'
             };
-        }
 
-        // TRY BROWSER - SIMPLIFIED DETECTION
-        console.log('🌐 USING BROWSER WINDOW.OPEN() METHOD');
-        const newWindow = window.open(url, '_blank');
-
-        // SIMPLE CHECK - if window.open returns null, it's blocked
-        if (!newWindow) {
-            console.error('❌ POPUP BLOCKED - window.open returned null');
+        } catch (openError) {
+            console.error('❌ EXCEPTION DURING POPUP ATTEMPT:', openError);
             return {
                 success: false,
-                method: 'browser_blocked',
-                reason: 'Popup blocked by browser'
+                method: 'exception',
+                reason: `Exception occurred: ${openError.message}`
             };
         }
-
-        // SUCCESS - popup opened
-        console.log('✅ POPUP OPENED SUCCESSFULLY');
-        return {
-            success: true,
-            method: 'browser_success',
-            reason: 'Opened successfully'
-        };
-
-    } catch (openError) {
-        console.error('❌ EXCEPTION DURING POPUP ATTEMPT:', openError);
-        return {
-            success: false,
-            method: 'exception',
-            reason: `Exception occurred: ${openError.message}`
-        };
-    }
-};
+    };
 
     const handlePopupBlockedScenario = (url, tokenAddress, reason, openType) => {
         console.error('🚫 POPUP BLOCKED - HANDLING SCENARIO');
