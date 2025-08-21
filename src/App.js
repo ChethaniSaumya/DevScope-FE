@@ -981,7 +981,6 @@ function App() {
         }
     };
 
-    // Fixed viewToken function in App.js
     const viewToken = async (token) => {
         console.log('🌐 Opening token page for:', token.tokenAddress);
 
@@ -993,33 +992,53 @@ function App() {
         // Check user's preference for token page destination
         if (settings.tokenPageDestination === 'axiom') {
             try {
-                // Use the backend API to get the proper Axiom URL with pair address
+                // Use the backend API to get the proper Axiom URL (bonding curve or pair address)
                 const response = await apiCall(`/pair-address/${token.tokenAddress}`);
 
                 console.log('🔍 Backend response:', response); // Debug log
 
-                if (response.success && response.pairData && response.pairData.pairAddress) {
-                    console.log(`✅ Backend found pair for Axiom: ${response.pairData.pairAddress}`);
-                    url = response.axiomUrl; // Use the pre-generated Axiom URL from backend
-                    addNotification('success', `🎯 Opening Axiom with pair: ${response.pairData.pairAddress.substring(0, 8)}...`);
-                    setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: 'success' }));
+                if (response.success) {
+                    if (response.isPumpFun && response.bondingCurveData) {
+                        // Pump.fun token - use bonding curve address
+                        console.log(`✅ Backend found bonding curve for Axiom: ${response.bondingCurveData.bondingCurveAddress}`);
+                        url = response.axiomUrl; // Use the pre-generated Axiom URL with bonding curve
+                        addNotification('success', `🎯 Opening Axiom with bonding curve: ${response.bondingCurveData.bondingCurveAddress.substring(0, 8)}...`);
+                        setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: 'success' }));
 
-                    // Open the URL only if pair was found
-                    if (window.electronAPI && window.electronAPI.openExternalURL) {
-                        window.electronAPI.openExternalURL(url);
+                        // Open the URL
+                        if (window.electronAPI && window.electronAPI.openExternalURL) {
+                            window.electronAPI.openExternalURL(url);
+                        } else {
+                            window.open(url, '_blank');
+                        }
+                    } else if (!response.isPumpFun && response.pairData && response.pairData.pairAddress) {
+                        // Non-pump.fun token - use pair address
+                        console.log(`✅ Backend found pair for Axiom: ${response.pairData.pairAddress}`);
+                        url = response.axiomUrl; // Use the pre-generated Axiom URL with pair
+                        addNotification('success', `🎯 Opening Axiom with pair: ${response.pairData.pairAddress.substring(0, 8)}...`);
+                        setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: 'success' }));
+
+                        // Open the URL
+                        if (window.electronAPI && window.electronAPI.openExternalURL) {
+                            window.electronAPI.openExternalURL(url);
+                        } else {
+                            window.open(url, '_blank');
+                        }
                     } else {
-                        window.open(url, '_blank');
+                        console.log('⚠️ Backend found no pair/bonding curve, using token address for Axiom');
+                        url = response.fallbackAxiomUrl || `https://axiom.trade/meme/${token.tokenAddress}`;
+                        setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: 'no-pair' }));
+                        // Don't open the URL in this case, just show the message
+                        addNotification('warning', '🔍 No pair/bonding curve found yet, check again in few seconds');
+                        return; // Add this return to prevent opening the page
                     }
                 } else {
-                    console.log('⚠️ Backend found no pair, using token address for Axiom');
+                    console.log('⚠️ Backend error, using fallback URL');
                     url = response.fallbackAxiomUrl || `https://axiom.trade/meme/${token.tokenAddress}`;
-                    setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: 'no-pair' }));
-                    // Don't open the URL in this case, just show the message
-                    addNotification('warning', '🔍 No pair found yet, check again in few seconds');
-                    return; // Add this return to prevent opening the page
+                    setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: 'error' }));
                 }
             } catch (error) {
-                console.error('❌ Error fetching pair from backend for Axiom:', error);
+                console.error('❌ Error fetching from backend for Axiom:', error);
                 url = `https://axiom.trade/meme/${token.tokenAddress}`;
                 setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: 'error' }));
             }
@@ -1068,29 +1087,45 @@ function App() {
         // Check user's preference for token page destination
         if (settings.tokenPageDestination === 'axiom') {
             try {
-                // Use the backend API to get the proper Axiom URL with pair address
+                // Use the backend API to get the proper Axiom URL (bonding curve or pair address)
                 const response = await apiCall(`/pair-address/${token.tokenAddress}`);
 
                 console.log('🔍 Backend response:', response); // Debug log
 
-                if (response.success && response.pairData && response.pairData.pairAddress) {
-                    console.log(`✅ Backend found pair for Axiom: ${response.pairData.pairAddress}`);
-                    url = response.axiomUrl; // Use the pre-generated Axiom URL from backend
-                    addNotification('success', `🎯 Opening Axiom with pair: ${response.pairData.pairAddress.substring(0, 8)}...`);
-                    setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: 'success' }));
+                if (response.success) {
+                    if (response.isPumpFun && response.bondingCurveData) {
+                        // Pump.fun token - use bonding curve address
+                        console.log(`✅ Backend found bonding curve for Axiom: ${response.bondingCurveData.bondingCurveAddress}`);
+                        url = response.axiomUrl;
+                        addNotification('success', `🎯 Opening Axiom with bonding curve: ${response.bondingCurveData.bondingCurveAddress.substring(0, 8)}...`);
+                        setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: 'success' }));
+                    } else if (!response.isPumpFun && response.pairData && response.pairData.pairAddress) {
+                        // Non-pump.fun token - use pair address
+                        console.log(`✅ Backend found pair for Axiom: ${response.pairData.pairAddress}`);
+                        url = response.axiomUrl;
+                        addNotification('success', `🎯 Opening Axiom with pair: ${response.pairData.pairAddress.substring(0, 8)}...`);
+                        setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: 'success' }));
+                    } else {
+                        console.log('⚠️ Backend found no pair/bonding curve, using token address for Axiom');
+                        url = response.fallbackAxiomUrl || `https://axiom.trade/meme/${token.tokenAddress}`;
+                        setTokenPairStatus(prev => ({
+                            ...prev,
+                            [token.tokenAddress]: 'no-pair'
+                        }));
+                        // Don't open the page, just show the message and return
+                        addNotification('warning', '🔍 No pair/bonding curve found yet, check again in few seconds');
+                        return;
+                    }
                 } else {
-                    console.log('⚠️ Backend found no pair, using token address for Axiom');
+                    console.log('⚠️ Backend error, using fallback URL');
                     url = response.fallbackAxiomUrl || `https://axiom.trade/meme/${token.tokenAddress}`;
                     setTokenPairStatus(prev => ({
                         ...prev,
-                        [token.tokenAddress]: 'no-pair'
+                        [token.tokenAddress]: 'error'
                     }));
-                    // Don't open the page, just show the message and return
-                    addNotification('warning', '🔍 No pair found yet, check again in few seconds');
-                    return;
                 }
             } catch (error) {
-                console.error('❌ Error fetching pair from backend for Axiom:', error);
+                console.error('❌ Error fetching from backend for Axiom:', error);
                 url = `https://axiom.trade/meme/${token.tokenAddress}`;
                 setTokenPairStatus(prev => ({
                     ...prev,
@@ -3748,10 +3783,10 @@ function App() {
                             <li>• For manual logout: Use "🚪 Logout" button. Do not logout if it isn't needed (multiple logins logout might ban your account from twitter)</li>
                         </ul>
                     </div>
- 
+
                 </div>
             </div>
- 
+
 
         </div>
     );
@@ -4144,7 +4179,7 @@ function App() {
                         >
                             ⚙️ Settings
                         </button>
-{/*<button
+                        <button
                             onClick={() => setActiveTab('demo')}
                             className={`py-3 md:py-4 px-2 border-b-2 transition-colors whitespace-nowrap text-sm md:text-base ${activeTab === 'demo'
                                 ? 'border-blue-500 text-blue-400'
@@ -4152,7 +4187,7 @@ function App() {
                                 }`}
                         >
                             🧪 Demo
-                        </button>*/}
+                        </button>
                         <button
                             onClick={() => setActiveTab('twitter')}
                             className={`py-3 md:py-4 px-2 border-b-2 transition-colors whitespace-nowrap text-sm md:text-base ${activeTab === 'twitter'
@@ -4226,4 +4261,3 @@ function App() {
 }
 
 export default App;
-
