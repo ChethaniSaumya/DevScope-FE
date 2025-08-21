@@ -24,6 +24,7 @@ import {
 import './App.css';
 
 const API_BASE = 'https://devscope.fun:3002/api';
+//const API_BASE = 'https://devscope-be.onrender.com/api';
 
 function App() {
     // State management
@@ -646,58 +647,6 @@ function App() {
         }
     };
 
-    const checkForPairAndRefresh = async (tokenAddress, destination) => {
-        try {
-            console.log(`🔍 Checking for pair address for refresh: ${tokenAddress}`);
-
-            // Try multiple fast APIs
-            const apis = [
-                `https://quote-api.jup.ag/v6/quote?inputMint=${tokenAddress}&outputMint=So11111111111111111111111111111111111111112&amount=1000000`,
-                `https://public-api.birdeye.so/defi/token_overview?address=${tokenAddress}`,
-                `${API_BASE}/pair-address/${tokenAddress}` // Your existing API
-            ];
-
-            for (const apiUrl of apis) {
-                try {
-                    const response = await fetch(apiUrl, {
-                        timeout: 3000,
-                        signal: AbortSignal.timeout(3000)
-                    });
-
-                    if (response.ok) {
-                        console.log(`✅ Pair detected! Refreshing with pair address...`);
-
-                        // Send refresh message to backend
-                        const refreshUrl = destination === 'axiom'
-                            ? `https://axiom.trade/meme/${tokenAddress}` // You can enhance this with actual pair if needed
-                            : `https://neo.bullx.io/terminal?chainId=1399811149&address=${tokenAddress}`;
-
-                        // Trigger refresh
-                        handleWebSocketMessage({
-                            type: 'auto_open_token_page',
-                            data: {
-                                tokenAddress,
-                                tokenPageUrl: refreshUrl,
-                                destination,
-                                isRefresh: true,
-                                reason: 'pair_found_refresh'
-                            }
-                        });
-
-                        return; // Stop checking once we find a pair
-                    }
-                } catch (apiError) {
-                    console.log(`API ${apiUrl} failed:`, apiError.message);
-                    continue; // Try next API
-                }
-            }
-
-            console.log(`⚠️ No pair found for ${tokenAddress} yet`);
-        } catch (error) {
-            console.error('❌ Pair check for refresh failed:', error);
-        }
-    };
-
     const handleWebSocketMessage = (data) => {
         switch (data.type) {
             case 'bot_status':
@@ -872,37 +821,15 @@ function App() {
             case 'auto_open_token_page':
                 console.log('🌐 Auto-opening token page:', data.data);
 
-                if (data.data.isRefresh) {
-                    // This is a refresh with pair address - store the window reference and refresh
-                    console.log('🔄 Refreshing existing window with pair address');
-
-                    // Try to refresh existing window or open new one
-                    if (window.electronAPI && window.electronAPI.openExternalURL) {
-                        window.electronAPI.openExternalURL(data.data.tokenPageUrl);
-                    } else {
-                        // For web browser, we'll open a new tab since we can't refresh existing one
-                        window.open(data.data.tokenPageUrl, '_blank');
-                    }
-
-                    addNotification('success', `🎯 Page refreshed with PAIR ADDRESS!`);
-                } else {
-                    // Initial opening
-                    if (window.electronAPI && window.electronAPI.openExternalURL) {
-                        window.electronAPI.openExternalURL(data.data.tokenPageUrl);
-                    } else {
-                        window.open(data.data.tokenPageUrl, '_blank');
-                    }
-
+                if (window.electronAPI && window.electronAPI.openExternalURL) {
+                    window.electronAPI.openExternalURL(data.data.tokenPageUrl);
                     addNotification('info', `🌐 ${data.data.destination === 'axiom' ? 'Axiom' : 'Neo BullX'} opened automatically`);
-
-                    // Start background pair detection for this token
-                    if (data.data.destination === 'axiom') {
-                        setTimeout(() => {
-                            checkForPairAndRefresh(data.data.tokenAddress, data.data.destination);
-                        }, 2000); // Check after 2 seconds
-                    }
+                } else {
+                    window.open(data.data.tokenPageUrl, '_blank');
+                    addNotification('info', `🌐 ${data.data.destination === 'axiom' ? 'Axiom' : 'Neo BullX'} opened automatically`);
                 }
                 break;
+
             case 'snipe_error':
                 addNotification('error', `❌ Snipe failed: ${data.data.error}`);
                 break;
@@ -3821,10 +3748,10 @@ function App() {
                             <li>• For manual logout: Use "🚪 Logout" button. Do not logout if it isn't needed (multiple logins logout might ban your account from twitter)</li>
                         </ul>
                     </div>
-
+ 
                 </div>
             </div>
-
+ 
 
         </div>
     );
