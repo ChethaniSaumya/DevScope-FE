@@ -2446,18 +2446,65 @@ function App() {
                     </div>
 
                     {/* 🚀 NEW: PAIR ADDRESS DETECTION STATUS SECTION */}
+                    {/* 🚀 NEW: ADDRESS DETECTION STATUS SECTION */}
                     <div className="bg-gray-700 p-4 rounded mb-6 border-l-4 border-blue-500">
                         <h4 className="text-lg font-semibold text-white mb-3 flex items-center">
                             <TrendingUp className="mr-2" size={16} />
-                            Pair Address Detection Status
+                            {currentPairStatus === 'checking' && 'Address Detection Status'}
+                            {currentPairStatus === 'found' && (pairDetectionStatus[token.tokenAddress]?.bondingCurveData ? 'Bonding Curve Address Found' : 'Pair Address Found')}
+                            {currentPairStatus === 'not_found' && 'Address Not Detected Yet'}
+                            {currentPairStatus === 'error' && 'Address Detection Error'}
                         </h4>
 
                         {currentPairStatus === 'checking' && (
                             <div className="flex items-center space-x-3">
                                 <div className="animate-spin w-5 h-5 border-2 border-blue-400 border-t-transparent rounded-full"></div>
                                 <div>
-                                    <p className="text-blue-400 font-medium">🔍 Checking for pair address...</p>
-                                    <p className="text-sm text-gray-400">Scanning DexScreener for liquidity pool data</p>
+                                    <p className="text-blue-400 font-medium">🔍 Checking for address...</p>
+                                    <p className="text-sm text-gray-400">Determining if this is a pump.fun token or needs pair detection</p>
+                                </div>
+                            </div>
+                        )}
+
+                        {currentPairStatus === 'found' && pairDetectionStatus[token.tokenAddress]?.bondingCurveData && (
+                            <div className="space-y-3">
+                                <div className="flex items-center space-x-3">
+                                    <div className="w-5 h-5 bg-green-500 rounded-full flex items-center justify-center">
+                                        <span className="text-white text-xs">✓</span>
+                                    </div>
+                                    <div>
+                                        <p className="text-green-400 font-medium">✅ Bonding Curve Address Found!</p>
+                                        <p className="text-sm text-gray-400">Pump.fun token detected - using bonding curve for trading</p>
+                                    </div>
+                                </div>
+
+                                <div className="bg-gray-600 p-3 rounded">
+                                    <p className="text-sm text-gray-400 mb-1">Bonding Curve Address:</p>
+                                    <div className="flex items-center space-x-2">
+                                        <code className="text-sm font-mono text-green-400 flex-1 break-all">
+                                            {pairDetectionStatus[token.tokenAddress]?.bondingCurveData?.bondingCurveAddress}
+                                        </code>
+                                        <button
+                                            onClick={() => copyToClipboard(
+                                                pairDetectionStatus[token.tokenAddress]?.bondingCurveData?.bondingCurveAddress,
+                                                'Bonding curve address'
+                                            )}
+                                            className="text-blue-400 hover:text-blue-300 px-2 py-1 text-xs"
+                                        >
+                                            📋
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div className="bg-gray-600 p-2 rounded text-center">
+                                        <p className="text-xs text-gray-400">Type</p>
+                                        <p className="text-white font-medium text-sm">Pump.fun</p>
+                                    </div>
+                                    <div className="bg-gray-600 p-2 rounded text-center">
+                                        <p className="text-xs text-gray-400">Trading</p>
+                                        <p className="text-white font-medium text-sm">Bonding Curve</p>
+                                    </div>
                                 </div>
                             </div>
                         )}
@@ -2517,15 +2564,23 @@ function App() {
                                         <span className="text-white text-xs">!</span>
                                     </div>
                                     <div>
-                                        <p className="text-yellow-400 font-medium">⚠️ Pair Address Not Detected Yet</p>
-                                        <p className="text-sm text-gray-400">No liquidity pool found - token might be too new</p>
+                                        <p className="text-yellow-400 font-medium">⚠️ Address Not Detected Yet</p>
+                                        <p className="text-sm text-gray-400">
+                                            {token.platform === 'pumpfun' || token.tokenAddress?.endsWith('pump')
+                                                ? 'Bonding curve not accessible - token might be very new'
+                                                : 'No liquidity pool found - token might be too new'
+                                            }
+                                        </p>
                                     </div>
                                 </div>
 
                                 <div className="bg-yellow-900/20 border border-yellow-500/30 rounded p-3">
                                     <p className="text-yellow-300 text-sm">
-                                        💡 <strong>What this means:</strong> The token exists but hasn't been added to a liquidity pool yet.
-                                        This is normal for very new tokens. Auto-retry will check again in 3 seconds.
+                                        💡 <strong>What this means:</strong>
+                                        {token.platform === 'pumpfun' || token.tokenAddress?.endsWith('pump')
+                                            ? ' The bonding curve exists but may not be accessible yet. This is normal for very new pump.fun tokens.'
+                                            : ' The token exists but hasn\'t been added to a liquidity pool yet. This is normal for very new tokens.'
+                                        } Auto-retry will check again in 3 seconds.
                                     </p>
                                 </div>
 
@@ -2543,7 +2598,7 @@ function App() {
                                     <span className="text-white text-xs">✗</span>
                                 </div>
                                 <div>
-                                    <p className="text-red-400 font-medium">❌ Error Checking Pair Address</p>
+                                    <p className="text-red-400 font-medium">❌ Error Checking Address</p>
                                     <p className="text-sm text-gray-400">API error occurred - will retry automatically</p>
                                 </div>
                             </div>
@@ -2570,6 +2625,7 @@ function App() {
                     </div>
 
                     {/* Enhanced Action Buttons */}
+                    {/* Action Buttons */}
                     <div className="flex flex-col space-y-3 md:flex-row md:space-y-0 md:space-x-4">
                         <div className="flex-1">
                             <button
@@ -2577,7 +2633,8 @@ function App() {
                                 className="w-full px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center justify-center space-x-2"
                             >
                                 <span>🌐 View Token Page</span>
-                                {currentPairStatus === 'found' && <span className="text-green-300">(With Pair)</span>}
+                                {currentPairStatus === 'found' && pairDetectionStatus[token.tokenAddress]?.bondingCurveData && <span className="text-green-300">(With Bonding Curve)</span>}
+                                {currentPairStatus === 'found' && pairDetectionStatus[token.tokenAddress]?.pairData && <span className="text-green-300">(With Pair)</span>}
                                 {currentPairStatus === 'not_found' && <span className="text-yellow-300">(Token Address)</span>}
                             </button>
                         </div>
@@ -2590,6 +2647,29 @@ function App() {
                             <span>SNIPE ({settings.globalSnipeSettings.amount} SOL)</span>
                         </button>
                     </div>
+
+                    {/* Status message under buttons */}
+                    {tokenPairStatus[token.tokenAddress] === 'no-pair' && (
+                        <div className="mt-3 p-2 bg-yellow-900/20 border border-yellow-500/30 rounded text-xs text-yellow-400 text-center">
+                            🔍 {token.platform === 'pumpfun' || token.tokenAddress?.endsWith('pump')
+                                ? 'Bonding curve not accessible yet, check again in few seconds'
+                                : 'No pair found yet, check again in few seconds'
+                            }
+                        </div>
+                    )}
+                    {tokenPairStatus[token.tokenAddress] === 'error' && (
+                        <div className="mt-3 p-2 bg-red-900/20 border border-red-500/30 rounded text-xs text-red-400 text-center">
+                            ❌ Error fetching address data, using token address
+                        </div>
+                    )}
+                    {tokenPairStatus[token.tokenAddress] === 'success' && (
+                        <div className="mt-3 p-2 bg-green-900/20 border border-green-500/30 rounded text-xs text-green-400 text-center">
+                            ✅ {pairDetectionStatus[token.tokenAddress]?.bondingCurveData
+                                ? 'Bonding curve found! Opening with trading interface'
+                                : 'Pair found! Opening with liquidity pool'
+                            }
+                        </div>
+                    )}
 
                     {/* Status message under buttons */}
                     {tokenPairStatus[token.tokenAddress] === 'no-pair' && (
@@ -2653,10 +2733,36 @@ function App() {
         );
     };
 
+    // 5. AUTO-OPEN WITH ADDRESS (Updated for bonding curves)
+    const autoOpenTokenPageWithAddress = async (tokenAddress, url, addressType) => {
+        console.log(`🚀 AUTO-OPENING TOKEN PAGE WITH ${addressType.toUpperCase()}`);
+        console.log(`🔗 URL: ${url}`);
+        console.log(`🎯 Token: ${tokenAddress}`);
 
-    // 4. ENHANCED PAIR ADDRESS CHECKING WITH RETRY
+        try {
+            const popupResult = await attemptPopupWithDetection(url, tokenAddress, `auto-open-with-${addressType}`);
+
+            if (popupResult.success) {
+                console.log(`✅ AUTO-OPEN WITH ${addressType.toUpperCase()} SUCCEEDED`);
+                addNotification('success', `🚀 Token page auto-opened with ${addressType === 'bonding_curve' ? 'bonding curve' : 'pair address'}!`);
+
+                // Close the popup since we successfully opened the page
+                setSecondaryPopup({ show: false, tokenData: null });
+
+            } else {
+                console.error(`❌ AUTO-OPEN WITH ${addressType.toUpperCase()} FAILED:`, popupResult.reason);
+                addNotification('warning', '🚫 Auto-open blocked - use "View Token Page" button');
+                handlePopupBlockedScenario(url, tokenAddress, popupResult.reason, `auto-open-with-${addressType}`);
+            }
+        } catch (error) {
+            console.error(`❌ Error in auto-open with ${addressType}:`, error);
+            addNotification('error', `❌ Auto-open error: ${error.message}`);
+        }
+    };
+
+    // 4. ENHANCED PAIR ADDRESS CHECKING WITH RETRY (Updated for bonding curves)
     const checkPairAddressWithRetry = async (tokenAddress, maxRetries = 3, currentRetry = 0) => {
-        console.log(`🔍 Checking pair address for ${tokenAddress} (attempt ${currentRetry + 1}/${maxRetries})`);
+        console.log(`🔍 Checking address for ${tokenAddress} (attempt ${currentRetry + 1}/${maxRetries})`);
 
         // Set status to checking
         setPairDetectionStatus(prev => ({
@@ -2666,35 +2772,89 @@ function App() {
 
         try {
             const response = await apiCall(`/pair-address/${tokenAddress}`);
-            console.log(`📊 Pair check response:`, response);
+            console.log(`📊 Address check response:`, response);
 
-            if (response.success && response.pairData && response.pairData.pairAddress) {
-                console.log(`✅ Pair found for ${tokenAddress}:`, response.pairData.pairAddress);
+            if (response.success) {
+                if (response.isPumpFun && response.bondingCurveData) {
+                    // Pump.fun token - bonding curve found
+                    console.log(`✅ Bonding curve found for ${tokenAddress}:`, response.bondingCurveData.bondingCurveAddress);
 
-                // Update status to found
-                setPairDetectionStatus(prev => ({
-                    ...prev,
-                    [tokenAddress]: 'found',
-                    pairData: response.pairData
-                }));
+                    // Update status to found
+                    setPairDetectionStatus(prev => ({
+                        ...prev,
+                        [tokenAddress]: 'found',
+                        bondingCurveData: response.bondingCurveData
+                    }));
 
-                // AUTO-OPEN WITH PAIR ADDRESS AFTER 3 SECONDS
-                console.log(`🚀 Starting 3-second auto-open countdown for ${tokenAddress}...`);
-                const autoOpenTimer = setTimeout(() => {
-                    console.log(`🚀 AUTO-OPENING TOKEN PAGE WITH PAIR ADDRESS`);
-                    autoOpenTokenPageWithPairAddress(tokenAddress, response.axiomUrl);
-                }, 3000);
+                    // AUTO-OPEN WITH BONDING CURVE ADDRESS AFTER 3 SECONDS
+                    console.log(`🚀 Starting 3-second auto-open countdown for pump.fun token ${tokenAddress}...`);
+                    const autoOpenTimer = setTimeout(() => {
+                        console.log(`🚀 AUTO-OPENING TOKEN PAGE WITH BONDING CURVE ADDRESS`);
+                        autoOpenTokenPageWithAddress(tokenAddress, response.axiomUrl, 'bonding_curve');
+                    }, 3000);
 
-                // Store timer reference
-                setAutoRetryTimers(prev => ({
-                    ...prev,
-                    [tokenAddress]: autoOpenTimer
-                }));
+                    // Store timer reference
+                    setAutoRetryTimers(prev => ({
+                        ...prev,
+                        [tokenAddress]: autoOpenTimer
+                    }));
 
-                addNotification('success', `✅ Pair found! Auto-opening in 3 seconds...`);
+                    addNotification('success', `✅ Bonding curve found! Auto-opening in 3 seconds...`);
 
+                } else if (!response.isPumpFun && response.pairData && response.pairData.pairAddress) {
+                    // Non-pump.fun token - pair address found
+                    console.log(`✅ Pair found for ${tokenAddress}:`, response.pairData.pairAddress);
+
+                    // Update status to found
+                    setPairDetectionStatus(prev => ({
+                        ...prev,
+                        [tokenAddress]: 'found',
+                        pairData: response.pairData
+                    }));
+
+                    // AUTO-OPEN WITH PAIR ADDRESS AFTER 3 SECONDS
+                    console.log(`🚀 Starting 3-second auto-open countdown for ${tokenAddress}...`);
+                    const autoOpenTimer = setTimeout(() => {
+                        console.log(`🚀 AUTO-OPENING TOKEN PAGE WITH PAIR ADDRESS`);
+                        autoOpenTokenPageWithAddress(tokenAddress, response.axiomUrl, 'pair_address');
+                    }, 3000);
+
+                    // Store timer reference
+                    setAutoRetryTimers(prev => ({
+                        ...prev,
+                        [tokenAddress]: autoOpenTimer
+                    }));
+
+                    addNotification('success', `✅ Pair found! Auto-opening in 3 seconds...`);
+
+                } else {
+                    console.log(`⚠️ No pair/bonding curve found for ${tokenAddress}`);
+
+                    // Update status to not found
+                    setPairDetectionStatus(prev => ({
+                        ...prev,
+                        [tokenAddress]: 'not_found'
+                    }));
+
+                    // Retry if we haven't exceeded max retries
+                    if (currentRetry < maxRetries - 1) {
+                        console.log(`🔄 Scheduling retry ${currentRetry + 2}/${maxRetries} in 5 seconds...`);
+
+                        const retryTimer = setTimeout(() => {
+                            checkPairAddressWithRetry(tokenAddress, maxRetries, currentRetry + 1);
+                        }, 5000);
+
+                        setAutoRetryTimers(prev => ({
+                            ...prev,
+                            [tokenAddress]: retryTimer
+                        }));
+                    } else {
+                        console.log(`❌ Max retries reached for ${tokenAddress}`);
+                        addNotification('warning', `⚠️ No pair/bonding curve found after ${maxRetries} attempts`);
+                    }
+                }
             } else {
-                console.log(`⚠️ No pair found for ${tokenAddress}`);
+                console.log(`⚠️ API returned error for ${tokenAddress}:`, response.message);
 
                 // Update status to not found
                 setPairDetectionStatus(prev => ({
@@ -2704,7 +2864,7 @@ function App() {
 
                 // Retry if we haven't exceeded max retries
                 if (currentRetry < maxRetries - 1) {
-                    console.log(`🔄 Scheduling retry ${currentRetry + 2}/${maxRetries} in 5 seconds...`);
+                    console.log(`🔄 Retrying due to API error in 5 seconds...`);
 
                     const retryTimer = setTimeout(() => {
                         checkPairAddressWithRetry(tokenAddress, maxRetries, currentRetry + 1);
@@ -2714,14 +2874,11 @@ function App() {
                         ...prev,
                         [tokenAddress]: retryTimer
                     }));
-                } else {
-                    console.log(`❌ Max retries reached for ${tokenAddress}`);
-                    addNotification('warning', `⚠️ Pair not found after ${maxRetries} attempts`);
                 }
             }
 
         } catch (error) {
-            console.error(`❌ Error checking pair for ${tokenAddress}:`, error);
+            console.error(`❌ Error checking address for ${tokenAddress}:`, error);
 
             // Update status to error
             setPairDetectionStatus(prev => ({
@@ -2744,8 +2901,6 @@ function App() {
             }
         }
     };
-
-
     const reopenTwitterBrowser = async () => {
         try {
             setTwitterSessionStatus(prev => ({ ...prev, checking: true }));
