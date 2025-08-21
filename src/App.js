@@ -1472,7 +1472,7 @@ function App() {
                             } else {
                                 window.open(fallbackUrl, '_blank');
                             }
-                            addNotification('warning', '🔍 No pair found yet, opening Axiom with token address');
+                            addNotification('warning', '🔍 No Boding Curve found yet, opening Axiom with token address');
                         }
                     } catch (error) {
                         console.error('Error opening Axiom with pair:', error);
@@ -2662,7 +2662,7 @@ function App() {
                         <div className="mt-3 p-2 bg-yellow-900/20 border border-yellow-500/30 rounded text-xs text-yellow-400 text-center">
                             🔍 {token.platform === 'pumpfun' || token.tokenAddress?.endsWith('pump')
                                 ? 'Bonding curve not accessible yet, check again in few seconds'
-                                : 'No pair found yet, check again in few seconds'
+                                : 'No Boding Curve found yet, check again in few seconds'
                             }
                         </div>
                     )}
@@ -2675,7 +2675,7 @@ function App() {
                         <div className="mt-3 p-2 bg-green-900/20 border border-green-500/30 rounded text-xs text-green-400 text-center">
                             ✅ {pairDetectionStatus[token.tokenAddress]?.bondingCurveData
                                 ? 'Bonding curve found! Opening with trading interface'
-                                : 'Pair found! Opening with liquidity pool'
+                                : 'Boding Curve found! Opening with liquidity pool'
                             }
                         </div>
                     )}
@@ -2683,7 +2683,7 @@ function App() {
                     {/* Status message under buttons */}
                     {tokenPairStatus[token.tokenAddress] === 'no-pair' && (
                         <div className="mt-3 p-2 bg-yellow-900/20 border border-yellow-500/30 rounded text-xs text-yellow-400 text-center">
-                            🔍 No pair found yet, check again in few seconds
+                            🔍 No Boding Curve found yet, check again in few seconds
                         </div>
                     )}
                     {tokenPairStatus[token.tokenAddress] === 'error' && (
@@ -2693,7 +2693,7 @@ function App() {
                     )}
                     {tokenPairStatus[token.tokenAddress] === 'success' && (
                         <div className="mt-3 p-2 bg-green-900/20 border border-green-500/30 rounded text-xs text-green-400 text-center">
-                            ✅ Pair found! Opening with liquidity pool
+                            ✅ Boding Curve found! Opening with liquidity pool
                         </div>
                     )}
                 </div>
@@ -2845,7 +2845,7 @@ function App() {
 
                 } else if (!response.isPumpFun && response.pairData && response.pairData.pairAddress) {
                     // Non-pump.fun token - pair address found
-                    console.log(`✅ Pair found for ${tokenAddress}:`, response.pairData.pairAddress);
+                    console.log(`✅ Boding Curve found for ${tokenAddress}:`, response.pairData.pairAddress);
 
                     // Update status to found
                     setPairDetectionStatus(prev => ({
@@ -2867,7 +2867,7 @@ function App() {
                         [tokenAddress]: autoOpenTimer
                     }));
 
-                    addNotification('success', `✅ Pair found! Auto-opening in 3 seconds...`);
+                    addNotification('success', `✅ Boding Curve found! Auto-opening in 3 seconds...`);
 
                 } else {
                     console.log(`⚠️ No pair/bonding curve found for ${tokenAddress}`);
@@ -3619,13 +3619,13 @@ function App() {
                                                         className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center justify-center space-x-2"
                                                     >
                                                         <ExternalLink size={16} />
-                                                        <span>{token.pool === 'bonk' ? 'View on LetsBonk.fun' : 'View on Pump.fun'}</span>
+                                                        <span>{token.pool === 'bonk' ? 'View on LetsBonk.fun' : 'View on Axiom'}</span>
                                                     </button>
 
                                                     {/* Status message under button */}
                                                     {tokenPairStatus[token.tokenAddress] === 'no-pair' && (
                                                         <div className="mt-2 p-2 bg-yellow-900/20 border border-yellow-500/30 rounded text-xs text-yellow-400">
-                                                            🔍 No pair found yet, check again in few seconds
+                                                            🔍 No Boding Curve found yet, check again in few seconds
                                                         </div>
                                                     )}
                                                     {tokenPairStatus[token.tokenAddress] === 'error' && (
@@ -3635,7 +3635,7 @@ function App() {
                                                     )}
                                                     {tokenPairStatus[token.tokenAddress] === 'success' && (
                                                         <div className="mt-2 p-2 bg-green-900/20 border border-green-500/30 rounded text-xs text-green-400">
-                                                            ✅ Pair found! Opening with liquidity pool
+                                                            ✅ Boding Curve found! Opening with liquidity pool
                                                         </div>
                                                     )}
                                                 </div>
