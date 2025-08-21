@@ -24,7 +24,7 @@ import {
 import './App.css';
 
 const API_BASE = 'https://devscope.fun:3002/api';
- 
+
 function App() {
     // State management
     const [botStatus, setBotStatus] = useState({
@@ -820,11 +820,19 @@ function App() {
             case 'auto_open_token_page':
                 console.log('🌐 Auto-opening token page:', data.data);
 
+                // Force open new tab/window even if it's a second opening
                 if (window.electronAPI && window.electronAPI.openExternalURL) {
                     window.electronAPI.openExternalURL(data.data.tokenPageUrl);
-                    addNotification('info', `🌐 ${data.data.destination === 'axiom' ? 'Axiom' : 'Neo BullX'} opened automatically`);
                 } else {
-                    window.open(data.data.tokenPageUrl, '_blank');
+                    // Force new tab with timestamp to ensure it opens
+                    const uniqueUrl = data.data.tokenPageUrl + (data.data.tokenPageUrl.includes('?') ? '&' : '?') + 't=' + Date.now();
+                    window.open(uniqueUrl, '_blank');
+                }
+
+                // Different notification for pair vs token address
+                if (data.data.isPairAddress) {
+                    addNotification('success', `🎯 ${data.data.destination === 'axiom' ? 'Axiom' : 'Neo BullX'} opened with PAIR ADDRESS!`);
+                } else {
                     addNotification('info', `🌐 ${data.data.destination === 'axiom' ? 'Axiom' : 'Neo BullX'} opened automatically`);
                 }
                 break;
@@ -3747,10 +3755,10 @@ function App() {
                             <li>• For manual logout: Use "🚪 Logout" button. Do not logout if it isn't needed (multiple logins logout might ban your account from twitter)</li>
                         </ul>
                     </div>
- 
+
                 </div>
             </div>
- 
+
 
         </div>
     );
