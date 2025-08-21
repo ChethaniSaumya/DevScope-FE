@@ -981,6 +981,7 @@ function App() {
         }
     };
 
+    // Fixed viewToken function in App.js
     const viewToken = async (token) => {
         console.log('🌐 Opening token page for:', token.tokenAddress);
 
@@ -991,56 +992,65 @@ function App() {
 
         // Check user's preference for token page destination
         if (settings.tokenPageDestination === 'axiom') {
-            try {
-                // Use the backend API to get the proper Axiom URL (bonding curve or pair address)
-                const response = await apiCall(`/pair-address/${token.tokenAddress}`);
+            // 🔥 NEW: Check if token already has bonding curve stored
+            if (token.bondingCurveAddress) {
+                console.log(`✅ Using stored bonding curve for Axiom: ${token.bondingCurveAddress}`);
+                url = `https://axiom.trade/meme/${token.bondingCurveAddress}`;
+                addNotification('success', `🎯 Opening Axiom with bonding curve: ${token.bondingCurveAddress.substring(0, 8)}...`);
+                setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: 'success' }));
 
-                console.log('🔍 Backend response:', response); // Debug log
+                // Open the URL directly
+                if (window.electronAPI && window.electronAPI.openExternalURL) {
+                    window.electronAPI.openExternalURL(url);
+                } else {
+                    window.open(url, '_blank');
+                }
+            } else {
+                // Original logic for tokens without stored bonding curve
+                try {
+                    const response = await apiCall(`/pair-address/${token.tokenAddress}`);
+                    console.log('🔍 Backend response:', response);
 
-                if (response.success) {
-                    if (response.isPumpFun && response.bondingCurveData) {
-                        // Pump.fun token - use bonding curve address
-                        console.log(`✅ Backend found bonding curve for Axiom: ${response.bondingCurveData.bondingCurveAddress}`);
-                        url = response.axiomUrl; // Use the pre-generated Axiom URL with bonding curve
-                        addNotification('success', `🎯 Opening Axiom with bonding curve: ${response.bondingCurveData.bondingCurveAddress.substring(0, 8)}...`);
-                        setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: 'success' }));
+                    if (response.success) {
+                        if (response.isPumpFun && response.bondingCurveData) {
+                            console.log(`✅ Backend found bonding curve for Axiom: ${response.bondingCurveData.bondingCurveAddress}`);
+                            url = response.axiomUrl;
+                            addNotification('success', `🎯 Opening Axiom with bonding curve: ${response.bondingCurveData.bondingCurveAddress.substring(0, 8)}...`);
+                            setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: 'success' }));
 
-                        // Open the URL
-                        if (window.electronAPI && window.electronAPI.openExternalURL) {
-                            window.electronAPI.openExternalURL(url);
+                            if (window.electronAPI && window.electronAPI.openExternalURL) {
+                                window.electronAPI.openExternalURL(url);
+                            } else {
+                                window.open(url, '_blank');
+                            }
+                        } else if (!response.isPumpFun && response.pairData && response.pairData.pairAddress) {
+                            console.log(`✅ Backend found pair for Axiom: ${response.pairData.pairAddress}`);
+                            url = response.axiomUrl;
+                            addNotification('success', `🎯 Opening Axiom with pair: ${response.pairData.pairAddress.substring(0, 8)}...`);
+                            setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: 'success' }));
+
+                            if (window.electronAPI && window.electronAPI.openExternalURL) {
+                                window.electronAPI.openExternalURL(url);
+                            } else {
+                                window.open(url, '_blank');
+                            }
                         } else {
-                            window.open(url, '_blank');
-                        }
-                    } else if (!response.isPumpFun && response.pairData && response.pairData.pairAddress) {
-                        // Non-pump.fun token - use pair address
-                        console.log(`✅ Backend found pair for Axiom: ${response.pairData.pairAddress}`);
-                        url = response.axiomUrl; // Use the pre-generated Axiom URL with pair
-                        addNotification('success', `🎯 Opening Axiom with pair: ${response.pairData.pairAddress.substring(0, 8)}...`);
-                        setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: 'success' }));
-
-                        // Open the URL
-                        if (window.electronAPI && window.electronAPI.openExternalURL) {
-                            window.electronAPI.openExternalURL(url);
-                        } else {
-                            window.open(url, '_blank');
+                            console.log('⚠️ Backend found no pair/bonding curve, using token address for Axiom');
+                            url = response.fallbackAxiomUrl || `https://axiom.trade/meme/${token.tokenAddress}`;
+                            setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: 'no-pair' }));
+                            addNotification('warning', '🔍 No pair/bonding curve found yet, check again in few seconds');
+                            return;
                         }
                     } else {
-                        console.log('⚠️ Backend found no pair/bonding curve, using token address for Axiom');
+                        console.log('⚠️ Backend error, using fallback URL');
                         url = response.fallbackAxiomUrl || `https://axiom.trade/meme/${token.tokenAddress}`;
-                        setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: 'no-pair' }));
-                        // Don't open the URL in this case, just show the message
-                        addNotification('warning', '🔍 No pair/bonding curve found yet, check again in few seconds');
-                        return; // Add this return to prevent opening the page
+                        setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: 'error' }));
                     }
-                } else {
-                    console.log('⚠️ Backend error, using fallback URL');
-                    url = response.fallbackAxiomUrl || `https://axiom.trade/meme/${token.tokenAddress}`;
+                } catch (error) {
+                    console.error('❌ Error fetching from backend for Axiom:', error);
+                    url = `https://axiom.trade/meme/${token.tokenAddress}`;
                     setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: 'error' }));
                 }
-            } catch (error) {
-                console.error('❌ Error fetching from backend for Axiom:', error);
-                url = `https://axiom.trade/meme/${token.tokenAddress}`;
-                setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: 'error' }));
             }
         } else {
             // Neo BullX or other destinations
@@ -1058,14 +1068,17 @@ function App() {
             pool: token.pool,
             tokenAddress: token.tokenAddress,
             destination: settings.tokenPageDestination,
+            bondingCurveAddress: token.bondingCurveAddress,
             finalURL: url
         });
 
-        // Open the URL (only if we haven't returned earlier)
-        if (window.electronAPI && window.electronAPI.openExternalURL) {
-            window.electronAPI.openExternalURL(url);
-        } else {
-            window.open(url, '_blank');
+        // Open the URL (only if we haven't returned earlier and haven't opened already)
+        if (!token.bondingCurveAddress || settings.tokenPageDestination !== 'axiom') {
+            if (window.electronAPI && window.electronAPI.openExternalURL) {
+                window.electronAPI.openExternalURL(url);
+            } else {
+                window.open(url, '_blank');
+            }
         }
 
         addNotification('success', `🌐 Opening token page: ${url}`);
@@ -1086,58 +1099,53 @@ function App() {
 
         // Check user's preference for token page destination
         if (settings.tokenPageDestination === 'axiom') {
-            try {
-                // Use the backend API to get the proper Axiom URL (bonding curve or pair address)
-                const response = await apiCall(`/pair-address/${token.tokenAddress}`);
+            // 🔥 NEW: Check if token already has bonding curve stored
+            if (token.bondingCurveAddress) {
+                console.log(`✅ Using stored bonding curve for Axiom: ${token.bondingCurveAddress}`);
+                url = `https://axiom.trade/meme/${token.bondingCurveAddress}`;
+                addNotification('success', `🎯 Opening Axiom with bonding curve: ${token.bondingCurveAddress.substring(0, 8)}...`);
+                setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: 'success' }));
+            } else {
+                // Original logic for tokens without stored bonding curve
+                try {
+                    const response = await apiCall(`/pair-address/${token.tokenAddress}`);
+                    console.log('🔍 Backend response:', response);
 
-                console.log('🔍 Backend response:', response); // Debug log
-
-                if (response.success) {
-                    if (response.isPumpFun && response.bondingCurveData) {
-                        // Pump.fun token - use bonding curve address
-                        console.log(`✅ Backend found bonding curve for Axiom: ${response.bondingCurveData.bondingCurveAddress}`);
-                        url = response.axiomUrl;
-                        addNotification('success', `🎯 Opening Axiom with bonding curve: ${response.bondingCurveData.bondingCurveAddress.substring(0, 8)}...`);
-                        setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: 'success' }));
-                    } else if (!response.isPumpFun && response.pairData && response.pairData.pairAddress) {
-                        // Non-pump.fun token - use pair address
-                        console.log(`✅ Backend found pair for Axiom: ${response.pairData.pairAddress}`);
-                        url = response.axiomUrl;
-                        addNotification('success', `🎯 Opening Axiom with pair: ${response.pairData.pairAddress.substring(0, 8)}...`);
-                        setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: 'success' }));
+                    if (response.success) {
+                        if (response.isPumpFun && response.bondingCurveData) {
+                            console.log(`✅ Backend found bonding curve for Axiom: ${response.bondingCurveData.bondingCurveAddress}`);
+                            url = response.axiomUrl;
+                            addNotification('success', `🎯 Opening Axiom with bonding curve: ${response.bondingCurveData.bondingCurveAddress.substring(0, 8)}...`);
+                            setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: 'success' }));
+                        } else if (!response.isPumpFun && response.pairData && response.pairData.pairAddress) {
+                            console.log(`✅ Backend found pair for Axiom: ${response.pairData.pairAddress}`);
+                            url = response.axiomUrl;
+                            addNotification('success', `🎯 Opening Axiom with pair: ${response.pairData.pairAddress.substring(0, 8)}...`);
+                            setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: 'success' }));
+                        } else {
+                            console.log('⚠️ Backend found no pair/bonding curve, using token address for Axiom');
+                            url = response.fallbackAxiomUrl || `https://axiom.trade/meme/${token.tokenAddress}`;
+                            setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: 'no-pair' }));
+                            addNotification('warning', '🔍 No pair/bonding curve found yet, check again in few seconds');
+                            return;
+                        }
                     } else {
-                        console.log('⚠️ Backend found no pair/bonding curve, using token address for Axiom');
+                        console.log('⚠️ Backend error, using fallback URL');
                         url = response.fallbackAxiomUrl || `https://axiom.trade/meme/${token.tokenAddress}`;
-                        setTokenPairStatus(prev => ({
-                            ...prev,
-                            [token.tokenAddress]: 'no-pair'
-                        }));
-                        // Don't open the page, just show the message and return
-                        addNotification('warning', '🔍 No pair/bonding curve found yet, check again in few seconds');
-                        return;
+                        setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: 'error' }));
                     }
-                } else {
-                    console.log('⚠️ Backend error, using fallback URL');
-                    url = response.fallbackAxiomUrl || `https://axiom.trade/meme/${token.tokenAddress}`;
-                    setTokenPairStatus(prev => ({
-                        ...prev,
-                        [token.tokenAddress]: 'error'
-                    }));
+                } catch (error) {
+                    console.error('❌ Error fetching from backend for Axiom:', error);
+                    url = `https://axiom.trade/meme/${token.tokenAddress}`;
+                    setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: 'error' }));
                 }
-            } catch (error) {
-                console.error('❌ Error fetching from backend for Axiom:', error);
-                url = `https://axiom.trade/meme/${token.tokenAddress}`;
-                setTokenPairStatus(prev => ({
-                    ...prev,
-                    [token.tokenAddress]: 'error'
-                }));
             }
         } else {
             // Neo BullX or other destinations
             url = `https://neo.bullx.io/terminal?chainId=1399811149&address=${token.tokenAddress}`;
         }
 
-        // Simple check for platform-specific URLs (keep existing logic for pump.fun/letsbonk.fun)
+        // Simple check for platform-specific URLs
         if (token.pool === 'bonk' && settings.tokenPageDestination !== 'axiom') {
             url = `https://letsbonk.fun/token/${token.tokenAddress}`;
         } else if (token.pool === 'pump' && settings.tokenPageDestination !== 'axiom') {
@@ -1148,6 +1156,7 @@ function App() {
             pool: token.pool,
             tokenAddress: token.tokenAddress,
             destination: settings.tokenPageDestination,
+            bondingCurveAddress: token.bondingCurveAddress,
             finalURL: url
         });
 
@@ -2446,7 +2455,7 @@ function App() {
                     </div>
 
                     {/* 🚀 NEW: PAIR ADDRESS DETECTION STATUS SECTION */}
-                    {/* 🚀 NEW: ADDRESS DETECTION STATUS SECTION */}
+                    {/* 🚀 UPDATED: ADDRESS DETECTION STATUS SECTION */}
                     <div className="bg-gray-700 p-4 rounded mb-6 border-l-4 border-blue-500">
                         <h4 className="text-lg font-semibold text-white mb-3 flex items-center">
                             <TrendingUp className="mr-2" size={16} />
@@ -2760,11 +2769,44 @@ function App() {
         }
     };
 
-    // 4. ENHANCED PAIR ADDRESS CHECKING WITH RETRY (Updated for bonding curves)
+    // 4. ENHANCED ADDRESS CHECKING WITH RETRY (Updated for bonding curves)
     const checkPairAddressWithRetry = async (tokenAddress, maxRetries = 3, currentRetry = 0) => {
         console.log(`🔍 Checking address for ${tokenAddress} (attempt ${currentRetry + 1}/${maxRetries})`);
 
-        // Set status to checking
+        // 🔥 NEW: Check if token already has bonding curve stored
+        const detectedToken = detectedTokens.find(t => t.tokenAddress === tokenAddress);
+
+        if (detectedToken && detectedToken.bondingCurveAddress) {
+            console.log(`✅ Token already has stored bonding curve: ${detectedToken.bondingCurveAddress}`);
+
+            // Update status to found immediately
+            setPairDetectionStatus(prev => ({
+                ...prev,
+                [tokenAddress]: 'found',
+                bondingCurveData: {
+                    bondingCurveAddress: detectedToken.bondingCurveAddress,
+                    type: 'pump_fun_bonding_curve',
+                    source: 'stored_from_detection'
+                }
+            }));
+
+            // AUTO-OPEN WITH BONDING CURVE ADDRESS AFTER 3 SECONDS
+            console.log(`🚀 Starting 3-second auto-open countdown for stored bonding curve ${tokenAddress}...`);
+            const autoOpenTimer = setTimeout(() => {
+                console.log(`🚀 AUTO-OPENING TOKEN PAGE WITH STORED BONDING CURVE`);
+                autoOpenTokenPageWithAddress(tokenAddress, `https://axiom.trade/meme/${detectedToken.bondingCurveAddress}`, 'bonding_curve');
+            }, 3000);
+
+            setAutoRetryTimers(prev => ({
+                ...prev,
+                [tokenAddress]: autoOpenTimer
+            }));
+
+            addNotification('success', `✅ Bonding curve ready! Auto-opening in 3 seconds...`);
+            return;
+        }
+
+        // Set status to checking if no stored bonding curve
         setPairDetectionStatus(prev => ({
             ...prev,
             [tokenAddress]: 'checking'
@@ -2854,7 +2896,7 @@ function App() {
                     }
                 }
             } else {
-                console.log(`⚠️ API returned error for ${tokenAddress}:`, response.message);
+                console.log(`⚠️ API returned error for ${tokenAddress}:`, response.message || 'Unknown error');
 
                 // Update status to not found
                 setPairDetectionStatus(prev => ({
@@ -2874,6 +2916,9 @@ function App() {
                         ...prev,
                         [tokenAddress]: retryTimer
                     }));
+                } else {
+                    console.log(`❌ Max retries reached for ${tokenAddress} due to API errors`);
+                    addNotification('warning', `⚠️ API errors after ${maxRetries} attempts`);
                 }
             }
 
@@ -2898,9 +2943,13 @@ function App() {
                     ...prev,
                     [tokenAddress]: retryTimer
                 }));
+            } else {
+                console.log(`❌ Max retries reached for ${tokenAddress} due to errors`);
+                addNotification('error', `❌ Connection errors after ${maxRetries} attempts`);
             }
         }
     };
+
     const reopenTwitterBrowser = async () => {
         try {
             setTwitterSessionStatus(prev => ({ ...prev, checking: true }));
