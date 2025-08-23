@@ -24,8 +24,8 @@ import {
 import './App.css';
 
 const API_BASE = 'https://devscope.fun:3002/api';
-//const API_BASE = 'https://devscope-be.onrender.com/api';
-
+//const API_BASE = 'https://devscope.fun:3002/api';
+ 
 function App() {
     // State management
     const [botStatus, setBotStatus] = useState({
@@ -440,6 +440,7 @@ function App() {
     const connectWebSocket = useCallback(() => {
         try {
             const ws = new WebSocket('wss://devscope.fun:3002');
+            //const ws = new WebSocket('wss://devscope.fun:3002');
 
             ws.onopen = () => {
                 console.log('WebSocket connected');
@@ -1773,11 +1774,11 @@ function App() {
                     Inject fake tokens to test your filtering and sniping logic without waiting for real tokens.
                 </p>
 
-                {!botStatus.isRunning && (
+                {/*{!botStatus.isRunning && (
                     <div className="bg-red-900/20 border border-red-500/30 rounded-lg p-4 mb-6">
                         <p className="text-red-400">⚠️ Bot will be running to inject demo tokens</p>
                     </div>
-                )}
+                )}*/}
 
                 {/* Template Selection */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -1789,14 +1790,14 @@ function App() {
                             value={selectedTemplate}
                             onChange={(e) => setSelectedTemplate(parseInt(e.target.value))}
                             className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
-                            disabled={!botStatus.isRunning}
+                            //disabled={!botStatus.isRunning}
                         >
                             {demoTemplates.map((template, index) => (
                                 <option key={index} value={index}>
                                     {template.name} ({template.symbol}) - {template.platform}
                                 </option>
                             ))}
-                        </select>
+                        </select> 
                     </div>
 
                     <div>
@@ -1809,7 +1810,7 @@ function App() {
                             onChange={(e) => setCustomWallet(e.target.value)}
                             className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
                             placeholder="Override creator wallet"
-                            disabled={!botStatus.isRunning}
+                            //disabled={!botStatus.isRunning}
                         />
                     </div>
 
@@ -1821,7 +1822,7 @@ function App() {
                         <input
                             type="text"
                             value={customTwitter}
-                            onChange={(e) => setCustomTwitter(e.target.value)}
+                            //onChange={(e) => setCustomTwitter(e.target.value)}
                             className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
                             placeholder="Override Twitter handle"
                             disabled={!botStatus.isRunning}
@@ -1838,7 +1839,7 @@ function App() {
                             onChange={(e) => setCustomCommunity(e.target.value)}
                             className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
                             placeholder="Community ID (e.g., 1234567890)"
-                            disabled={!botStatus.isRunning}
+                           // disabled={!botStatus.isRunning}
                         />
                     </div>
 
@@ -1848,7 +1849,7 @@ function App() {
                 <div className="mt-6 grid grid-cols-2 md:grid-cols-4 gap-3">
                     <button
                         onClick={() => injectDemoToken()}  // <-- Add empty parentheses
-                        disabled={!botStatus.isRunning}
+                       // disabled={!botStatus.isRunning}
                         className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white rounded-lg transition-colors text-sm"
                     >
                         🧪 Inject Single
@@ -4383,7 +4384,7 @@ function App() {
                         >
                             ⚙️ Settings
                         </button>
-                        <button
+                        {/*<button
                             onClick={() => setActiveTab('demo')}
                             className={`py-3 md:py-4 px-2 border-b-2 transition-colors whitespace-nowrap text-sm md:text-base ${activeTab === 'demo'
                                 ? 'border-blue-500 text-blue-400'
@@ -4391,7 +4392,7 @@ function App() {
                                 }`}
                         >
                             🧪 Demo
-                        </button>
+                        </button>*/}
                         <button
                             onClick={() => setActiveTab('twitter')}
                             className={`py-3 md:py-4 px-2 border-b-2 transition-colors whitespace-nowrap text-sm md:text-base ${activeTab === 'twitter'
@@ -4465,4 +4466,3 @@ function App() {
 }
 
 export default App;
-
