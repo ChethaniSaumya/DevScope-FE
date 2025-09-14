@@ -4385,6 +4385,16 @@ function App() {
                             ⚙️ Settings
                         </button>
 
+                                 <button
+                            onClick={() => setActiveTab('demo')}
+                            className={`py-3 md:py-4 px-2 border-b-2 transition-colors whitespace-nowrap text-sm md:text-base ${activeTab === 'demo'
+                                ? 'border-blue-500 text-blue-400'
+                                : 'border-transparent text-gray-400 hover:text-white'
+                                }`}
+                        >
+                            🧪 Demo
+                        </button> 
+                                
                         <button
                             onClick={() => setActiveTab('twitter')}
                             className={`py-3 md:py-4 px-2 border-b-2 transition-colors whitespace-nowrap text-sm md:text-base ${activeTab === 'twitter'
@@ -4458,6 +4468,7 @@ function App() {
 }
 
 export default App;
+
 
 
 
