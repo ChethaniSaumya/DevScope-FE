@@ -25,7 +25,7 @@ import './App.css';
 
 const API_BASE = 'https://devscope.fun:3002/api';
 //const API_BASE = 'https://devscope.fun:3002/api';
- 
+
 function App() {
     // State management
     const [botStatus, setBotStatus] = useState({
@@ -81,7 +81,10 @@ function App() {
         loggedIn: false,
         url: '',
         error: null,
-        checking: false
+        checking: false,
+        apiCreditsExhausted: false, // NEW
+        apiError: null,             // NEW
+        lastApiError: null
     });
 
     const [popupBlockerModal, setPopupBlockerModal] = useState({
@@ -654,7 +657,6 @@ function App() {
                 setBotStatus(prev => ({ ...prev, isRunning: data.data.isRunning }));
                 break;
 
-            // ADD THESE NEW CASES:
             case 'admin_list_updated':
                 // Refresh lists when admin lists are updated
                 fetchLists();
@@ -691,6 +693,42 @@ function App() {
                 addNotification('info', `ℹ️ Community ${data.data.communityId}: ${data.data.reason}`);
                 break;
 
+            case 'twitter_api_error':
+                console.log('💳 TWITTER API ERROR:', data.data);
+
+                // Show specific error based on type
+                if (data.data.errorType === 'credits_exhausted') {
+                    addNotification('error', `💳 Twitter API Credits Exhausted!`);
+                    addNotification('error', `${data.data.message}`);
+                    addNotification('warning', `⚠️ Community ${data.data.communityId} scraping failed - API credits needed`);
+                } else if (data.data.errorType === 'unauthorized') {
+                    addNotification('error', `🔑 Twitter API Unauthorized!`);
+                    addNotification('error', `${data.data.message}`);
+                    addNotification('warning', `⚠️ Check your Twitter API key configuration`);
+                } else if (data.data.errorType === 'forbidden') {
+                    addNotification('error', `🚫 Twitter API Access Forbidden!`);
+                    addNotification('error', `${data.data.message}`);
+                } else if (data.data.errorType === 'rate_limited') {
+                    addNotification('warning', `⏰ Twitter API Rate Limited!`);
+                    addNotification('warning', `${data.data.message}`);
+                } else if (data.data.errorType === 'timeout') {
+                    addNotification('warning', `⏱️ Twitter API Timeout!`);
+                    addNotification('warning', `${data.data.message}`);
+                } else {
+                    addNotification('error', `❌ Twitter API Error!`);
+                    addNotification('error', `${data.data.message}`);
+                }
+
+                // Update Twitter session status to reflect API issues
+                setTwitterSessionStatus(prev => ({
+                    ...prev,
+                    error: `API Error: ${data.data.error}`,
+                    apiCreditsExhausted: data.data.errorType === 'credits_exhausted',
+                    apiError: data.data.errorType,
+                    lastApiError: data.data.message
+                }));
+                break;
+
             case 'community_scraping_failed':
                 console.log('❌ COMMUNITY SCRAPING FAILED:', data.data);
 
@@ -706,10 +744,10 @@ function App() {
                     addNotification('warning', `❌ Community ${data.data.communityId} scraping failed: ${data.data.reason}`);
                 }
                 break;
-            // 🔥 NEW COMMUNITY DEBUGGING CASES:
+
             case 'community_admins_scraped':
                 console.log('🏘️ COMMUNITY ADMINS SCRAPED:', data.data);
-                console.table(data.data.admins); // Nice table view
+                console.table(data.data.admins);
                 console.log('📋 Your Primary Admin List:', data.data.yourPrimaryList);
                 console.log('📋 Your Secondary Admin List:', data.data.yourSecondaryList);
 
@@ -818,7 +856,6 @@ function App() {
                 }
                 break;
 
-            // 🔥 NEW CASE FOR AUTO-OPENING TOKEN PAGES
             case 'auto_open_token_page':
                 console.log('🌐 Auto-opening token page:', data.data);
 
@@ -840,16 +877,6 @@ function App() {
                 if (data.data.soundNotification && window.electronAPI) {
                     window.electronAPI.playSound(data.data.soundNotification);
                 }
-                break;
-
-            case 'secondary_popup_trigger':
-                // Show popup modal with token details
-                setSecondaryPopup({
-                    show: true,
-                    tokenData: data.data.tokenData,
-                    globalSettings: data.data.globalSnipeSettings
-                });
-                addNotification('info', `🔔 Secondary match found: ${data.data.tokenData.tokenAddress.substring(0, 8)}...`);
                 break;
 
             case 'token_detected':
@@ -1790,14 +1817,14 @@ function App() {
                             value={selectedTemplate}
                             onChange={(e) => setSelectedTemplate(parseInt(e.target.value))}
                             className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
-                            //disabled={!botStatus.isRunning}
+                        //disabled={!botStatus.isRunning}
                         >
                             {demoTemplates.map((template, index) => (
                                 <option key={index} value={index}>
                                     {template.name} ({template.symbol}) - {template.platform}
                                 </option>
                             ))}
-                        </select> 
+                        </select>
                     </div>
 
                     <div>
@@ -1810,7 +1837,7 @@ function App() {
                             onChange={(e) => setCustomWallet(e.target.value)}
                             className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
                             placeholder="Override creator wallet"
-                            //disabled={!botStatus.isRunning}
+                        //disabled={!botStatus.isRunning}
                         />
                     </div>
 
@@ -1839,7 +1866,7 @@ function App() {
                             onChange={(e) => setCustomCommunity(e.target.value)}
                             className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
                             placeholder="Community ID (e.g., 1234567890)"
-                           // disabled={!botStatus.isRunning}
+                        // disabled={!botStatus.isRunning}
                         />
                     </div>
 
@@ -1849,7 +1876,7 @@ function App() {
                 <div className="mt-6 grid grid-cols-2 md:grid-cols-4 gap-3">
                     <button
                         onClick={() => injectDemoToken()}  // <-- Add empty parentheses
-                       // disabled={!botStatus.isRunning}
+                        // disabled={!botStatus.isRunning}
                         className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white rounded-lg transition-colors text-sm"
                     >
                         🧪 Inject Single
@@ -3935,6 +3962,82 @@ function App() {
                 </div>
             </div>
 
+            <div className="bg-gray-800 rounded-lg p-4 md:p-6">
+                <h3 className="text-lg font-semibold text-white mb-4">🎯 Twitter API Status</h3>
+
+                <div className="bg-gray-700 rounded-lg p-4 mb-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <span className="text-gray-400 text-sm">API Credits:</span>
+                            <div className="flex items-center space-x-2">
+                                <span className={`font-medium ${twitterSessionStatus.apiCreditsExhausted
+                                        ? 'text-red-400'
+                                        : twitterSessionStatus.apiError
+                                            ? 'text-yellow-400'
+                                            : 'text-green-400'
+                                    }`}>
+                                    {twitterSessionStatus.apiCreditsExhausted ? '❌ Exhausted' :
+                                        twitterSessionStatus.apiError ? '⚠️ Error' : '✅ Available'}
+                                </span>
+                            </div>
+                        </div>
+                        <div>
+                            <span className="text-gray-400 text-sm">API Status:</span>
+                            <div className="flex items-center space-x-2">
+                                <span className="text-white">
+                                    {twitterSessionStatus.apiCreditsExhausted ? 'Needs Recharge' :
+                                        twitterSessionStatus.apiError ? 'Has Issues' : 'Active'}
+                                </span>
+                            </div>
+                        </div>
+                        {twitterSessionStatus.lastApiError && (
+                            <div className="md:col-span-2">
+                                <span className="text-red-400 text-sm">Last API Error:</span>
+                                <div className="mt-1">
+                                    <code className="text-xs bg-red-900/20 border border-red-500/30 px-2 py-1 rounded text-red-400">
+                                        {twitterSessionStatus.lastApiError}
+                                    </code>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {twitterSessionStatus.apiCreditsExhausted && (
+                        <div className="mt-4 bg-red-900/20 border border-red-500/30 rounded-lg p-3">
+                            <h4 className="text-red-400 font-medium mb-2">💳 API Credits Exhausted</h4>
+                            <p className="text-red-300 text-sm mb-3">
+                                Your Twitter API credits are depleted. Community scraping will fail until you recharge your twitterapi.io account.
+                            </p>
+                            <button
+                                onClick={() => {
+                                    if (window.electronAPI && window.electronAPI.openExternalURL) {
+                                        window.electronAPI.openExternalURL('https://twitterapi.io/dashboard');
+                                    } else {
+                                        window.open('https://twitterapi.io/dashboard', '_blank');
+                                    }
+                                    addNotification('info', '🌐 Opening twitterapi.io dashboard for credit recharge');
+                                }}
+                                className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm"
+                            >
+                                💳 Recharge API Credits
+                            </button>
+                        </div>
+                    )}
+
+                    {twitterSessionStatus.apiError && !twitterSessionStatus.apiCreditsExhausted && (
+                        <div className="mt-4 bg-yellow-900/20 border border-yellow-500/30 rounded-lg p-3">
+                            <h4 className="text-yellow-400 font-medium mb-2">⚠️ API Error Detected</h4>
+                            <p className="text-yellow-300 text-sm mb-2">
+                                There was an issue with the Twitter API: {twitterSessionStatus.apiError}
+                            </p>
+                            <p className="text-yellow-300 text-sm">
+                                Community scraping may be affected. Check your API configuration or try again later.
+                            </p>
+                        </div>
+                    )}
+                </div>
+            </div>
+
             {/* Updated Instructions */}
             <div className="bg-gray-800 rounded-lg p-4 md:p-6">
                 <h3 className="text-lg font-semibold text-white mb-4">📋 How to Setup Twitter Session</h3>
@@ -4384,7 +4487,7 @@ function App() {
                         >
                             ⚙️ Settings
                         </button>
-                                 <button
+                        <button
                             onClick={() => setActiveTab('demo')}
                             className={`py-3 md:py-4 px-2 border-b-2 transition-colors whitespace-nowrap text-sm md:text-base ${activeTab === 'demo'
                                 ? 'border-blue-500 text-blue-400'
@@ -4466,15 +4569,3 @@ function App() {
 }
 
 export default App;
-
-
-
-
-
-
-
-
-
-
-
-
