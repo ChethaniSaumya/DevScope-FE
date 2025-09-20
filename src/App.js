@@ -880,6 +880,16 @@ function App() {
                 break;
 
             case 'token_detected':
+                console.log('📱 FRONTEND RECEIVED TOKEN DATA:');
+                console.log('Platform:', data.data.platform);
+                console.log('Has GeckoTerminal Data:', data.data.hasGeckoTerminalData);
+                console.log('Full token object received by frontend:', data.data);
+                console.log('Name displayed:', data.data.name);
+                console.log('Symbol displayed:', data.data.symbol);
+                console.log('Image URI:', data.data.uri);
+                console.log('Description:', data.data.description);
+                console.log('================================================');
+
                 setDetectedTokens(prev => {
                     // Check if token already exists
                     const exists = prev.some(token => token.tokenAddress === data.data.tokenAddress);
@@ -3971,10 +3981,10 @@ function App() {
                             <span className="text-gray-400 text-sm">API Credits:</span>
                             <div className="flex items-center space-x-2">
                                 <span className={`font-medium ${twitterSessionStatus.apiCreditsExhausted
-                                        ? 'text-red-400'
-                                        : twitterSessionStatus.apiError
-                                            ? 'text-yellow-400'
-                                            : 'text-green-400'
+                                    ? 'text-red-400'
+                                    : twitterSessionStatus.apiError
+                                        ? 'text-yellow-400'
+                                        : 'text-green-400'
                                     }`}>
                                     {twitterSessionStatus.apiCreditsExhausted ? '❌ Exhausted' :
                                         twitterSessionStatus.apiError ? '⚠️ Error' : '✅ Available'}
@@ -4487,7 +4497,7 @@ function App() {
                         >
                             ⚙️ Settings
                         </button>
-                       
+
                         <button
                             onClick={() => setActiveTab('twitter')}
                             className={`py-3 md:py-4 px-2 border-b-2 transition-colors whitespace-nowrap text-sm md:text-base ${activeTab === 'twitter'
@@ -4561,4 +4571,3 @@ function App() {
 }
 
 export default App;
-
