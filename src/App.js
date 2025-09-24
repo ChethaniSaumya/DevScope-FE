@@ -68,7 +68,6 @@ function App() {
     const [customWallet, setCustomWallet] = useState('');
     const [customTwitter, setCustomTwitter] = useState('');
     const [usedTweets, setUsedTweets] = useState([]);
-    const [customTweetId, setCustomTweetId] = useState('');
 
     const [usedCommunities, setUsedCommunities] = useState([]);
     const [showCommunityModal, setShowCommunityModal] = useState(false);
@@ -549,14 +548,8 @@ function App() {
                 templateIndex: selectedTemplate,
                 customWallet: customWallet || null,
                 customTwitter: customTwitter || null,
-                customCommunity: customCommunity || null,
+                customCommunity: customCommunity || null, // ADD THIS LINE
             };
-
-            // Add tweet ID handling
-            if (customData.tweetId) {
-                payload.customTweetId = customData.tweetId;
-                payload.twitterType = customData.twitterType || 'status';
-            }
 
             if (customData && typeof customData === 'object' && !customData.target) {
                 Object.assign(payload, customData);
@@ -566,12 +559,7 @@ function App() {
                 method: 'POST',
                 body: JSON.stringify(payload)
             });
-
-            const message = customData.tweetId
-                ? `🧪 Demo token with tweet ID ${customData.tweetId} injected successfully`
-                : '🧪 Demo token injected successfully';
-
-            addNotification('success', message);
+            addNotification('success', '🧪 Demo token injected successfully');
         } catch (error) {
             addNotification('error', '❌ Failed to inject demo token');
             console.error('Demo injection error:', error);
@@ -1923,23 +1911,6 @@ function App() {
                             placeholder="Community ID (e.g., 1234567890)"
                         // disabled={!botStatus.isRunning}
                         />
-                    </div>
-
-                    <div>
-                        <label className="block text-sm font-medium text-gray-300 mb-2">
-                            Custom Tweet/Status ID (Optional)
-                        </label>
-                        <input
-                            type="text"
-                            value={customTweetId}
-                            onChange={(e) => setCustomTweetId(e.target.value)}
-                            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
-                            placeholder="Tweet ID (e.g., 1864891560858468809)"
-                        // disabled={!botStatus.isRunning}
-                        />
-                        <p className="text-xs text-gray-400 mt-1">
-                            Format: https://x.com/username/status/1234567890 or just 1234567890
-                        </p>
                     </div>
 
                 </div>
@@ -3640,48 +3611,12 @@ function App() {
                                         </div>
 
                                         {/* Enhanced Twitter information display */}
-                                        {(token.twitterHandle || token.twitterCommunityId || token.statusId) && (
+                                        {(token.twitterHandle || token.twitterCommunityId) && (
                                             <div className="bg-gray-700/50 rounded-lg p-3 mt-4">
                                                 <div className="flex items-center space-x-2 mb-2">
                                                     <span className="text-blue-400 font-medium">🐦 Twitter Detection:</span>
-                                                    {token.twitterType === 'status' && (
-                                                        <span className="bg-purple-600 text-white px-2 py-1 rounded text-xs">TWEET</span>
-                                                    )}
                                                 </div>
 
-                                                {token.twitterType === 'status' && token.statusId && (
-                                                    <div className="bg-purple-900/20 border border-purple-500/30 rounded-lg p-3 mb-3">
-                                                        <div className="flex items-center justify-between">
-                                                            <div>
-                                                                <p className="text-white font-medium">📱 Tweet Detection</p>
-                                                                <p className="text-sm text-purple-300">Status ID: {token.statusId}</p>
-                                                                <p className="text-xs text-purple-400">Detected from tweet URL</p>
-                                                            </div>
-                                                            <div className="flex space-x-2">
-                                                                <button
-                                                                    onClick={() => copyToClipboard(token.statusId, 'Tweet ID')}
-                                                                    className="text-purple-400 hover:text-purple-300 px-2 py-1 text-xs"
-                                                                >
-                                                                    📋
-                                                                </button>
-                                                                <button
-                                                                    onClick={() => {
-                                                                        const tweetUrl = `https://x.com/i/status/${token.statusId}`;
-                                                                        if (window.electronAPI && window.electronAPI.openExternalURL) {
-                                                                            window.electronAPI.openExternalURL(tweetUrl);
-                                                                        } else {
-                                                                            window.open(tweetUrl, '_blank');
-                                                                        }
-                                                                        addNotification('success', `🌐 Opening tweet ${token.statusId}`);
-                                                                    }}
-                                                                    className="text-purple-400 hover:text-purple-300 px-2 py-1 text-xs"
-                                                                >
-                                                                    🔗
-                                                                </button>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                )}
                                                 {token.twitterType === 'community' && token.twitterCommunityId && (
                                                     <div className="flex items-center justify-between">
                                                         <div>
@@ -4809,17 +4744,6 @@ function App() {
                                 }`}
                         >
                             🧪 Demo
-                        </button>
-
-                        <button
-                            onClick={() => injectDemoToken({
-                                tweetId: customTweetId,
-                                twitterType: 'status'
-                            })}
-                            disabled={!customTweetId}
-                            className="px-4 py-2 bg-pink-600 hover:bg-pink-700 disabled:bg-gray-600 text-white rounded-lg transition-colors text-sm"
-                        >
-                            📱 Inject Tweet Token
                         </button>
 
                         <button
