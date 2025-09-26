@@ -67,10 +67,10 @@ function App() {
     const [selectedTemplate, setSelectedTemplate] = useState(0);
     const [customWallet, setCustomWallet] = useState('');
     const [customTwitter, setCustomTwitter] = useState('');
-    const [tweets, setTweets] = useState([]);
-    const [customTweet, setCustomTweet] = useState('');
 
     const [usedCommunities, setUsedCommunities] = useState([]);
+    const [usedTweets, setUsedTweets] = useState([]);
+    const [customTweet, setCustomTweet] = useState('');
     const [showCommunityModal, setShowCommunityModal] = useState(false);
     const [customCommunity, setCustomCommunity] = useState('');
     const [soundFiles, setSoundFiles] = useState([]);
@@ -484,7 +484,6 @@ function App() {
 
     useEffect(() => {
         checkTwitterSession();
-        fetchTweets();
     }, []);
 
     useEffect(() => {
@@ -492,7 +491,7 @@ function App() {
         fetchLists();
         fetchDetectedTokens();
         fetchUsedCommunities();
-        fetchTweets();
+        fetchUsedTweets();
         fetchSoundFiles();
         connectWebSocket();
 
@@ -513,67 +512,25 @@ function App() {
         }
     };
 
-    const fetchTweets = async () => {
-        try {
-            const data = await apiCall('/firebase/used-tweets');
-            setTweets(data.tweets || []);
-            console.log('📊 Loaded tweets:', data.tweets);
-        } catch (error) {
-            console.error('Failed to fetch tweets');
-        }
-    };
-    
-    const clearTweets = async () => {
-        try {
-            await apiCall('/firebase/used-tweets', { method: 'DELETE' });
-            setTweets([]);
-            addNotification('success', '🗑️ All tweets cleared from Firebase');
-        } catch (error) {
-            addNotification('error', '❌ Failed to clear tweets');
-        }
-    };
-
-    const removeTweet = async (tweetId) => {
-        try {
-            await apiCall(`/firebase/used-tweets/${tweetId}`, { method: 'DELETE' });
-            setTweets(prev => prev.filter(t => t.id !== tweetId));
-            addNotification('success', `🗑️ Tweet ${tweetId} removed from Firebase`);
-        } catch (error) {
-            addNotification('error', '❌ Failed to remove tweet');
-        }
-    };
-
     const injectDemoToken = async (customData = {}) => {
         try {
-            // Parse Twitter URLs to extract IDs
-            const parsedCommunity = parseTwitterUrl(customCommunity);
-            const parsedTweet = parseTwitterUrl(customTweet);
-
             const payload = {
                 templateIndex: selectedTemplate,
                 customWallet: customWallet || null,
                 customTwitter: customTwitter || null,
-                customCommunity: parsedCommunity.id || null,
-                customTweet: parsedTweet.id || null,
-                twitterType: parsedTweet.id ? 'tweet' : parsedCommunity.id ? 'community' : 'individual'
+                customCommunity: customCommunity || null,
+                customTweet: customTweet || null, // ADD THIS LINE
             };
 
             if (customData && typeof customData === 'object' && !customData.target) {
                 Object.assign(payload, customData);
             }
 
-            console.log('🧪 Demo injection payload:', payload);
-
             await apiCall('/demo/inject-token', {
                 method: 'POST',
                 body: JSON.stringify(payload)
             });
             addNotification('success', '🧪 Demo token injected successfully');
-
-            // Clear inputs after successful injection
-            setCustomTweet('');
-            setCustomCommunity('');
-
         } catch (error) {
             addNotification('error', '❌ Failed to inject demo token');
             console.error('Demo injection error:', error);
@@ -669,6 +626,37 @@ function App() {
         }
     };
 
+    const fetchUsedTweets = async () => {
+        try {
+            const data = await apiCall('/firebase/used-tweets');
+            setUsedTweets(data.tweets || []);
+            addNotification('success', `📊 Loaded ${data.tweets.length} used tweets from Firebase`);
+        } catch (error) {
+            console.error('Failed to fetch used tweets');
+            addNotification('error', '❌ Failed to fetch used tweets from Firebase');
+        }
+    };
+
+    const clearUsedTweets = async () => {
+        try {
+            await apiCall('/firebase/used-tweets', { method: 'DELETE' });
+            setUsedTweets([]);
+            addNotification('success', '🗑️ All used tweets cleared from Firebase');
+        } catch (error) {
+            addNotification('error', '❌ Failed to clear used tweets');
+        }
+    };
+
+    const removeUsedTweet = async (tweetId) => {
+        try {
+            await apiCall(`/firebase/used-tweets/${tweetId}`, { method: 'DELETE' });
+            setUsedTweets(prev => prev.filter(t => t.id !== tweetId));
+            addNotification('success', `🗑️ Tweet ${tweetId} removed from Firebase`);
+        } catch (error) {
+            addNotification('error', '❌ Failed to remove tweet');
+        }
+    };
+
     const clearUsedCommunities = async () => {
         try {
             await apiCall('/firebase/used-communities', { method: 'DELETE' });
@@ -738,24 +726,6 @@ function App() {
             case 'community_scraping_info':
                 console.log('ℹ️ COMMUNITY INFO:', data.data);
                 addNotification('info', `ℹ️ Community ${data.data.communityId}: ${data.data.reason}`);
-                break;
-
-            // Add this case to your switch statement in handleWebSocketMessage
-            case 'tweet_detected':
-                console.log('🐦 TWEET DETECTED:', data.data);
-                addNotification('info', `🐦 Tweet detected: ${data.data.tweetId}`);
-                break;
-
-            case 'tweet_already_used':
-                console.log('🔁 TWEET ALREADY USED:', data.data);
-                addNotification('warning', `🔁 Tweet ${data.data.tweetId} already used - skipping token`);
-                break;
-
-            case 'tweet_saved_to_firebase':
-                console.log('💾 TWEET SAVED TO FIREBASE:', data.data);
-                // Refresh tweets list when a new tweet is saved
-                fetchTweets();
-                addNotification('success', `💾 Tweet ${data.data.tweetId} saved to Firebase`);
                 break;
 
             case 'twitter_api_error':
@@ -1862,6 +1832,222 @@ function App() {
         </div>
     );
 
+    const renderTweetManagement = () => (
+        <div className="space-y-4 md:space-y-6">
+            {/* Firebase Status & Controls */}
+            <div className="bg-gray-800 rounded-lg p-4 md:p-6">
+                <div className="flex flex-col space-y-4 md:flex-row md:items-center md:justify-between md:space-y-0 mb-4">
+                    <div>
+                        <h2 className="text-lg md:text-xl font-semibold text-white">Firebase Tweet Tracking</h2>
+                        <p className="text-sm text-gray-400">Manage used Twitter tweets/status links to prevent duplicate sniping</p>
+                    </div>
+                    <div className="flex flex-col space-y-2 md:flex-row md:space-y-0 md:space-x-4">
+                        <button
+                            onClick={fetchUsedTweets}
+                            className="w-full md:w-auto px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors text-sm"
+                        >
+                            🔄 Refresh
+                        </button>
+                        <button
+                            onClick={clearUsedTweets}
+                            className="w-full md:w-auto px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors text-sm"
+                        >
+                            🗑️ Clear All
+                        </button>
+                    </div>
+                </div>
+
+                <div className="text-sm text-gray-400">
+                    Used tweets: <span className="text-white font-semibold">{usedTweets.length}</span>
+                </div>
+            </div>
+
+            {/* Used Tweets List */}
+            <div className="bg-gray-800 rounded-lg p-4 md:p-6">
+                <h3 className="text-lg font-semibold text-white mb-4">Used Tweets</h3>
+
+                {usedTweets.length === 0 ? (
+                    <div className="text-center py-8">
+                        <div className="text-gray-400 mb-4">
+                            <div className="text-5xl mb-2">📱</div>
+                            <p>No used tweets tracked yet</p>
+                            <p className="text-sm">Tweets will appear here after tokens are detected</p>
+                        </div>
+                    </div>
+                ) : (
+                    <div className="space-y-3">
+                        {usedTweets.map(tweet => (
+                            <div key={tweet.id} className="bg-gray-700 rounded-lg p-4">
+                                <div className="flex flex-col md:flex-row md:items-center md:justify-between space-y-2 md:space-y-0">
+                                    <div className="flex-1">
+                                        <div className="flex items-center space-x-2 mb-2">
+                                            <h4 className="text-white font-medium">Tweet ID: {tweet.tweetId}</h4>
+                                            <button
+                                                onClick={() => copyToClipboard(tweet.tweetId, 'Tweet ID')}
+                                                className="text-blue-400 hover:text-blue-300 text-sm"
+                                            >
+                                                📋
+                                            </button>
+                                        </div>
+
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-sm">
+                                            <div>
+                                                <span className="text-gray-400">Author: </span>
+                                                <span className="text-blue-400">@{tweet.username || 'Unknown'}</span>
+                                            </div>
+                                            <div>
+                                                <span className="text-gray-400">Token: </span>
+                                                <span className="text-green-400">{tweet.tokenName || 'Unknown'}</span>
+                                            </div>
+                                            <div>
+                                                <span className="text-gray-400">Platform: </span>
+                                                <span className="text-purple-400">{tweet.platform || 'Unknown'}</span>
+                                            </div>
+                                        </div>
+
+                                        <div className="mt-2 text-sm">
+                                            <span className="text-gray-400">Used: </span>
+                                            <span className="text-yellow-400">
+                                                {(() => {
+                                                    if (tweet.firstUsedAt) {
+                                                        try {
+                                                            if (tweet.firstUsedAt.toDate) {
+                                                                return tweet.firstUsedAt.toDate().toLocaleString();
+                                                            }
+                                                            if (tweet.firstUsedAt instanceof Date) {
+                                                                return tweet.firstUsedAt.toLocaleString();
+                                                            }
+                                                            if (typeof tweet.firstUsedAt === 'number') {
+                                                                return new Date(tweet.firstUsedAt).toLocaleString();
+                                                            }
+                                                            if (typeof tweet.firstUsedAt === 'string') {
+                                                                return new Date(tweet.firstUsedAt).toLocaleString();
+                                                            }
+                                                        } catch (error) {
+                                                            console.error('Error formatting timestamp:', error);
+                                                        }
+                                                    }
+                                                    return 'Just now';
+                                                })()}
+                                            </span>
+                                        </div>
+
+                                        {tweet.tokenAddress && (
+                                            <div className="mt-2">
+                                                <span className="text-gray-400 text-xs">Token Address: </span>
+                                                <code className="text-xs text-white bg-gray-600 px-2 py-1 rounded">
+                                                    {tweet.tokenAddress.substring(0, 12)}...{tweet.tokenAddress.substring(-8)}
+                                                </code>
+                                                <button
+                                                    onClick={() => copyToClipboard(tweet.tokenAddress, 'Token address')}
+                                                    className="ml-2 text-blue-400 hover:text-blue-300 text-xs"
+                                                >
+                                                    📋
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <div className="flex space-x-2">
+                                        <button
+                                            onClick={() => {
+                                                const tweetUrl = `https://x.com/${tweet.username}/status/${tweet.tweetId}`;
+                                                if (window.electronAPI && window.electronAPI.openExternalURL) {
+                                                    window.electronAPI.openExternalURL(tweetUrl);
+                                                } else {
+                                                    window.open(tweetUrl, '_blank');
+                                                }
+                                                addNotification('success', `🌐 Opening tweet ${tweet.tweetId}`);
+                                            }}
+                                            className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm"
+                                        >
+                                            🔗 View
+                                        </button>
+                                        <button
+                                            onClick={() => removeUsedTweet(tweet.tweetId)}
+                                            className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-sm"
+                                        >
+                                            🗑️ Remove
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+
+            {/* Tweet Detection Stats */}
+            <div className="bg-gray-800 rounded-lg p-4 md:p-6">
+                <h3 className="text-lg font-semibold text-white mb-4">Tweet Detection Statistics</h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="bg-gray-700 rounded-lg p-4 text-center">
+                        <div className="text-2xl font-bold text-blue-400">{usedTweets.length}</div>
+                        <div className="text-sm text-gray-400">Used Tweets</div>
+                    </div>
+                    <div className="bg-gray-700 rounded-lg p-4 text-center">
+                        <div className="text-2xl font-bold text-green-400">
+                            {detectedTokens.filter(t => t.twitterType === 'tweet').length}
+                        </div>
+                        <div className="text-sm text-gray-400">Tweet-based Tokens</div>
+                    </div>
+                    <div className="bg-gray-700 rounded-lg p-4 text-center">
+                        <div className="text-2xl font-bold text-purple-400">
+                            {usedTweets.filter(t => t.platform === 'pumpfun').length}
+                        </div>
+                        <div className="text-sm text-gray-400">Pump.fun Tweet Tokens</div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Twitter Detection Guide - Updated */}
+            <div className="bg-gray-800 rounded-lg p-4 md:p-6">
+                <h3 className="text-lg font-semibold text-white mb-4">🔍 Twitter Detection Guide</h3>
+                <div className="space-y-4">
+                    <div className="bg-gray-700 rounded-lg p-4">
+                        <h4 className="text-white font-medium mb-2">📱 Twitter Tweets/Status URLs</h4>
+                        <div className="text-sm text-gray-300 space-y-1">
+                            <p>• <code className="bg-gray-600 px-1 rounded">https://x.com/username/status/1234567890</code></p>
+                            <p>• <code className="bg-gray-600 px-1 rounded">https://twitter.com/username/status/1234567890</code></p>
+                            <p className="text-yellow-400 mt-2">⚠️ Tweet IDs are tracked in Firebase to prevent duplicates</p>
+                            <p className="text-green-400">✅ Tweet authors are checked against admin lists for matching</p>
+                        </div>
+                    </div>
+
+                    <div className="bg-gray-700 rounded-lg p-4">
+                        <h4 className="text-white font-medium mb-2">✅ Individual Twitter Accounts</h4>
+                        <div className="text-sm text-gray-300 space-y-1">
+                            <p>• <code className="bg-gray-600 px-1 rounded">https://x.com/username</code></p>
+                            <p>• <code className="bg-gray-600 px-1 rounded">https://twitter.com/username</code></p>
+                            <p>• <code className="bg-gray-600 px-1 rounded">@username</code></p>
+                            <p>• <code className="bg-gray-600 px-1 rounded">username</code></p>
+                        </div>
+                    </div>
+
+                    <div className="bg-gray-700 rounded-lg p-4">
+                        <h4 className="text-white font-medium mb-2">🏘️ Twitter Communities</h4>
+                        <div className="text-sm text-gray-300 space-y-1">
+                            <p>• <code className="bg-gray-600 px-1 rounded">https://x.com/i/communities/1864891560858468809</code></p>
+                            <p>• <code className="bg-gray-600 px-1 rounded">https://twitter.com/i/communities/1234567890</code></p>
+                            <p className="text-yellow-400 mt-2">⚠️ Community IDs are tracked in Firebase to prevent duplicates</p>
+                        </div>
+                    </div>
+
+                    <div className="bg-blue-900/20 border border-blue-500/30 rounded-lg p-4">
+                        <h4 className="text-blue-400 font-medium mb-2">💡 How Tweet Detection Works</h4>
+                        <div className="text-sm text-blue-300 space-y-1">
+                            <p>1️⃣ When a token has a tweet URL, the tweet ID is extracted</p>
+                            <p>2️⃣ System checks if tweet was already used (prevents duplicates)</p>
+                            <p>3️⃣ The tweet author's username is checked against admin lists</p>
+                            <p>4️⃣ If author matches primary list = Auto-snipe | Secondary = Notify</p>
+                            <p>5️⃣ Tweet ID is saved to Firebase for future duplicate prevention</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+
     const renderDemoTab = () => (
         <div className="space-y-4 md:space-y-6">
             {/* Demo Control Panel */}
@@ -1924,63 +2110,25 @@ function App() {
                         <input
                             type="text"
                             value={customTwitter}
-                            //onChange={(e) => setCustomTwitter(e.target.value)}
+                            onChange={(e) => setCustomTwitter(e.target.value)} // UNCOMMENT THIS LINE
                             className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
                             placeholder="Override Twitter handle"
-                            disabled={!botStatus.isRunning}
+                        // disabled={!botStatus.isRunning} // COMMENT OR REMOVE THIS LINE
                         />
                     </div>
 
-                    {/* Enhanced Twitter Inputs Section */}
-                    <div className="bg-gray-700 rounded-lg p-4 mb-4">
-                        <h4 className="text-white font-medium mb-3">🐦 Twitter Detection Options</h4>
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div>
-                                <label className="block text-sm font-medium text-gray-300 mb-2">
-                                    Custom Twitter Community
-                                </label>
-                                <input
-                                    type="text"
-                                    value={customCommunity}
-                                    onChange={(e) => setCustomCommunity(e.target.value)}
-                                    className="w-full px-3 py-2 bg-gray-600 border border-gray-500 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
-                                    placeholder="Community ID or URL"
-                                />
-                                <p className="text-xs text-gray-400 mt-1">e.g., 1234567890 or https://x.com/i/communities/1234567890</p>
-                            </div>
-
-                            <div>
-                                <label className="block text-sm font-medium text-gray-300 mb-2">
-                                    Custom Twitter Status/Tweet
-                                </label>
-                                <input
-                                    type="text"
-                                    value={customTweet}
-                                    onChange={(e) => setCustomTweet(e.target.value)}
-                                    className="w-full px-3 py-2 bg-gray-600 border border-gray-500 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
-                                    placeholder="Tweet URL"
-                                />
-                                <p className="text-xs text-gray-400 mt-1">e.g., https://x.com/username/status/1971225136230772838</p>
-                            </div>
-                        </div>
-
-                        {/* URL Detection Preview */}
-                        {(customCommunity || customTweet) && (
-                            <div className="mt-3 p-3 bg-gray-600 rounded-lg">
-                                <h5 className="text-sm font-medium text-white mb-2">🔍 URL Detection Preview:</h5>
-                                {customCommunity && (
-                                    <div className="text-xs text-green-400 mb-1">
-                                        Community: {parseTwitterUrl(customCommunity).type} - ID: {parseTwitterUrl(customCommunity).id}
-                                    </div>
-                                )}
-                                {customTweet && (
-                                    <div className="text-xs text-blue-400">
-                                        Tweet: {parseTwitterUrl(customTweet).type} - ID: {parseTwitterUrl(customTweet).id}
-                                    </div>
-                                )}
-                            </div>
-                        )}
+                    <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-2">
+                            Custom Twitter Community (Optional)
+                        </label>
+                        <input
+                            type="text"
+                            value={customCommunity}
+                            onChange={(e) => setCustomCommunity(e.target.value)}
+                            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
+                            placeholder="Community ID (e.g., 1234567890)"
+                        // disabled={!botStatus.isRunning}
+                        />
                     </div>
 
                     <div>
@@ -1992,7 +2140,8 @@ function App() {
                             value={customTweet}
                             onChange={(e) => setCustomTweet(e.target.value)}
                             className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
-                            placeholder="Tweet URL (e.g., https://x.com/Spadiddle/status/1970158855276368357)"
+                            placeholder="Tweet URL (e.g., x.com/user/status/123...)"
+                        // disabled={!botStatus.isRunning}
                         />
                     </div>
 
@@ -2855,174 +3004,6 @@ function App() {
         );
     };
 
-
-    const renderTweetsTab = () => (
-        <div className="space-y-4 md:space-y-6">
-            {/* Header */}
-            <div className="bg-gray-800 rounded-lg p-4 md:p-6">
-                <div className="flex flex-col space-y-4 md:flex-row md:items-center md:justify-between md:space-y-0 mb-4">
-                    <div>
-                        <h2 className="text-lg md:text-xl font-semibold text-white">🐦 Tweet Detection & Tracking</h2>
-                        <p className="text-sm text-gray-400">Manage detected Twitter tweets and prevent duplicate sniping</p>
-                    </div>
-                    <div className="flex flex-col space-y-2 md:flex-row md:space-y-0 md:space-x-4">
-                        <button
-                            onClick={fetchTweets}
-                            className="w-full md:w-auto px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors text-sm"
-                        >
-                            🔄 Refresh Tweets
-                        </button>
-                        <button
-                            onClick={clearTweets}
-                            className="w-full md:w-auto px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors text-sm"
-                        >
-                            🗑️ Clear All Tweets
-                        </button>
-                    </div>
-                </div>
-
-                {/* Stats */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                    <div className="text-center">
-                        <div className="text-white font-semibold">{tweets.length}</div>
-                        <div className="text-gray-400">Total Tweets</div>
-                    </div>
-                    <div className="text-center">
-                        <div className="text-blue-400 font-semibold">
-                            {tweets.filter(t => t.platform === 'pumpfun').length}
-                        </div>
-                        <div className="text-gray-400">Pump.fun</div>
-                    </div>
-                    <div className="text-center">
-                        <div className="text-orange-400 font-semibold">
-                            {tweets.filter(t => t.platform === 'letsbonk').length}
-                        </div>
-                        <div className="text-gray-400">LetsBonk</div>
-                    </div>
-                    <div className="text-center">
-                        <div className="text-green-400 font-semibold">
-                            {detectedTokens.filter(t => t.twitterType === 'tweet').length}
-                        </div>
-                        <div className="text-gray-400">Tokens Detected</div>
-                    </div>
-                </div>
-            </div>
-
-            {/* Tweets List */}
-            <div className="bg-gray-800 rounded-lg p-4 md:p-6">
-                <h3 className="text-lg font-semibold text-white mb-4">Tracked Tweets</h3>
-
-                {tweets.length === 0 ? (
-                    <div className="text-center py-8">
-                        <div className="text-gray-400 mb-4">
-                            <span className="text-4xl">🐦</span>
-                            <p className="mt-2">No tweets tracked yet</p>
-                            <p className="text-sm">Tweets will appear here when detected from token launches</p>
-                        </div>
-                    </div>
-                ) : (
-                    <div className="space-y-3">
-                        {tweets.map(tweet => (
-                            <div key={tweet.id} className="bg-gray-700 rounded-lg p-4 border-l-4 border-blue-500">
-                                <div className="flex flex-col md:flex-row md:items-center md:justify-between space-y-2 md:space-y-0">
-                                    <div className="flex-1">
-                                        <div className="flex items-center space-x-2 mb-2">
-                                            <span className="text-blue-400">🐦</span>
-                                            <h4 className="text-white font-medium">Tweet {tweet.tweetId}</h4>
-                                            <button
-                                                onClick={() => copyToClipboard(tweet.tweetId, 'Tweet ID')}
-                                                className="text-blue-400 hover:text-blue-300 text-sm"
-                                            >
-                                                📋
-                                            </button>
-                                        </div>
-
-                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-sm">
-                                            <div>
-                                                <span className="text-gray-400">Token: </span>
-                                                <span className="text-green-400">{tweet.tokenName || 'Unknown'}</span>
-                                            </div>
-                                            <div>
-                                                <span className="text-gray-400">Platform: </span>
-                                                <span className={`${tweet.platform === 'pumpfun' ? 'text-purple-400' : 'text-orange-400'}`}>
-                                                    {tweet.platform || 'Unknown'}
-                                                </span>
-                                            </div>
-                                            <div>
-                                                <span className="text-gray-400">Detected: </span>
-                                                <span className="text-yellow-400">
-                                                    {tweet.firstUsedAt ? new Date(tweet.firstUsedAt).toLocaleString() : 'Recently'}
-                                                </span>
-                                            </div>
-                                        </div>
-
-                                        {tweet.tokenAddress && (
-                                            <div className="mt-2 flex items-center space-x-2">
-                                                <span className="text-gray-400 text-xs">Token: </span>
-                                                <code className="text-xs text-white bg-gray-600 px-2 py-1 rounded">
-                                                    {tweet.tokenAddress.substring(0, 8)}...{tweet.tokenAddress.substring(tweet.tokenAddress.length - 8)}
-                                                </code>
-                                                <button
-                                                    onClick={() => copyToClipboard(tweet.tokenAddress, 'Token address')}
-                                                    className="text-blue-400 hover:text-blue-300 text-xs"
-                                                >
-                                                    📋
-                                                </button>
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    <div className="flex space-x-2">
-                                        <button
-                                            onClick={() => {
-                                                const tweetUrl = `https://x.com/i/status/${tweet.tweetId}`;
-                                                window.open(tweetUrl, '_blank');
-                                                addNotification('info', `🌐 Opening tweet ${tweet.tweetId}`);
-                                            }}
-                                            className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm"
-                                        >
-                                            🔗 View
-                                        </button>
-                                        <button
-                                            onClick={() => removeTweet(tweet.tweetId)}
-                                            className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-sm"
-                                        >
-                                            🗑️ Remove
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                )}
-            </div>
-
-            {/* Test Section */}
-            <div className="bg-gray-800 rounded-lg p-4 md:p-6">
-                <h3 className="text-lg font-semibold text-white mb-4">Test Tweet Detection</h3>
-                <div className="space-y-4">
-                    <div className="bg-gray-700 rounded-lg p-4">
-                        <h4 className="text-white font-medium mb-2">Quick Test URLs</h4>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                            <button
-                                onClick={() => setCustomTweet('https://x.com/sav_says_/status/1971225136230772838')}
-                                className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm text-left"
-                            >
-                                🐦 Test Tweet #1
-                            </button>
-                            <button
-                                onClick={() => setCustomTweet('https://x.com/Spadiddle/status/1970158855276368357')}
-                                className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm text-left"
-                            >
-                                🐦 Test Tweet #2
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    );
-
     // 3. COUNTDOWN TIMER COMPONENT
     const PairDetectionCountdown = ({ tokenAddress, onRetry }) => {
         const [countdown, setCountdown] = useState(3);
@@ -3413,31 +3394,6 @@ function App() {
         }
     };
 
-    // Add this function after your state declarations
-    const parseTwitterUrl = (url) => {
-        if (!url) return { type: null, id: null };
-
-        // Match tweet/status URLs
-        const tweetMatch = url.match(/https:\/\/(x\.com|twitter\.com)\/\w+\/status\/(\d+)/);
-        if (tweetMatch) {
-            return { type: 'tweet', id: tweetMatch[2] };
-        }
-
-        // Match community URLs
-        const communityMatch = url.match(/https:\/\/(x\.com|twitter\.com)\/i\/communities\/(\d+)/);
-        if (communityMatch) {
-            return { type: 'community', id: communityMatch[2] };
-        }
-
-        // Match individual profile URLs
-        const profileMatch = url.match(/https:\/\/(x\.com|twitter\.com)\/(\w+)/);
-        if (profileMatch) {
-            return { type: 'individual', id: profileMatch[2] };
-        }
-
-        return { type: null, id: url }; // Return the original input as fallback
-    };
-
     // Render components
     const renderStatusIndicator = () => (
         <div className="flex items-center space-x-2">
@@ -3681,12 +3637,6 @@ function App() {
                             {detectedTokens.filter(t => t.twitterType === 'community').length}
                         </div>
                         <div className="text-gray-400">Communities</div>
-                    </div>
-                    <div className="text-center">
-                        <div className="text-blue-400 font-semibold">
-                            {detectedTokens.filter(t => t.twitterType === 'tweet').length} {/* ADD THIS */}
-                        </div>
-                        <div className="text-gray-400">Tweets</div>
                     </div>
                     <div className="text-center">
                         <div className="text-blue-400 font-semibold">
@@ -4803,8 +4753,6 @@ function App() {
                                 </span>
                             )}
                         </button>
-                        {/* Add this button to your navigation */}
-                        {/* Add the Tweets tab to your navigation */}
                         <button
                             onClick={() => setActiveTab('tweets')}
                             className={`py-3 md:py-4 px-2 border-b-2 transition-colors whitespace-nowrap text-sm md:text-base ${activeTab === 'tweets'
@@ -4812,10 +4760,10 @@ function App() {
                                 : 'border-transparent text-gray-400 hover:text-white'
                                 }`}
                         >
-                            🐦 Tweets
-                            {tweets.length > 0 && (
+                            📱 Tweets
+                            {usedTweets.length > 0 && (
                                 <span className="ml-1 md:ml-2 bg-blue-600 text-white text-xs px-1.5 md:px-2 py-0.5 md:py-1 rounded-full">
-                                    {tweets.length}
+                                    {usedTweets.length}
                                 </span>
                             )}
                         </button>
@@ -4858,7 +4806,7 @@ function App() {
                 {activeTab === 'detected' && renderDetectedTokens()}
                 {activeTab === 'lists' && renderLists()}
                 {activeTab === 'communities' && renderCommunityManagement()}
-                {activeTab === 'tweets' && renderTweetsTab()}
+                {activeTab === 'tweets' && renderTweetManagement()}
                 {activeTab === 'demo' && renderDemoTab()}
                 {activeTab === 'twitter' && renderTwitterSession()}
                 {activeTab === 'settings' && (
@@ -4894,8 +4842,8 @@ function App() {
                             <span className="text-white font-medium">{usedCommunities.length}</span>
                         </div>
                         <div className="flex items-center space-x-1">
-                            <span>🐦 Tweets:</span>
-                            <span className="text-white font-medium">{tweets.length}</span>
+                            <span>📱 Tweets:</span>
+                            <span className="text-blue-400 font-medium">{usedTweets.length}</span>
                         </div>
                         <div className="flex items-center space-x-1">
                             <span>🔥 Firebase:</span>
