@@ -808,43 +808,25 @@ function App() {
                 addNotification('info', `🏘️ Community ${data.data.communityId} scraped: ${data.data.totalAdmins} admins found - check console`);
                 break;
 
-            // In App.js - in the handleWebSocketMessage function, for secondary_popup_trigger
             case 'secondary_popup_trigger':
-                console.log('⏱️ [CLIENT_TIMING] =================================');
-                console.log('⏱️ [CLIENT_TIMING] SECONDARY POPUP TRIGGER RECEIVED');
-                const clientReceiveTime = Date.now();
-                console.log('⏱️ [CLIENT_TIMING] Received at:', new Date().toISOString());
-
-                if (data.data.timing) {
-                    const serverToClientTime = clientReceiveTime - data.data.timing.popupTriggerTime;
-                    console.log('⏱️ [CLIENT_TIMING] Server->Client transmission:', serverToClientTime, 'ms');
-                    console.log('⏱️ [CLIENT_TIMING] Total detection to client:', clientReceiveTime - data.data.timing.matchTimestamp, 'ms');
-                }
-
                 console.log('🔔 SECONDARY ADMIN MATCH DETECTED');
                 console.log('📊 Token data:', data.data.tokenData);
 
-                // Measure popup rendering time
-                const beforePopupRender = Date.now();
+                const tokenData = data.data.tokenData;
 
+                // Show popup modal immediately
                 setSecondaryPopup({
                     show: true,
-                    tokenData: data.data.tokenData,
-                    globalSettings: data.data.globalSnipeSettings,
-                    timing: {
-                        clientReceiveTime: clientReceiveTime,
-                        beforePopupRender: beforePopupRender
-                    }
+                    tokenData: tokenData,
+                    globalSettings: data.data.globalSnipeSettings
                 });
 
-                console.log('⏱️ [CLIENT_TIMING] Popup state set at:', Date.now() - beforePopupRender, 'ms after receive');
-                console.log('⏱️ [CLIENT_TIMING] =================================');
-
-                addNotification('info', `🔔 Secondary match found: ${data.data.tokenData.tokenAddress.substring(0, 8)}...`);
+                addNotification('info', `🔔 Secondary match found: ${tokenData.tokenAddress.substring(0, 8)}...`);
 
                 // 🚀 START PAIR ADDRESS DETECTION IMMEDIATELY
                 console.log('🔍 Starting pair address detection for secondary match...');
-                checkPairAddressWithRetry(data.data.tokenData.tokenAddress);
+                checkPairAddressWithRetry(tokenData.tokenAddress);
+
                 break;
 
             case 'community_admin_match_found':
@@ -1181,24 +1163,12 @@ function App() {
     };
 
     const viewTokenPageFromPopup = async (token) => {
-
-        const browserOpenStartTime = Date.now();
-        console.log('⏱️ [BROWSER_TIMING] =================================');
-        console.log('⏱️ [BROWSER_TIMING] STARTING BROWSER OPEN PROCESS');
-        console.log('⏱️ [BROWSER_TIMING] Token:', token.tokenAddress.substring(0, 12) + '...');
-        console.log('⏱️ [BROWSER_TIMING] Start time:', new Date().toISOString());
-
-        // Clear previous status for this token
-        setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: null }));
-
-        let url;
-        const urlDecisionStart = Date.now();
-
         console.log('🌐 Opening token page from popup for:', token.tokenAddress);
 
         // Clear previous status for this token
         setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: null }));
 
+        let url;
 
         // Check user's preference for token page destination
         if (settings.tokenPageDestination === 'axiom') {
@@ -1263,37 +1233,12 @@ function App() {
             finalURL: url
         });
 
-
-        const urlDecisionTime = Date.now() - urlDecisionStart;
-        console.log('⏱️ [BROWSER_TIMING] URL decision time:', urlDecisionTime, 'ms');
-
-        console.log('⏱️ [BROWSER_TIMING] Final URL:', url);
-
-        const beforeOpenCall = Date.now();
-
         // Open the URL
         if (window.electronAPI && window.electronAPI.openExternalURL) {
             window.electronAPI.openExternalURL(url);
-            const afterOpenCall = Date.now();
-            const openCallTime = afterOpenCall - beforeOpenCall;
-            console.log('⏱️ [BROWSER_TIMING] Electron API call time:', openCallTime, 'ms');
         } else {
             window.open(url, '_blank');
-            const afterOpenCall = Date.now();
-            const openCallTime = afterOpenCall - beforeOpenCall;
-            console.log('⏱️ [BROWSER_TIMING] Window.open call time:', openCallTime, 'ms');
-
-            // Additional measurement for browser actually opening
-            setTimeout(() => {
-                const browserFullyOpenTime = Date.now();
-                const totalBrowserOpenTime = browserFullyOpenTime - browserOpenStartTime;
-                console.log('⏱️ [BROWSER_TIMING] Estimated browser fully open at:', totalBrowserOpenTime, 'ms');
-                console.log('⏱️ [BROWSER_TIMING] =================================');
-            }, 1000); // Estimate 1 second for browser to fully load
         }
-
-        const totalOpenTime = Date.now() - browserOpenStartTime;
-        console.log('⏱️ [BROWSER_TIMING] Total open process time:', totalOpenTime, 'ms');
 
         addNotification('success', `🌐 Opening token page: ${url}`);
 
@@ -1302,7 +1247,6 @@ function App() {
             setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: null }));
         }, 10000);
     };
-
 
     // Format numbers for display
     const formatNumber = (num) => {
@@ -2997,17 +2941,7 @@ function App() {
                     <div className="flex flex-col space-y-3 md:flex-row md:space-y-0 md:space-x-4">
                         <div className="flex-1">
                             <button
-                                onClick={() => {
-                                    const beforeViewClick = Date.now();
-                                    console.log('⏱️ [BROWSER_TIMING] View button clicked at:', beforeViewClick);
-
-                                    if (secondaryPopup.timing) {
-                                        const totalTimeToClick = beforeViewClick - secondaryPopup.timing.clientReceiveTime;
-                                        console.log('⏱️ [BROWSER_TIMING] Time from popup receive to click:', totalTimeToClick, 'ms');
-                                    }
-
-                                    viewTokenPageFromPopup(token);
-                                }}
+                                onClick={() => viewTokenPageFromPopup(token)}
                                 className="w-full px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center justify-center space-x-2"
                             >
                                 <span>🌐 View Token Page</span>
