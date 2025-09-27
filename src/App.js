@@ -1,5108 +1,4928 @@
-// ========== COMPLETE FIXED SERVER.JS WITH FIREBASE ADMIN LISTS ==========
+// App.js - Part 1: Imports and State Management
 
-const express = require('express');
-const WebSocket = require('ws');
-const cors = require('cors');
-const { Connection, PublicKey, Keypair } = require('@solana/web3.js');
-const bs58 = require('bs58');
-const dotenv = require('dotenv');
-const admin = require('firebase-admin');
-// Add these imports at the top with other requires
-const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
-const fsPromises = fs.promises;
-const https = require('https');
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+    Play,
+    Square,
+    Settings,
+    Plus,
+    Trash2,
+    Wallet,
+    Users,
+    Bell,
+    Target,
+    Activity,
+    CheckCircle,
+    XCircle,
+    AlertTriangle,
+    Copy,
+    ExternalLink,
+    Coins,
+    TrendingUp,
+    Clock
+} from 'lucide-react';
+import './App.css';
 
-const { chromium } = require('playwright');
-const UserAgent = require('user-agents');
-const timingLogFile = path.join(__dirname, 'token_timing_log.txt');
-const activeScrapingSessions = new Map();
-const scrapingResults = new Map();
-const SCRAPING_RESULT_CACHE_TIME = 30000;
-dotenv.config();
+const API_BASE = 'https://devscope.fun:3002/api';
+//const API_BASE = 'https://devscope.fun:3002/api';
 
-const COMMUNITY_CACHE_FILE = path.join(__dirname, 'usedCommunities.json');
-const TWEETS_CACHE_FILE = path.join(__dirname, 'usedTweets.json'); // ADD THIS
-const FIREBASE_SYNC_INTERVAL = 15 * 60 * 1000; // 15 minutes in milliseconds
-const { TokenMetadataExtractor: OriginalExtractor } = require('./token-metadata-extractor');
-
-
-let tweetCache = {
-    tweets: new Map(),
-    pendingSync: new Set(),
-    lastSyncToFirebase: null
-};
-
-// In-memory cache for fastest access
-let communityCache = {
-    communities: new Map(),
-    pendingSync: new Set(),
-    lastSyncToFirebase: null
-};
-
-//TWITTER FOR LOCALHOST TEST 8.25 
-const { loadTwitterCookies, getTwitterHeaders } = require('./import-cookies');
-//TWITTER FOR LOCALHOST TEST 8.25 
-
-// Initialize Firebase Admin SDaK
-// Initialize Firebase Admin SDzK from environment variables
-const serviceAccount = {
-    type: "service_account",
-    project_id: process.env.FIREBASE_PROJECT_ID,
-    private_key_id: process.env.FIREBASE_PRIVATE_KEY_ID,
-    private_key: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-    client_email: process.env.FIREBASE_CLIENT_EMAIL,
-    client_id: process.env.FIREBASE_CLIENT_ID,
-    auth_uri: "https://accounts.google.com/o/oauth2/auth",
-    token_uri: "https://oauth2.googleapis.com/token",
-    auth_provider_x509_cert_url: "https://www.googleapis.com/oauth2/v1/certs",
-    client_x509_cert_url: process.env.FIREBASE_CLIENT_X509_CERT_URL
-};
-
-// 1. SSL Configuration with Enhanced Security
-const sslOptions = {
-    key: fs.readFileSync(path.join(__dirname, 'ssl/devscope.fun.key')),
-    cert: fs.readFileSync(path.join(__dirname, 'ssl/devscope.fun.crt')),
-    ca: fs.readFileSync(path.join(__dirname, 'ssl/devscope.fun-ca.crt')),
-    // Security best practices
-    minVersion: 'TLSv1.2',
-    ciphers: [
-        'ECDHE-ECDSA-AES128-GCM-SHA256',
-        'ECDHE-RSA-AES128-GCM-SHA256',
-        'ECDHE-ECDSA-AES256-GCM-SHA384',
-        'ECDHE-RSA-AES256-GCM-SHA384'
-    ].join(':'),
-    honorCipherOrder: true
-};
-
-const secondaryMatchesLogFile = path.join(__dirname, 'secondary_matches_timing.txt');
-
-function logSecondaryMatch(tokenAddress, adminName, processingTime) {
-    const timestamp = new Date().toISOString();
-    const logEntry = `[${timestamp}] Token: ${tokenAddress} | Admin: ${adminName} | Time: ${processingTime}ms\n`;
-
-    try {
-        fs.appendFileSync(secondaryMatchesLogFile, logEntry);
-        console.log(`📝 Secondary match logged: ${adminName} - ${processingTime}ms`);
-    } catch (error) {
-        console.error('Error writing to secondary matches log file:', error);
-    }
-}
-
-function logAdminMatchTiming(tokenAddress, adminName, matchType, processingTime, browserOpenTime = null) {
-    const timestamp = new Date().toISOString();
-    let logEntry = `[${timestamp}] Token: ${tokenAddress} | Admin: ${adminName} | Match: ${matchType} | Detection: ${processingTime}ms`;
-
-    if (browserOpenTime !== null) {
-        logEntry += ` | BrowserOpen: ${browserOpenTime}ms`;
-    }
-
-    logEntry += '\n';
-
-    try {
-        fs.appendFileSync(path.join(__dirname, 'admin_timing_debug.txt'), logEntry);
-        console.log(`🔍 Admin timing logged: ${adminName} - Detection: ${processingTime}ms${browserOpenTime ? `, Browser: ${browserOpenTime}ms` : ''}`);
-    } catch (error) {
-        console.error('Error writing to admin timing debug file:', error);
-    }
-}
-
-// ========== COMPLETE initializeSecondaryMatchesLog FUNCTION ==========
-function initializeSecondaryMatchesLog() {
-    const header = `=== SECONDARY ADMIN MATCHES TIMING LOG ===\nStarted: ${new Date().toISOString()}\nFormat: [Timestamp] Token: [Address] | Admin: [Name] | Time: [ms]\n\n`;
-    try {
-        if (!fs.existsSync(secondaryMatchesLogFile)) {
-            fs.writeFileSync(secondaryMatchesLogFile, header);
-            console.log(`📝 Secondary matches timing log initialized: ${secondaryMatchesLogFile}`);
+function App() {
+    // State management
+    const [botStatus, setBotStatus] = useState({
+        isRunning: false,
+        stats: {
+            primaryAdmins: 0,
+            secondaryAdmins: 0, // ADD THIS LINE
+            usedCommunities: 0,
+            processedTokens: 0,
+            isFirebaseLoaded: false // ADD THIS LINE
         }
-    } catch (error) {
-        console.error('Error initializing secondary matches log file:', error);
-    }
-}
-
-function testSecondaryMatchLogging() {
-    console.log('🔍 Testing secondary match logging...');
-    logSecondaryMatch('TEST_TOKEN_ADDRESS_123', 'TEST_ADMIN_NAME', 1234);
-    console.log('✅ Test logging completed - check secondary_matches_timing.txt file');
-}
-
-admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
-    databaseURL: process.env.FIREBASE_DATABASE_URL || "https://devscope-cad93-default-rtdb.firebaseio.com"
-});
-
-const db = admin.firestore();
-
-const app = express();
-const httpServer = require('http').createServer(app);
-const httpsServer = https.createServer(sslOptions, app);
-
-// Create WebSocket servers for both HTTP and HTTPS
-const wss = new WebSocket.Server({ server: httpServer });
-const wssSecure = new WebSocket.Server({ server: httpsServer });
-
-function logTokenTiming(tokenAddress, tokenName, matchType, matchedEntity, processingTime, platform) {
-    const timestamp = new Date().toISOString();
-    const logEntry = `[${timestamp}] Token: ${tokenAddress} | Name: ${tokenName || 'Unknown'} | Match: ${matchType || 'no_match'} | Entity: ${matchedEntity || 'None'} | Time: ${processingTime}ms | Platform: ${platform}\n`;
-
-    try {
-        fs.appendFileSync(timingLogFile, logEntry);
-    } catch (error) {
-        console.error('Error writing to timing log file:', error);
-    }
-}
-
-function initializeTimingLog() {
-    const header = `=== TOKEN TIMING LOG ===\nStarted: ${new Date().toISOString()}\n\n`;
-    try {
-        if (!fs.existsSync(timingLogFile)) {
-            fs.writeFileSync(timingLogFile, header);
-            console.log(`📝 Token timing log initialized: ${timingLogFile}`);
-        }
-    } catch (error) {
-        console.error('Error initializing timing log file:', error);
-    }
-}
-
-// Handle WebSocket connections for both servers
-function handleWebSocketConnection(ws) {
-    console.log('Client connected to WebSocket');
-    wsClients.add(ws);
-
-    ws.send(JSON.stringify({
-        type: 'bot_status',
-        data: { isRunning: botState.isRunning }
-    }));
-
-    ws.on('close', () => {
-        console.log('Client disconnected from WebSocket');
-        wsClients.delete(ws);
     });
 
-    ws.on('error', (error) => {
-        console.error('WebSocket error:', error);
-        wsClients.delete(ws);
+    const [originalSettings, setOriginalSettings] = useState({
+        privateKey: '',
+        tokenPageDestination: 'neo_bullx',
+        enableAdminFilter: true,
+        enableCommunityReuse: true,
+        snipeAllTokens: false,
+        detectionOnlyMode: true
     });
-}
 
-// Apply the same handler to both WebSocket servers
-wss.on('connection', handleWebSocketConnection);
-wssSecure.on('connection', handleWebSocketConnection);
+    const [buttonMessages, setButtonMessages] = useState({
+        basicSettings: '',
+        filterSettings: ''
+    });
 
-app.use(cors());
-app.use(express.json());
+    const [globalSettingsMessage, setGlobalSettingsMessage] = useState('');
+    const [hasGlobalSettingsChanged, setHasGlobalSettingsChanged] = useState(false);
 
-// Configuration
-const PORT = process.env.PORT || 3001;
-const HELIUS_RPC = process.env.HELIUS_RPC || "https://mainnet.helius-rpc.com/?api-key=82e3e020-5346-402d-a9ec-ab6e0bc4a5e9";
-const PUMP_PORTAL_API_KEY = process.env.PUMP_PORTAL_API_KEY;
+    const [activeTab, setActiveTab] = useState('dashboard');
+    const [websocket, setWebsocket] = useState(null);
+    const [connectionStatus, setConnectionStatus] = useState('disconnected');
+    const [notifications, setNotifications] = useState([]);
+    const [detectedTokens, setDetectedTokens] = useState([]);
+    const [copiedStates, setCopiedStates] = useState({});
+    const [tokenPairStatus, setTokenPairStatus] = useState({}); // Track pair status for each token
+    const [demoTemplates, setDemoTemplates] = useState([]);
+    const [selectedTemplate, setSelectedTemplate] = useState(0);
+    const [customWallet, setCustomWallet] = useState('');
+    const [customTwitter, setCustomTwitter] = useState('');
 
-const TWITTER_CONFIG = {
-    username: process.env.TWITTER_USERNAME,
-    password: process.env.TWITTER_PASSWORD,
-    sessionDir: './session',
-    cookiesPath: './session/twitter-cookies.json',
-    sessionDurationHours: 24,
-    timeouts: {
-        navigation: 30000,
-        selector: 10000,
-        action: 5000
-    }
-};
+    const [usedCommunities, setUsedCommunities] = useState([]);
+    const [usedTweets, setUsedTweets] = useState([]);
+    const [customTweet, setCustomTweet] = useState('');
+    const [showCommunityModal, setShowCommunityModal] = useState(false);
+    const [customCommunity, setCustomCommunity] = useState('');
+    const [soundFiles, setSoundFiles] = useState([]);
+    const [uploadingSound, setUploadingSound] = useState(false);
+    const [isCommunity, setIsCommunity] = useState(false);
+    const [pairDetectionStatus, setPairDetectionStatus] = useState({});
+    const [autoRetryTimers, setAutoRetryTimers] = useState({});
+    const [twitterSessionStatus, setTwitterSessionStatus] = useState({
+        initialized: false,
+        loggedIn: false,
+        url: '',
+        error: null,
+        checking: false,
+        apiCreditsExhausted: false, // NEW
+        apiError: null,             // NEW
+        lastApiError: null
+    });
 
-function createBlueLogger() {
-    return {
-        log: (message) => console.log('\x1b[96m%s\x1b[0m', `🔵 ${message}`),
-        logBold: (message) => console.log('\x1b[96m\x1b[1m%s\x1b[0m', `🔵 ${message}`),
-        separator: () => console.log('\x1b[96m\x1b[1m%s\x1b[0m', '🔵 ═══════════════════════════════════════════════════'),
-        success: (message) => console.log('\x1b[96m\x1b[1m%s\x1b[0m', `🔵 ✅ ${message}`),
-        error: (message) => console.log('\x1b[96m\x1b[1m%s\x1b[0m', `🔵 ❌ ${message}`),
-        warning: (message) => console.log('\x1b[96m\x1b[1m%s\x1b[0m', `🔵 ⚠️ ${message}`),
-        info: (message) => console.log('\x1b[96m%s\x1b[0m', `🔵 ℹ️ ${message}`)
+    const [popupBlockerModal, setPopupBlockerModal] = useState({
+        show: false,
+        tokenUrl: '',
+        tokenAddress: '',
+        reason: ''
+    });
+
+    const STORAGE_KEYS = {
+        SETTINGS: 'devscope_settings',
+        GLOBAL_SNIPE: 'devscope_global_snipe',
+        FILTER_SETTINGS: 'devscope_filter_settings'
     };
-}
 
-const connection = new Connection(HELIUS_RPC, {
-    commitment: 'processed',
-    confirmTransactionInitialTimeout: 30000,
-});
-
-const DEMO_TOKEN_TEMPLATES = [
-    {
-        name: "Macaroni Mouse",
-        symbol: "MACARONI",
-        uri: "https://eu-dev.uxento.io/data/cmdvcbd2n00jghb190aiy0y8r",
-        pool: "bonk",
-        platform: "letsbonk",
-        twitterHandle: "Rainmaker1973"
-    },
-    {
-        name: "BuuCoin",
-        symbol: "MAJINBUU",
-        uri: "https://ipfs.io/ipfs/QmTGkzD267qcG32NvyAhxgijxvhtsbRaPUx7WJMNHZDY35",
-        pool: "pump",
-        platform: "pumpfun",
-        twitterHandle: "CryptoMajin"
-    },
-    {
-        name: "Doge Supreme",
-        symbol: "DSUP",
-        uri: "https://ipfs.io/ipfs/QmSampleDogeImage123",
-        pool: "pump",
-        platform: "pumpfun",
-        twitterHandle: "DogeSupremeTeam"
-    },
-    {
-        name: "Moon Cat",
-        symbol: "MCAT",
-        uri: "https://ipfs.io/ipfs/QmSampleCatImage456",
-        pool: "bonk",
-        platform: "letsbonk",
-        twitterHandle: "MoonCatOfficial"
-    }
-];
-
-// Demo wallet addresses for testing
-const DEMO_WALLETS = [
-    "HaSdFi2wKLTguxuh4PMBgZuAscbMGEF8XnMHgD5vUeGr",
-    "HJdauMU7e8tmM7NFDjV9BSoVzZobVS88wnp3TDAfjuE",
-    "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM",
-    "5Q544fKrFoe6tsEbD7S8EmxGTJYAKtTVhAW5Q5pge4j1",
-    "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU"
-];
-
-// ========== FIREBASE HELPER FUNCTIONS ==========
-
-async function saveAdminListToFirebase(listType, adminData) {
-    try {
-        console.log(`🔥 Saving ${listType} to Firebase:`, adminData);
-
-        const docRef = db.collection(listType).doc(adminData.id);
-        await docRef.set({
-            ...adminData,
-            createdAt: admin.firestore.FieldValue.serverTimestamp(),
-            updatedAt: admin.firestore.FieldValue.serverTimestamp()
-        });
-
-        console.log(`✅ SUCCESS: ${listType} entry ${adminData.id} saved to Firebase`);
-        return true;
-    } catch (error) {
-        console.error(`❌ ERROR saving ${listType} to Firebase:`, error);
-        return false;
-    }
-}
-
-async function loadAdminListFromFirebase(listType) {
-    try {
-        console.log(`📥 Loading ${listType} from Firebase`);
-
-        const snapshot = await db.collection(listType).orderBy('createdAt', 'desc').get();
-        const adminList = [];
-
-        snapshot.forEach(doc => {
-            adminList.push({
-                id: doc.id,
-                ...doc.data()
-            });
-        });
-
-        console.log(`✅ Loaded ${adminList.length} entries from Firebase ${listType}`);
-        return adminList;
-    } catch (error) {
-        console.error(`❌ ERROR loading ${listType} from Firebase:`, error);
-        return [];
-    }
-}
-
-async function deleteAdminFromFirebase(listType, adminId) {
-    try {
-        console.log(`🗑️ Deleting ${adminId} from Firebase ${listType}`);
-
-        await db.collection(listType).doc(adminId).delete();
-
-        console.log(`✅ SUCCESS: ${adminId} deleted from Firebase ${listType}`);
-        return true;
-    } catch (error) {
-        console.error(`❌ ERROR deleting ${adminId} from Firebase ${listType}:`, error);
-        return false;
-    }
-}
-
-const SOUNDS_DIR = path.join(__dirname, 'uploads', 'sounds');
-
-// Ensure sounds directory exists
-async function ensureSoundsDir() {
-    try {
-        await fsPromises.mkdir(SOUNDS_DIR, { recursive: true });
-        console.log('📁 Sounds directory created/verified');
-    } catch (error) {
-        console.error('Error creating sounds directory:', error);
-    }
-}
-
-// Configure multer for sound uploads
-const soundStorage = multer.diskStorage({
-    destination: async (req, file, cb) => {
-        await ensureSoundsDir();
-        cb(null, SOUNDS_DIR);
-    },
-    filename: (req, file, cb) => {
-        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-        const ext = path.extname(file.originalname);
-        cb(null, `sound-${uniqueSuffix}${ext}`);
-    }
-});
-
-const uploadSound = multer({
-    storage: soundStorage,
-    limits: {
-        fileSize: 5 * 1024 * 1024 // 5MB limit
-    },
-    fileFilter: (req, file, cb) => {
-        const allowedMimes = [
-            'audio/wav', 'audio/wave', 'audio/x-wav',
-            'audio/mpeg', 'audio/mp3',
-            'audio/ogg', 'audio/vorbis',
-            'audio/mp4', 'audio/m4a', 'audio/x-m4a'
-        ];
-
-        if (allowedMimes.includes(file.mimetype)) {
-            cb(null, true);
-        } else {
-            cb(new Error('Invalid file type. Only audio files are allowed.'), false);
+    const loadFromLocalStorage = (key, defaultValue = null) => {
+        try {
+            const stored = localStorage.getItem(key);
+            if (stored) {
+                const parsed = JSON.parse(stored);
+                console.log(`📁 Loaded ${key} from localStorage:`, parsed);
+                return parsed;
+            }
+        } catch (error) {
+            console.error('Failed to load from localStorage:', error);
         }
-    }
-});
-
-// Helper function to determine MIME type
-function getMimeType(ext) {
-    const mimeTypes = {
-        '.wav': 'audio/wav',
-        '.mp3': 'audio/mpeg',
-        '.ogg': 'audio/ogg',
-        '.m4a': 'audio/m4a'
+        return defaultValue;
     };
-    return mimeTypes[ext.toLowerCase()] || 'audio/unknown';
-}
 
-// ========== ORIGINAL BOTSTATE CLASS ==========
 
-// ADD THIS TWITTER SCRAPER CLASS
-class TwitterCommunityAdminScraper {
-    constructor() {
-        this.browser = null;
-        this.context = null;
-        this.page = null;
-        this.sessionActive = false;
-        this.isInitialized = false;
-        this.sessionPersistentDataDir = './session/twitter-session';
-        this.responseHandler = null;
-    }
-
-    async init() {
-        if (this.isInitialized) return true;
-
-        try {
-            console.log('🤖 Initializing Twitter scraper with persistent session...');
-            await this.ensureDirectories();
-            const userAgent = new UserAgent({ deviceCategory: 'desktop' });
-
-            // ✅ FIXED: launchPersistentContext returns BrowserContext, not Browser
-            this.browser = await chromium.launchPersistentContext(this.sessionPersistentDataDir, {
-                headless: true,
-                userAgent: userAgent.toString(),
-                viewport: { width: 1366, height: 768 },
-                args: [
-                    '--no-sandbox',
-                    '--disable-blink-features=AutomationControlled',
-                    '--disable-web-security',
-                    '--disable-features=VizDisplayCompositor',
-                    '--disable-extensions',
-                    '--no-first-run',
-                    '--disable-default-apps'
-                ]
-            });
-
-            // ✅ FIXED: Get page from the context correctly
-            const pages = this.browser.pages();
-            this.page = pages[0] || await this.browser.newPage();
-
-            this.isInitialized = true;
-            console.log('✅ Twitter scraper initialized with persistent session');
-            return true;
-        } catch (error) {
-            console.error('❌ Failed to initialize Twitter scraper:', error);
-            return false;
-        }
-    }
-
-    // Add this method to TwitterCommunityAdminScraper class (around line 350)
-
-    /*
-    Main Changes:
-    
-    Added cookie loading functionality:
-    javascriptconst cookies = loadTwitterCookies(); // NEW - loads cookies from your import
-    
-    Added cookie injection into browser:
-    javascriptawait this.page.context().addCookies(cookies); // NEW - applies cookies to browser
-    */
-
-    async automaticLogin() {
-        try {
-            console.log('🍪 Loading imported Twitter session from cookies...');
-
-            // Load cookies using the import-cookies helper
-            const cookies = loadTwitterCookies();
-
-            if (cookies && cookies.length > 0) {
-                // Add cookies to the browser context
-                await this.page.context().addCookies(cookies);
-                console.log(`✅ Loaded ${cookies.length} cookies from imported session`);
-
-                // Navigate to Twitter home to verify session
-                await this.page.goto('https://twitter.com/home', {
-                    waitUntil: 'domcontentloaded',
-                    timeout: 15000
-                });
-
-                await this.page.waitForTimeout(3000);
-
-                // Check if we're logged in
-                const currentUrl = this.page.url();
-                console.log(`🔍 Current URL after cookie load: ${currentUrl}`);
-
-                // Check login indicators
-                const loginIndicators = await this.page.evaluate(() => {
-                    const indicators = {
-                        notOnLoginPage: !window.location.href.includes('/login') && !window.location.href.includes('/i/flow/login'),
-                        onHomePage: window.location.href.includes('/home'),
-                        hasNavigation: !!document.querySelector('[data-testid="SideNav_NewTweet_Button"]') ||
-                            !!document.querySelector('[aria-label="Home timeline"]') ||
-                            !!document.querySelector('[data-testid="primaryColumn"]'),
-                        hasUserAvatar: !!document.querySelector('[data-testid="SideNav_AccountSwitcher_Button"]')
-                    };
-                    return indicators;
-                });
-
-                console.log('🔍 Login indicators:', loginIndicators);
-
-                if (loginIndicators.notOnLoginPage && loginIndicators.onHomePage) {
-                    console.log('✅ Session restored successfully using imported cookies');
-                    this.sessionActive = true;
-
-                    // Double-check by calling checkSessionStatus
-                    const statusCheck = await this.checkSessionStatus();
-                    if (statusCheck.loggedIn) {
-                        return true;
-                    }
-                }
-            } else {
-                console.log('❌ No cookies found, trying traditional login...');
-                return await this.fallbackLogin();
-            }
-
-        } catch (error) {
-            console.error('❌ Session restore failed:', error.message);
-            console.log('⚠️ Falling back to traditional login...');
-            return await this.fallbackLogin();
-        }
-    }
-
-    async scrapeCommunityAdminsBrowser(communityId) {
-        const startTime = Date.now();
-        const TIMEOUT_MS = 3000;
-        console.log(`🎯 BROWSER FALLBACK: Community ${communityId} (${TIMEOUT_MS}ms timeout)`);
-
-        try {
-            const moderatorsUrl = `https://x.com/i/communities/${communityId}/moderators`;
-
-            await this.page.goto(moderatorsUrl, {
-                waitUntil: 'domcontentloaded',
-                timeout: TIMEOUT_MS
-            });
-
-            const currentUrl = this.page.url();
-            if (currentUrl.includes('login') || currentUrl.includes('/i/flow/login')) {
-                console.log('❌ Session expired - redirected to login');
-                throw new Error('Session expired. Please login manually again.');
-            }
-
-            console.log('🎯 ATTEMPTING API INTERCEPTION...');
-            const apiAdmins = await this.extractAdminsFromApi(communityId);
-
-            if (apiAdmins && apiAdmins.length > 0) {
-                console.log(`✅ API INTERCEPTION SUCCESS: Found ${apiAdmins.length} admin(s)`);
-                return apiAdmins;
-            }
-
-            console.log('⚠️ API INTERCEPTION FAILED: Falling back to DOM scraping...');
-            await this.page.waitForTimeout(1000);
-
-            const adminData = await this.extractAdminsFromDOM();
-            console.log(`✅ BROWSER SCRAPING COMPLETED: Found ${adminData.length} admin(s) in ${Date.now() - startTime}ms`);
-            return adminData;
-
-        } catch (error) {
-            console.error('❌ Browser scraping failed:', error);
-            return [];
-        }
-    }
-
-    async fallbackLogin() {
-        // Your existing login code as fallback
-        try {
-            console.log('🔐 Attempting traditional login...');
-
-            await this.page.goto('https://twitter.com/login', {
-                waitUntil: 'domcontentloaded',
-                timeout: 30000
-            });
-
-            await this.page.waitForTimeout(2000);
-
-            // Fill username
-            await this.page.fill('input[name="text"]', TWITTER_CONFIG.username);
-            await this.page.press('input[name="text"]', 'Enter');
-
-            await this.page.waitForTimeout(3000);
-
-            // Fill password
-            await this.page.fill('input[name="password"]', TWITTER_CONFIG.password);
-            await this.page.press('input[name="password"]', 'Enter');
-
-            // Wait for any redirect and check success more reliably
-            await this.page.waitForTimeout(5000);
-
-            const finalUrl = this.page.url();
-            if (!finalUrl.includes('/login') && !finalUrl.includes('/i/flow/login')) {
-                console.log('✅ Traditional login successful');
-                this.sessionActive = true;
-                return true;
-            } else {
-                console.log('❌ Traditional login failed');
-                return false;
-            }
-
-        } catch (error) {
-            console.error('❌ Traditional login failed:', error.message);
-            return false;
-        }
-    }
-
-    async ensureDirectories() {
-        try {
-            await fsPromises.access('./session');
-        } catch {
-            await fsPromises.mkdir('./session', { recursive: true });
-        }
-
-        try {
-            await fsPromises.access(this.sessionPersistentDataDir);
-        } catch {
-            await fsPromises.mkdir(this.sessionPersistentDataDir, { recursive: true });
-        }
-    }
-
-    async checkSessionStatus() {
-        if (!this.page) {
-            return { loggedIn: false, error: 'Browser not initialized' };
-        }
-
-        try {
-            const currentUrl = this.page.url();
-            console.log(`🔍 Current page URL: ${currentUrl}`);
-
-            // If we're on login page, definitely not logged in
-            if (currentUrl.includes('/login') || currentUrl.includes('/i/flow/login')) {
-                console.log('❌ On login page - not logged in');
-                this.sessionActive = false;
-                return { loggedIn: false, url: currentUrl };
-            }
-
-            // If we're on home page or any other x.com page (not login), we're logged in
-            if (currentUrl.includes('x.com/home') || currentUrl.includes('twitter.com/home')) {
-                console.log('✅ On home page - logged in');
-                this.sessionActive = true;
-                return {
-                    loggedIn: true,
-                    url: currentUrl,
-                    method: 'home_page_url'
-                };
-            }
-
-            // Additional check - wait a bit for page to load
-            await this.page.waitForTimeout(2000);
-
-            // Check for logged-in indicators with multiple strategies
-            const loggedInCheck = await this.page.evaluate(() => {
-                // Check if we're NOT on login page
-                const notOnLogin = !window.location.href.includes('/login') &&
-                    !window.location.href.includes('/i/flow/login');
-
-                // Check if we're on home or another authenticated page
-                const onHome = window.location.href.includes('/home');
-
-                // If we're on home and not on login, we're logged in
-                if (notOnLogin && onHome) {
-                    return { method: 'url_check', loggedIn: true };
-                }
-
-                // Look for any Twitter navigation elements (they change frequently)
-                const hasAnyTwitterElement =
-                    !!document.querySelector('[data-testid*="Nav"]') ||
-                    !!document.querySelector('[aria-label*="Home"]') ||
-                    !!document.querySelector('[role="navigation"]') ||
-                    !!document.querySelector('nav');
-
-                if (notOnLogin && hasAnyTwitterElement) {
-                    return { method: 'navigation_elements', loggedIn: true };
-                }
-
-                // If we're not on login page, assume logged in
-                if (notOnLogin) {
-                    return { method: 'not_on_login', loggedIn: true };
-                }
-
-                return { method: 'default', loggedIn: false };
-            });
-
-            console.log(`🔍 Session check result:`, loggedInCheck);
-
-            this.sessionActive = loggedInCheck.loggedIn;
-            return {
-                loggedIn: loggedInCheck.loggedIn,
-                url: currentUrl,
-                method: loggedInCheck.method
-            };
-
-        } catch (error) {
-            console.error('❌ Error checking session status:', error);
-            this.sessionActive = false;
-            return { loggedIn: false, error: error.message };
-        }
-    }
-
-    async setupApiInterception() {
-        // No longer needed - handler setup moved to extractAdminsFromApi
-        return;
-    }
-
-    async extractAdminsFromApi(communityId) {
-        try {
-            const apiAdmins = [];
-            let apiResponseReceived = false;
-
-            // Create the response handler function (not as arrow function property)
-            const responseHandler = async (response) => {
-                const url = response.url();
-
-                if (url.includes('communities') &&
-                    (url.includes('moderators') || url.includes('members') || url.includes('users')) &&
-                    response.status() === 200) {
-
-                    try {
-                        const data = await response.json();
-                        apiResponseReceived = true;
-
-                        // Handle different API response formats
-                        if (data.users) {
-                            data.users.forEach(user => {
-                                if (user.role === 'admin' || user.role === 'moderator' || user.is_admin) {
-                                    apiAdmins.push({
-                                        username: user.screen_name || user.username,
-                                        badgeType: user.role === 'admin' ? 'Admin' : 'Mod',
-                                        source: 'api_interception'
-                                    });
-                                }
-                            });
-                        }
-
-                        // Alternative response format
-                        if (data.data && data.data.community && data.data.community.moderators) {
-                            data.data.community.moderators.forEach(mod => {
-                                if (mod.role === 'admin' || mod.role === 'moderator') {
-                                    apiAdmins.push({
-                                        username: mod.screen_name || mod.username,
-                                        badgeType: mod.role === 'admin' ? 'Admin' : 'Mod',
-                                        source: 'api_interception'
-                                    });
-                                }
-                            });
-                        }
-                    } catch (e) {
-                        // JSON parsing failed
-                    }
-                }
-            };
-
-            // Add the response listener
-            this.page.on('response', responseHandler);
-
-            // Navigate to the page
-            await this.page.goto(`https://x.com/i/communities/${communityId}/moderators`, {
-                waitUntil: 'domcontentloaded',
-                timeout: 8000
-            });
-
-            await this.page.waitForTimeout(1500);
-
-            // Remove the listener
-            this.page.off('response', responseHandler);
-
-            if (apiAdmins.length > 0) {
-                console.log(`🎯 API interception found ${apiAdmins.length} admin(s)`);
-                return apiAdmins;
-            }
-
-            return null;
-
-        } catch (error) {
-            console.log('API interception failed:', error.message);
-            return null;
-        }
-    }
-
-    async openLoginPage() {
-        if (!this.page) {
-            throw new Error('Browser not initialized');
-        }
-
-        try {
-            console.log('🔗 Opening Twitter login page for manual login...');
-            await this.page.goto('https://twitter.com/login');
-            console.log('✅ Twitter login page opened - admin can now login manually');
-            return true;
-        } catch (error) {
-            console.error('❌ Failed to open login page:', error);
-            return false;
-        }
-    }
-
-    async scrapeCommunityAdmins(communityId) {
-        console.log(`🚀 API SCRAPING: Community ${communityId} (replacing browser scraping)`);
-
-        try {
-            // ✅ STEP 3A: Use twitterapi.io API instead of browser scraping
-            const members = await twitterAPI.getAllCommunityModerators(communityId);
-
-            // ✅ STEP 3B: Transform API response to match your existing format
-            // Based on twitterapi.io response structure: userName, name, id, isBlueVerified, etc.
-            const transformedAdmins = members.map(member => ({
-                username: member.userName,           // ✅ CONFIRMED: "userName" from API docs
-                displayName: member.name,            // ✅ CONFIRMED: "name" from API docs
-                id: member.id,                       // ✅ CONFIRMED: "id" from API docs
-                badgeType: 'Admin',                  // Treat all community members as admins
-                source: 'twitter_api',               // Mark as API source
-                verified: member.isBlueVerified,     // ✅ CONFIRMED: "isBlueVerified" from API docs
-                followers: member.followers,         // ✅ CONFIRMED: "followers" from API docs
-                following: member.following,         // ✅ CONFIRMED: "following" from API docs
-                location: member.location,           // ✅ CONFIRMED: "location" from API docs
-                description: member.description,     // ✅ CONFIRMED: "description" from API docs
-                url: member.url,                     // ✅ CONFIRMED: "url" from API docs
-                profileImage: member.profilePicture, // ✅ CONFIRMED: "profilePicture" from API docs
-                profileBanner: member.coverPicture,  // ✅ CONFIRMED: "coverPicture" from API docs
-                canDM: member.canDm,                 // ✅ CONFIRMED: "canDm" from API docs
-                protected: false,                    // Not available in twitterapi.io response
-                createdAt: member.createdAt,         // ✅ CONFIRMED: "createdAt" from API docs
-                favouritesCount: member.favouritesCount, // ✅ CONFIRMED: "favouritesCount" from API docs
-                statusesCount: member.statusesCount, // ✅ CONFIRMED: "statusesCount" from API docs
-                mediaCount: member.mediaCount        // ✅ CONFIRMED: "mediaCount" from API docs
-            }));
-
-            console.log(`✅ API TRANSFORMATION: Converted ${transformedAdmins.length} members to admin format`);
-
-            // ✅ STEP 3C: Filter out invalid usernames (keep your existing validation)
-            const validAdmins = transformedAdmins.filter(admin => {
-                if (!admin.username || admin.username.length < 1) return false;
-                return this.isValidUsernameFast(admin.username);
-            });
-
-            console.log(`✅ VALIDATION: ${validAdmins.length} valid admins after filtering`);
-            return validAdmins;
-
-        } catch (error) {
-            console.error('❌ API scraping failed, falling back to browser scraping:', error);
-
-            // ✅ STEP 3D: Fallback to original browser scraping if API fails
-            return await this.scrapeCommunityAdminsBrowser(communityId);
-        }
-    }
-
-
-    // 🚀 FAST USERNAME VALIDATION
-    isValidUsernameFast(username) {
-        if (!username || username.length < 2 || username.length > 15) return false;
-        if (!/^[a-zA-Z0-9_]+$/.test(username)) return false;
-        const blockedTerms = ['home', 'explore', 'messages', 'follow', 'click', 'search', 'notifications', 'profile', 'settings', 'logout', 'help', 'about', 'privacy', 'terms'];
-        if (blockedTerms.includes(username.toLowerCase())) return false;
-        return true;
-    }
-
-    // Keep your existing parseAdminsFromText for backward compatibility
-    parseAdminsFromText(pageText) {
-        const admins = [];
-        const foundUsernames = new Set(); // Prevent duplicates
-        console.log('🔍 Analyzing text for admin patterns...');
-
-        // Helper function to validate usernames and exclude generic terms
-        const isValidUsername = (username) => {
-            const excludeList = ['admin', 'mod', 'moderator', 'moderators', 'allmoderators',
-                'members', 'follow', 'click', 'show', 'more', 'terms', 'privacy', 'cookie',
-                'home', 'explore', 'messages'];
-
-            return username &&
-                /^[a-zA-Z0-9_]{1,15}$/.test(username) &&
-                !excludeList.includes(username.toLowerCase()) &&
-                username.length > 2;
-        };
-
-        // Split text into words for easier processing
-        const words = pageText.split(/\s+/);
-
-        for (let i = 0; i < words.length; i++) {
-            const word = words[i];
-            const nextWord = words[i + 1] || '';
-
-            // Pattern 1: "Username Admin" or "Username Mod"
-            if (nextWord === 'Admin' || nextWord === 'Mod') {
-                const username = word.replace(/[^a-zA-Z0-9_]/g, '');
-                if (isValidUsername(username) && !foundUsernames.has(username.toLowerCase())) {
-                    admins.push({
-                        username: username,
-                        badgeType: nextWord,
-                        source: 'text_analysis',
-                        pattern: 'username_before_badge'
-                    });
-                    foundUsernames.add(username.toLowerCase());
-                    console.log(`👑 FOUND ${nextWord.toUpperCase()}: ${username}`);
-
-                    // Early exit after finding first valid admin/mod
-                    break;
-                }
-            }
-
-            // Pattern 2: "@username" with nearby admin/mod indicators
-            if (word.startsWith('@')) {
-                const username = word.substring(1).replace(/[^a-zA-Z0-9_]/g, '');
-                if (isValidUsername(username) && !foundUsernames.has(username.toLowerCase())) {
-                    const nearbyWords = [
-                        words[i - 2], words[i - 1], words[i + 1], words[i + 2]
-                    ].filter(w => w).join(' ');
-
-                    let badgeType = null;
-                    if (nearbyWords.includes('Admin')) badgeType = 'Admin';
-                    else if (nearbyWords.includes('Mod')) badgeType = 'Mod';
-
-                    if (badgeType) {
-                        admins.push({
-                            username: username,
-                            badgeType: badgeType,
-                            source: 'text_analysis',
-                            pattern: '@username_near_badge'
-                        });
-                        foundUsernames.add(username.toLowerCase());
-                        console.log(`👑 FOUND ${badgeType.toUpperCase()}: ${username}`);
-
-                        // Early exit after finding first valid admin/mod
-                        break;
-                    }
-                }
-            }
-
-            // Pattern 3: "Admin@username" or "Mod@username"
-            if ((word.includes('Admin@') || word.includes('Mod@')) && admins.length === 0) {
-                let badgeType = word.includes('Admin@') ? 'Admin' : 'Mod';
-                let startPattern = badgeType + '@';
-
-                const startIndex = word.indexOf(startPattern);
-                if (startIndex !== -1) {
-                    const afterAt = word.substring(startIndex + startPattern.length);
-                    let username;
-
-                    if (afterAt.includes('FollowClick')) {
-                        username = afterAt.substring(0, afterAt.indexOf('FollowClick'));
-                    } else {
-                        const usernameMatch = afterAt.match(/^([a-zA-Z0-9_]+)/);
-                        username = usernameMatch ? usernameMatch[1] : '';
-                    }
-
-                    if (isValidUsername(username) && !foundUsernames.has(username.toLowerCase())) {
-                        admins.push({
-                            username: username,
-                            badgeType: badgeType,
-                            source: 'text_analysis',
-                            pattern: 'badge@username'
-                        });
-                        foundUsernames.add(username.toLowerCase());
-                        console.log(`👑 FOUND ${badgeType.toUpperCase()}: ${username}`);
-
-                        // Early exit after finding first valid admin/mod
-                        break;
-                    }
-                }
-            }
-
-            // Early exit if we found a valid admin/mod
-            if (admins.length > 0) break;
-        }
-
-        console.log(`🎯 PARSING RESULT: ${admins.length} valid admin(s) found`);
-        admins.forEach((admin, index) => {
-            console.log(`   ${index + 1}. @${admin.username} (${admin.badgeType})`);
-        });
-
-        return admins;
-    }
-
-    async extractAdminsFromScreenshot(communityId) {
-        console.log('🔸 DIRECT DOM ELEMENT INSPECTION...');
-
-        try {
-            // Wait for page to load completely
-            await this.page.waitForLoadState('networkidle', { timeout: 10000 });
-
-            // Wait a bit more for dynamic content
-            await this.page.waitForTimeout(3000);
-
-            // Direct DOM inspection - exactly like browser dev tools
-            const admins = await this.page.evaluate(() => {
-                const results = [];
-
-                // Method 1: Look for UserCell components (most reliable)
-                const userCells = document.querySelectorAll('[data-testid="UserCell"]');
-                console.log(`Found ${userCells.length} UserCell elements`);
-
-                userCells.forEach((cell, index) => {
-                    try {
-                        // Get username from link
-                        const usernameLink = cell.querySelector('a[href^="/"]');
-                        if (usernameLink) {
-                            const href = usernameLink.getAttribute('href');
-                            const username = href.replace('/', '');
-
-                            // Look for admin/mod badges in this cell
-                            const cellText = cell.textContent || cell.innerText || '';
-
-                            let badgeType = 'Member';
-                            if (cellText.includes('Admin')) {
-                                badgeType = 'Admin';
-                            } else if (cellText.includes('Mod')) {
-                                badgeType = 'Mod';
-                            }
-
-                            if (username && username.length > 0) {
-                                results.push({
-                                    username: username,
-                                    badgeType: badgeType,
-                                    source: 'direct_dom_usercell',
-                                    cellText: cellText.substring(0, 100) // Debug info
-                                });
-                                console.log(`Found user: ${username} (${badgeType})`);
-                            }
-                        }
-                    } catch (e) {
-                        console.log(`Error processing UserCell ${index}:`, e.message);
-                    }
-                });
-
-                // Method 2: Look for any links that look like usernames
-                if (results.length === 0) {
-                    const allLinks = document.querySelectorAll('a[href^="/"]');
-                    console.log(`Fallback: Found ${allLinks.length} profile links`);
-
-                    allLinks.forEach((link, index) => {
-                        try {
-                            const href = link.getAttribute('href');
-                            const username = href.replace('/', '');
-
-                            // Skip obvious non-usernames
-                            if (username.includes('/') || username.length < 2 || username.length > 20) {
-                                return;
-                            }
-
-                            // Look for admin/mod indicators near this link
-                            const parent = link.closest('[role="listitem"], div, article');
-                            if (parent) {
-                                const parentText = parent.textContent || parent.innerText || '';
-
-                                let badgeType = 'Member';
-                                if (parentText.includes('Admin')) {
-                                    badgeType = 'Admin';
-                                } else if (parentText.includes('Mod')) {
-                                    badgeType = 'Mod';
-                                }
-
-                                results.push({
-                                    username: username,
-                                    badgeType: badgeType,
-                                    source: 'direct_dom_links',
-                                    parentText: parentText.substring(0, 100) // Debug info
-                                });
-                                console.log(`Fallback found: ${username} (${badgeType})`);
-                            }
-                        } catch (e) {
-                            console.log(`Error processing link ${index}:`, e.message);
-                        }
-                    });
-                }
-
-                // Method 3: Raw text scanning as last resort
-                if (results.length === 0) {
-                    const pageText = document.body.textContent || document.body.innerText || '';
-                    console.log(`Final fallback: scanning ${pageText.length} characters of text`);
-                    console.log(`Page text preview: "${pageText.substring(0, 200)}"`);
-                }
-
-                return results;
-            });
-
-            console.log(`✅ Direct DOM inspection completed! Found ${admins.length} admin(s)`);
-            return admins;
-
-        } catch (error) {
-            console.error('❌ Direct DOM inspection failed:', error.message);
-            return [];
-        }
-    }
-
-    async debugPageStructure() {
-        const elementCount = await this.page.evaluate(() => {
-            return {
-                userCells: document.querySelectorAll('[data-testid="UserCell"]').length,
-                allLinks: document.querySelectorAll('a').length,
-                listItems: document.querySelectorAll('[role="listitem"]').length,
-                divs: document.querySelectorAll('div').length,
-                bodyText: document.body.textContent.length
-            };
-        });
-
-        console.log('Page structure:', elementCount);
-        return elementCount;
-    }
-
-    async debugCurrentPage() {
-        const url = this.page.url();
-        const title = await this.page.title();
-        console.log(`🔍 Current URL: ${url}`);
-        console.log(`🔍 Page title: "${title}"`);
-
-        // Check if we're redirected or blocked
-        if (url.includes('login') || url.includes('suspended') || title.includes('suspended')) {
-            console.log('❌ Redirected to login or suspended page');
-            return false;
-        }
-
-        return true;
-    }
-
-    async extractAdminsFromDOM() {
-        // ... your existing code unchanged
-        console.log('🔧 Using DOM scraping (backup method)...');
-
-        return await this.page.evaluate(() => {
-            const userCells = document.querySelectorAll('div[data-testid="UserCell"]');
-            const adminData = [];
-
-            userCells.forEach((cell) => {
-                const usernameLink = cell.querySelector('a[href^="/"]');
-
-                if (usernameLink) {
-                    const username = usernameLink.getAttribute('href').slice(1);
-
-                    const adminBadge = Array.from(cell.querySelectorAll('*')).find(el =>
-                        el.textContent && el.textContent.trim() === 'Admin'
-                    );
-
-                    const modBadge = Array.from(cell.querySelectorAll('*')).find(el =>
-                        el.textContent && el.textContent.trim() === 'Mod'
-                    );
-
-                    let badgeType = 'Member';
-                    if (adminBadge) {
-                        badgeType = 'Admin';
-                    } else if (modBadge) {
-                        badgeType = 'Mod';
-                    }
-
-                    adminData.push({
-                        username: username,
-                        badgeType: badgeType,
-                        source: 'dom_scraping',
-                        pattern: 'html_element'
-                    });
-                }
-            });
-
-            return adminData;
-        });
-    }
-
-    async close() {
-        if (this.browser) {
-            await this.browser.close();
-            this.isInitialized = false;
-        }
-    }
-
-    async ensureOutputDirectory() {
-        try {
-            await fsPromises.access('./output');
-        } catch {
-            await fsPromises.mkdir('./output', { recursive: true });
-            console.log('📁 Created output directory');
-        }
-    }
-
-    async saveTextFile(filePath, content) {
-        try {
-            await fsPromises.writeFile(filePath, content, 'utf8');
-            console.log(`📝 Text saved: ${filePath}`);
-        } catch (error) {
-            console.error('❌ Failed to save text file:', error);
-        }
-    }
-
-
-
-    // 🚀 FAST USERNAME VALIDATION
-    isValidUsernameFast(username) {
-        if (!username || username.length < 2 || username.length > 15) return false;
-
-        // Fast regex check - only alphanumeric and underscore
-        if (!/^[a-zA-Z0-9_]+$/.test(username)) return false;
-
-        // Block common unwanted terms
-        const blockedTerms = ['home', 'explore', 'messages', 'follow', 'click', 'search', 'notifications', 'profile', 'settings', 'logout', 'help', 'about', 'privacy', 'terms'];
-        if (blockedTerms.includes(username.toLowerCase())) return false;
-
-        return true;
-    }
-}
-
-class TwitterAPI {
-    constructor() {
-        this.apiKey = process.env.TWITTER_API_KEY || 'new1_7a3bda1437e34f0285714e132a6b67d3'; // Your API key
-        this.baseURL = 'https://api.twitterapi.io'; // twitterapi.io base URL
-
-        if (!this.apiKey) {
-            throw new Error('Twitter API key not found in environment variables');
-        }
-
-        console.log(`🔑 Twitter API initialized with key: ${this.apiKey.substring(0, 10)}...`);
-        console.log(`🌐 Base URL: ${this.baseURL}`);
-    }
-
-    /**
-     * Fetch community moderators using twitterapi.io
-     * Based on your API response structure with "moderators" array
-     */
-    async getCommunityModerators(communityId, cursor = null) {
-        try {
-            console.log(`🎯 API CALL: Fetching moderators for community ${communityId}`);
-
-            // ✅ CORRECT ENDPOINT: /twitter/community/moderators
-            const url = new URL(`${this.baseURL}/twitter/community/moderators`);
-            url.searchParams.append('community_id', communityId);
-
-            if (cursor) {
-                url.searchParams.append('cursor', cursor);
-            }
-
-            const response = await fetch(url.toString(), {
-                method: 'GET',
-                headers: {
-                    'X-API-Key': this.apiKey,
-                    'Content-Type': 'application/json'
-                },
-                timeout: 15000 // 15 second timeout
-            });
-
-            if (!response.ok) {
-                const errorText = await response.text();
-                throw new Error(`API request failed: ${response.status} ${response.statusText} - ${errorText}`);
-            }
-
-            const data = await response.json();
-
-            // ✅ FIXED: Your API returns "moderators" array, not "members"
-            console.log(`✅ API SUCCESS: Found ${data.moderators?.length || 0} moderators`);
-            console.log(`📄 Has next page: ${data.has_next_page}`);
-            console.log(`📄 Next cursor: ${data.next_cursor || 'none'}`);
-
-            return data;
-
-        } catch (error) {
-            console.error('❌ API Error fetching community moderators:', error);
-            throw error;
-        }
-    }
-
-    /**
-     * Fetch all moderators with pagination support
-     * Fixed to handle YOUR API response structure
-     */
-    async getAllCommunityModerators(communityId) {
-        try {
-            const allModerators = [];
-            let cursor = null;
-            let hasNext = true;
-            let pageCount = 0;
-
-            console.log(`📄 PAGINATION: Starting to fetch all moderators for community ${communityId}`);
-
-            while (hasNext && pageCount < 10) { // Safety limit of 10 pages
-                pageCount++;
-                console.log(`📄 PAGE ${pageCount}: Fetching with cursor: ${cursor || 'initial'}`);
-
-                const response = await this.getCommunityModerators(communityId, cursor);
-
-                // ✅ FIXED: Use "moderators" instead of "members"
-                if (response.moderators && response.moderators.length > 0) {
-                    allModerators.push(...response.moderators);
-                    console.log(`📊 PAGE ${pageCount}: Added ${response.moderators.length} moderators (Total: ${allModerators.length})`);
-                }
-
-                // ✅ CONFIRMED: Pagination fields from your API response
-                hasNext = response.has_next_page;
-                cursor = response.next_cursor;
-
-                if (!hasNext) {
-                    console.log(`✅ PAGINATION COMPLETE: No more pages to fetch`);
-                    break;
-                }
-
-                // Add small delay between requests to be respectful
-                await new Promise(resolve => setTimeout(resolve, 100));
-            }
-
-            console.log(`🎉 FINAL RESULT: Fetched ${allModerators.length} total moderators across ${pageCount} pages`);
-            return allModerators;
-
-        } catch (error) {
-            console.error('❌ Error fetching all community moderators:', error);
-            throw error;
-        }
-    }
-
-    /**
-     * Transform API moderator data to match your existing format
-     * Based on your API response structure
-     */
-    transformModeratorsToAdminFormat(moderators) {
-        return moderators.map(moderator => ({
-            username: moderator.screen_name || moderator.name || 'unknown',
-            displayName: moderator.name || moderator.screen_name || 'Unknown',
-            userId: moderator.id,
-            isVerified: moderator.verified || moderator.isBlueVerified,
-            followersCount: moderator.followers_count,
-            location: moderator.location,
-            description: moderator.description,
-            profileImageUrl: moderator.profile_image_url_https,
-            type: 'Admin',
-            source: 'api_fetch'
-        }));
-    }
-}
-
-const twitterAPI = new TwitterAPI();
-
-// CREATE GLOBAL SCRAPER INSTANCE
-const twitterScraper = new TwitterCommunityAdminScraper();
-
-class TokenMetadataExtractor extends OriginalExtractor {
-    constructor(rpcUrl) {
-        super(rpcUrl || process.env.HELIUS_RPC);
-        this.cache = new Map();
-        this.cacheTimeout = 60000; // 1 minute cache
-    }
-
-    async getCompleteTokenMetadata(tokenAddress) {
-        const cached = this.cache.get(tokenAddress);
-        if (cached && Date.now() - cached.timestamp < this.cacheTimeout) {
-            console.log(`📦 Using cached metadata for ${tokenAddress}`);
-            return cached.data;
-        }
-
-        try {
-            const metadata = await super.getCompleteTokenMetadata(tokenAddress);
-
-            this.cache.set(tokenAddress, {
-                data: metadata,
-                timestamp: Date.now()
-            });
-
-            return metadata;
-        } catch (error) {
-            console.error(`Error fetching token metadata for ${tokenAddress}:`, error.message);
-            throw error;
-        }
-    }
-
-    extractTwitterHandle(metadata) {
-        const twitterSources = [];
-
-        const best = this.getBestMetadata(metadata);
-
-        if (best.twitter && best.twitter !== 'Not available') {
-            twitterSources.push(best.twitter);
-        }
-
-        if (best.website && best.website !== 'Not available' &&
-            (best.website.includes('twitter.com') || best.website.includes('x.com'))) {
-            twitterSources.push(best.website);
-        }
-
-        const sources = [
-            metadata.geckoTerminalInfo,
-            metadata.birdeyeInfo,
-            metadata.jupiterInfo,
-            metadata.registryInfo
-        ].filter(Boolean);
-
-        sources.forEach(source => {
-            if (source.twitter) twitterSources.push(source.twitter);
-            if (source.website && (source.website.includes('twitter.com') || source.website.includes('x.com'))) {
-                twitterSources.push(source.website);
-            }
-        });
-
-        if (metadata.offChainMetadata?.attributes) {
-            metadata.offChainMetadata.attributes.forEach(attr => {
-                if (attr?.trait_type?.toLowerCase() === 'twitter' && attr.value) {
-                    twitterSources.push(attr.value);
-                }
-            });
-        }
-
-        console.log(`🔍 Found ${twitterSources.length} potential twitter sources`);
-
-        for (const source of twitterSources) {
-            const extracted = this.extractTwitterDataRobust(source);
-            if (extracted.type && (extracted.handle || extracted.id)) {
-                console.log(`✅ Valid Twitter data: ${extracted.handle || extracted.id}`);
-                return extracted;
-            }
-        }
-
-        return { type: null, handle: null, id: null };
-    }
-
-    extractTwitterDataRobust(input) {
-        if (!input || typeof input !== 'string') {
-            return { type: null, handle: null, id: null };
-        }
-
-        const cleanInput = input.trim();
-
-        // Community pattern
-        const communityMatch = cleanInput.match(/(?:https?:\/\/)?(?:www\.)?(?:twitter\.com\/|x\.com\/)i\/communities\/(\d+)/i);
-        if (communityMatch) {
-            return {
-                type: 'community',
-                id: communityMatch[1],
-                handle: null
-            };
-        }
-
-        // Individual user pattern
-        const userMatch = cleanInput.match(/(?:https?:\/\/)?(?:www\.)?(?:twitter\.com\/|x\.com\/)(?!i\/communities\/)([a-zA-Z0-9_]+)/i);
-        if (userMatch) {
-            const handle = userMatch[1].toLowerCase();
-            if (this.isValidTwitterHandle(handle)) {
-                return {
-                    type: 'individual',
-                    handle: handle,
-                    id: null
-                };
-            }
-        }
-
-        // Handle without URL
-        if (cleanInput.startsWith('@')) {
-            const handle = cleanInput.substring(1).trim().toLowerCase();
-            if (this.isValidTwitterHandle(handle)) {
-                return {
-                    type: 'individual',
-                    handle: handle,
-                    id: null
-                };
-            }
-        }
-
-        if (/^[a-zA-Z0-9_]{1,15}$/.test(cleanInput)) {
-            const handle = cleanInput.toLowerCase();
-            if (this.isValidTwitterHandle(handle)) {
-                return {
-                    type: 'individual',
-                    handle: handle,
-                    id: null
-                };
-            }
-        }
-
-        return { type: null, handle: null, id: null };
-    }
-
-    isValidTwitterHandle(handle) {
-        if (!handle || handle.length < 1 || handle.length > 15) return false;
-        if (!/^[a-zA-Z0-9_]+$/.test(handle)) return false;
-
-        const blockedTerms = [
-            'home', 'explore', 'messages', 'follow', 'click', 'search',
-            'notifications', 'profile', 'settings', 'logout', 'help',
-            'about', 'privacy', 'terms', 'status', 'intent', 'share'
-        ];
-
-        return !blockedTerms.includes(handle.toLowerCase());
-    }
-}
-
-// Create the instance
-const tokenMetadataExtractor = new TokenMetadataExtractor();
-
-class BotState {
-    constructor() {
-        this.isRunning = false;
-        this.settings = {
+    const [settings, setSettings] = useState(() => {
+        // Load settings from localStorage on app start
+        const savedSettings = loadFromLocalStorage(STORAGE_KEYS.SETTINGS, {
             privateKey: '',
             tokenPageDestination: 'neo_bullx',
             enableAdminFilter: true,
             enableCommunityReuse: true,
             snipeAllTokens: false,
             detectionOnlyMode: true,
-
-            // Global snipe settings
             globalSnipeSettings: {
                 amount: 0.01,
                 fees: 10,
                 mevProtection: true,
                 soundNotification: 'default.wav'
             }
-        };
-        this.primaryAdminList = new Map();
-        this.secondaryAdminList = new Map();
-        this.usedCommunities = new Set();
-        this.processedTokens = new Set();
-        this.detectedTokens = new Map();
-        this.pumpPortalSocket = null;
-        this.letsBonkSocket = null;
-        this.reconnectTimeouts = new Map();
-    }
-
-    addDetectedToken(tokenAddress, tokenData) {
-        this.detectedTokens.set(tokenAddress, {
-            ...tokenData,
-            detectedAt: new Date().toISOString(),
-            id: Date.now().toString()
         });
 
-        if (this.detectedTokens.size > 100) {
-            const firstKey = this.detectedTokens.keys().next().value;
-            this.detectedTokens.delete(firstKey);
-        }
-    }
-
-    getDetectedTokens() {
-        return Array.from(this.detectedTokens.values()).reverse();
-    }
-
-    clearDetectedTokens() {
-        this.detectedTokens.clear();
-    }
-
-    addToList(listType, entry) {
-        const config = {
-            id: Date.now().toString(),
-            address: (entry.address || entry.username).trim(),
-            amount: entry.amount,
-            fees: entry.fees,
-            mevProtection: entry.mevProtection,
-            soundNotification: entry.soundNotification,
-            createdAt: new Date().toISOString()
-        };
-
-        switch (listType) {
-            case 'primary_admins':
-                this.primaryAdminList.set(config.id, config);
-                break;
-            case 'secondary_admins':
-                this.secondaryAdminList.set(config.id, config);
-                break;
-        }
-        return config;
-    }
-
-    removeFromList(listType, id) {
-        switch (listType) {
-            case 'primary_admins':
-                return this.primaryAdminList.delete(id);
-            case 'secondary_admins':
-                return this.secondaryAdminList.delete(id);
-        }
-        return false;
-    }
-
-    getList(listType) {
-        switch (listType) {
-            case 'primary_admins':
-                return Array.from(this.primaryAdminList.values());
-            case 'secondary_admins':
-                return Array.from(this.secondaryAdminList.values());
-            default:
-                return [];
-        }
-    }
-
-    checkAdminInPrimary(identifier) {
-        if (!identifier) return null;
-        const cleanIdentifier = identifier.trim().toLowerCase();
-
-        for (const config of this.primaryAdminList.values()) {
-            const cleanAddress = config.address.trim().toLowerCase();
-
-            // Skip comparison if types don't match (wallet vs username)
-            if (this.isWalletAddress(identifier) !== this.isWalletAddress(config.address)) {
-                continue;
-            }
-
-            console.log(`🔍 Comparing "${cleanIdentifier}" with "${cleanAddress}"`);
-            if (cleanAddress === cleanIdentifier) {
-                console.log(`✅ MATCH FOUND in primary: ${cleanAddress}`);
-                return config;
-            }
-        }
-        return null;
-    }
-
-    checkAdminInSecondary(identifier) {
-        if (!identifier) return null;
-        const cleanIdentifier = identifier.trim().toLowerCase();
-
-        for (const config of this.secondaryAdminList.values()) {
-            const cleanAddress = config.address.trim().toLowerCase();
-
-            // Skip comparison if types don't match (wallet vs username)
-            if (this.isWalletAddress(identifier) !== this.isWalletAddress(config.address)) {
-                continue;
-            }
-
-            console.log(`🔍 Comparing "${cleanIdentifier}" with "${cleanAddress}"`);
-            if (cleanAddress === cleanIdentifier) {
-                console.log(`✅ MATCH FOUND in secondary: ${cleanAddress}`);
-                return config;
-            }
-        }
-        return null;
-    }
-
-    // Add this helper function to the BotState class
-    isWalletAddress(identifier) {
-        if (!identifier) return false;
-        // Solana wallet addresses are typically 32-44 characters, base58 encoded
-        const clean = identifier.trim();
-        return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(clean);
-    }
-}
-
-// ========== ENHANCED BOTSTATE CLASS WITH FIREBASE ==========
-
-class EnhancedBotState extends BotState {
-    constructor() {
-        super();
-        this.isFirebaseLoaded = false;
-    }
-
-    // Load admin lists from Firebase on startup
-    async loadAdminListsFromFirebase() {
-        try {
-            console.log('📥 Loading admin lists from Firebase...');
-
-            // Load primary admins
-            const primaryAdmins = await loadAdminListFromFirebase('primary_admins');
-            this.primaryAdminList.clear();
-            primaryAdmins.forEach(admin => {
-                this.primaryAdminList.set(admin.id, admin);
-            });
-
-            // Load secondary admins  
-            const secondaryAdmins = await loadAdminListFromFirebase('secondary_admins');
-            this.secondaryAdminList.clear();
-            secondaryAdmins.forEach(admin => {
-                this.secondaryAdminList.set(admin.id, admin);
-            });
-
-            this.isFirebaseLoaded = true;
-            console.log(`✅ Firebase admin lists loaded: ${primaryAdmins.length} primary, ${secondaryAdmins.length} secondary`);
-
-            return true;
-        } catch (error) {
-            console.error('❌ Failed to load admin lists from Firebase:', error);
-            this.isFirebaseLoaded = false;
-            return false;
-        }
-    }
-
-    // Enhanced addToList with Firebase sync
-    async addToList(listType, entry) {
-        const config = {
-            id: Date.now().toString(),
-            address: (entry.address || entry.username).trim(),
-            amount: entry.amount,
-            fees: entry.fees,
-            mevProtection: entry.mevProtection,
-            soundNotification: entry.soundNotification,
-            createdAt: new Date().toISOString()
-        };
-
-        // Add to local state
-        switch (listType) {
-            case 'primary_admins':
-                this.primaryAdminList.set(config.id, config);
-                break;
-            case 'secondary_admins':
-                this.secondaryAdminList.set(config.id, config);
-                break;
+        // Load global snipe settings separately for better organization
+        const savedGlobalSnipe = loadFromLocalStorage(STORAGE_KEYS.GLOBAL_SNIPE);
+        if (savedGlobalSnipe) {
+            savedSettings.globalSnipeSettings = savedGlobalSnipe;
         }
 
-        // Save to Firebase
-        await saveAdminListToFirebase(listType, config);
-
-        return config;
-    }
-
-    // Enhanced removeFromList with Firebase sync
-    async removeFromList(listType, id) {
-        let success = false;
-
-        // Remove from local state
-        switch (listType) {
-            case 'primary_admins':
-                success = this.primaryAdminList.delete(id);
-                break;
-            case 'secondary_admins':
-                success = this.secondaryAdminList.delete(id);
-                break;
-        }
-
-        // Delete from Firebase if local deletion was successful
-        if (success) {
-            await deleteAdminFromFirebase(listType, id);
-        }
-
-        return success;
-    }
-
-    // Get stats including Firebase status
-    getStats() {
-        return {
-            primaryAdmins: this.primaryAdminList.size,
-            secondaryAdmins: this.secondaryAdminList.size,
-            usedCommunities: this.usedCommunities.size,
-            processedTokens: this.processedTokens.size,
-            isFirebaseLoaded: this.isFirebaseLoaded
-        };
-    }
-}
-
-// Create enhanced bot state instance
-const botState = new EnhancedBotState();
-
-// WebSocket clients management
-const wsClients = new Set();
-
-function broadcastToClients(data) {
-    const message = JSON.stringify(data);
-    wsClients.forEach(client => {
-        if (client.readyState === WebSocket.OPEN) {
-            client.send(message);
-        }
+        return savedSettings;
     });
-}
 
-// ========== TWITTER DETECTION FUNCTIONS ==========
+    const SOUND_OPTIONS = [
+        { value: 'default.wav', label: '🔊 System Beep (Default)', file: 'default.wav' },
+        { value: 'success.wav', label: '✅ Success Tone', file: 'success.wav' },
+        { value: 'alert.wav', label: '⚠️ Alert Tone', file: 'alert.wav' },
+        { value: 'chime.wav', label: '🔔 Chime Tone', file: 'chime.wav' },
+        { value: 'none', label: '🔇 No Sound', file: null },
+        // Add uploaded sounds
+        ...soundFiles.map(file => ({
+            value: file.filename,
+            label: `🎵 ${file.originalName || file.filename}`,
+            file: file.filename,
+            isUploaded: true
+        }))
+    ];
 
-function extractTwitterData(input) {
-    if (!input) return { type: null, id: null, handle: null };
+    const previewSound = (soundFile) => {
+        console.log('🔊 previewSound called with:', soundFile);
+        console.log('🔊 Function parameters check:', {
+            soundFile,
+            type: typeof soundFile,
+            isNone: soundFile === 'none',
+            isEmpty: !soundFile
+        });
 
-    console.log(`🔍 Extracting Twitter data from: "${input}"`);
-
-    // Clean the input
-    const cleanInput = input.trim();
-
-    // Pattern for Twitter community links
-    const communityRegex = /(?:https?:\/\/)?(?:www\.)?(?:twitter\.com\/|x\.com\/)i\/communities\/(\d+)/i;
-    const communityMatch = cleanInput.match(communityRegex);
-
-    if (communityMatch) {
-        console.log(`🏘️ Found community ID: ${communityMatch[1]}`);
-        return {
-            type: 'community',
-            id: communityMatch[1],
-            handle: null,
-            originalUrl: cleanInput
-        };
-    }
-
-    // Pattern for individual Twitter accounts (more permissive)
-    const userRegex = /(?:https?:\/\/)?(?:www\.)?(?:twitter\.com\/|x\.com\/)(?!i\/communities\/)([a-zA-Z0-9_]+)/i;
-    const userMatch = cleanInput.match(userRegex);
-
-    if (userMatch) {
-        const handle = userMatch[1].toLowerCase();
-        console.log(`👤 Found individual handle: @${handle}`);
-        return {
-            type: 'individual',
-            id: null,
-            handle: handle,
-            originalUrl: cleanInput
-        };
-    }
-
-    // If it's just a handle without URL
-    if (cleanInput.startsWith('@')) {
-        const handle = cleanInput.substring(1).trim().toLowerCase(); // Add .trim()
-        console.log(`👤 Found handle without URL: @${handle}`);
-        return {
-            type: 'individual',
-            id: null,
-            handle: handle,
-            originalUrl: cleanInput
-        };
-    }
-
-    // If it's just a plain username (be more strict here)
-    if (/^[a-zA-Z0-9_]{1,15}$/.test(cleanInput)) {
-        const handle = cleanInput.trim().toLowerCase(); // Add .trim()
-        console.log(`👤 Found plain username: @${handle}`);
-        return {
-            type: 'individual',
-            id: null,
-            handle: handle,
-            originalUrl: cleanInput
-        };
-    }
-
-    console.log(`❌ No Twitter data found in: "${input}"`);
-    return { type: null, id: null, handle: null };
-}
-
-// Firebase community tracking functions
-async function isCommunityUsedInFirebase(communityId) {
-    try {
-        // Check in-memory cache first (sub-millisecond lookup)
-        const isUsed = communityCache.communities.has(communityId.toString());
-        console.log(`🔍 Community ${communityId} check: ${isUsed ? 'FOUND in cache' : 'NOT FOUND in cache'}`);
-        return isUsed;
-    } catch (error) {
-        console.error('Error checking community in cache:', error);
-        return false; // If error, don't block (safer approach)
-    }
-}
-
-// Tweet tracking functions
-async function isTweetUsedInFirebase(tweetId) {
-    try {
-        const isUsed = tweetCache.tweets.has(tweetId.toString());
-        console.log(`🔍 Tweet ${tweetId} check: ${isUsed ? 'FOUND in cache' : 'NOT FOUND in cache'}`);
-        return isUsed;
-    } catch (error) {
-        console.error('Error checking tweet in cache:', error);
-        return false;
-    }
-}
-
-async function markTweetAsUsedInFirebase(tweetId, username, tokenData) {
-    try {
-        console.log(`💾 Adding tweet ${tweetId} to local cache`);
-
-        const tweetInfo = {
-            firstUsed: new Date().toISOString(),
-            username: username,
-            tokenAddress: tokenData.tokenAddress,
-            tokenName: tokenData.name,
-            platform: tokenData.platform
-        };
-
-        // Add to memory cache
-        tweetCache.tweets.set(tweetId.toString(), tweetInfo);
-        tweetCache.pendingSync.add(tweetId.toString());
-
-        // ✅ NEW: Immediately append to local JSON file for fast startup
-        await appendTweetToLocalFile(tweetId, tweetInfo);
-
-        // Save full cache to file
-        await saveTweetCacheToFile();
-
-        console.log(`✅ Tweet ${tweetId} added to cache and local file`);
-        return true;
-    } catch (error) {
-        console.error(`❌ ERROR adding tweet ${tweetId} to cache:`, error);
-        return false;
-    }
-}
-async function appendTweetToLocalFile(tweetId, tweetInfo) {
-    try {
-        // Read existing tweets
-        let existingTweets = {};
-        try {
-            const fileContent = await fsPromises.readFile(TWEETS_CACHE_FILE, 'utf8');
-            const data = JSON.parse(fileContent);
-            existingTweets = data.tweets || {};
-        } catch (error) {
-            // File doesn't exist, start fresh
+        if (soundFile === 'none' || !soundFile) {
+            console.log('🔇 No sound or none selected, returning early');
+            addNotification('info', '🔇 No sound selected');
+            return;
         }
 
-        // Add new tweet
-        existingTweets[tweetId] = tweetInfo;
-
-        // Write back to file immediately
-        const updatedCache = {
-            tweets: existingTweets,
-            lastUpdated: new Date().toISOString()
-        };
-
-        await fsPromises.writeFile(TWEETS_CACHE_FILE, JSON.stringify(updatedCache, null, 2));
-        console.log(`📄 Tweet ${tweetId} appended to local JSON file`);
-    } catch (error) {
-        console.error('❌ Error appending tweet to local file:', error);
-    }
-}
-
-async function saveTweetCacheToFile() {
-    try {
-        const cacheData = {
-            tweets: Object.fromEntries(tweetCache.tweets),
-            pendingSync: Array.from(tweetCache.pendingSync),
-            lastSyncToFirebase: tweetCache.lastSyncToFirebase,
-            lastUpdated: new Date().toISOString()
-        };
-
-        await fsPromises.writeFile(TWEETS_CACHE_FILE, JSON.stringify(cacheData, null, 2));
-        console.log(`💾 Tweet cache saved to file (${tweetCache.tweets.size} tweets)`);
-    } catch (error) {
-        console.error('❌ Error saving tweet cache to file:', error);
-    }
-}
-
-async function initializeTweetCache() {
-    try {
-        console.log('🚀 Initializing local tweet cache...');
+        console.log('🔊 Starting sound preview process...');
 
         try {
-            const fileContent = await fsPromises.readFile(TWEETS_CACHE_FILE, 'utf8');
-            const data = JSON.parse(fileContent);
+            console.log('🔊 Checking for Electron API...');
+            console.log('🔊 window.electronAPI exists:', !!window.electronAPI);
 
-            if (data.tweets) {
-                Object.entries(data.tweets).forEach(([id, info]) => {
-                    tweetCache.tweets.set(id, info);
+            // For Electron app - use electronAPI if available
+            if (window.electronAPI && window.electronAPI.playSound) {
+                console.log('🔊 Using Electron API to play sound');
+                window.electronAPI.playSound(soundFile);
+                addNotification('success', `🔊 Playing ${soundFile}`);
+                return;
+            }
+
+            console.log('🔊 Using web browser audio...');
+            console.log('🔊 Sound file to play:', soundFile);
+
+            // For web browser - use system notification sound or beep
+            if (soundFile === 'default.wav') {
+                console.log('🔊 Playing default system beep...');
+
+                // Check AudioContext support
+                const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+                console.log('🔊 AudioContext support:', !!AudioContextClass);
+
+                if (!AudioContextClass) {
+                    console.error('❌ AudioContext not supported');
+                    addNotification('error', '❌ Audio not supported in this browser');
+                    return;
+                }
+
+                // Use system beep for default
+                const context = new AudioContextClass();
+                console.log('🔊 AudioContext created:', context);
+                console.log('🔊 AudioContext state:', context.state);
+
+                // Resume context if suspended (required by some browsers)
+                if (context.state === 'suspended') {
+                    console.log('🔊 Resuming suspended AudioContext...');
+                    context.resume().then(() => {
+                        console.log('🔊 AudioContext resumed successfully');
+                        playBeep(context);
+                    }).catch(err => {
+                        console.error('❌ Failed to resume AudioContext:', err);
+                        addNotification('error', '❌ Failed to initialize audio');
+                    });
+                } else {
+                    playBeep(context);
+                }
+
+                function playBeep(ctx) {
+                    try {
+                        console.log('🔊 Creating oscillator and gain nodes...');
+                        const oscillator = ctx.createOscillator();
+                        const gainNode = ctx.createGain();
+
+                        oscillator.connect(gainNode);
+                        gainNode.connect(ctx.destination);
+
+                        oscillator.frequency.value = 800;
+                        oscillator.type = 'sine';
+                        gainNode.gain.setValueAtTime(0.3, ctx.currentTime);
+                        gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
+
+                        console.log('🔊 Starting oscillator...');
+                        oscillator.start(ctx.currentTime);
+                        oscillator.stop(ctx.currentTime + 0.5);
+
+                        console.log('🔊 System beep played successfully');
+                        addNotification('success', `🔊 Playing system beep`);
+                    } catch (beepError) {
+                        console.error('❌ Error in playBeep function:', beepError);
+                        addNotification('error', '❌ Failed to generate beep');
+                    }
+                }
+
+            } else {
+                console.log('🔊 Attempting to play HTML5 audio file:', soundFile);
+
+                // Determine the correct URL path for the audio file
+                let audioUrl;
+
+                // Check if it's an uploaded custom sound (contains 'sound-' prefix)
+                if (soundFile.includes('sound-')) {
+                    console.log('🔊 Playing uploaded custom sound');
+                    audioUrl = `${API_BASE}/sounds/${soundFile}`;
+                } else {
+                    console.log('🔊 Playing built-in sound');
+                    audioUrl = `/sounds/${soundFile}`;
+                }
+
+                console.log('🔊 Audio file URL:', audioUrl);
+
+                // Try to play HTML5 audio
+                const audio = new Audio(audioUrl);
+                console.log('🔊 Audio element created:', audio);
+
+                audio.volume = 0.5;
+                console.log('🔊 Audio volume set to:', audio.volume);
+
+                // Add event listeners for debugging
+                audio.addEventListener('loadstart', () => console.log('🔊 Audio: loadstart'));
+                audio.addEventListener('loadeddata', () => console.log('🔊 Audio: loadeddata'));
+                audio.addEventListener('canplay', () => console.log('🔊 Audio: canplay'));
+                audio.addEventListener('play', () => console.log('🔊 Audio: play event'));
+                audio.addEventListener('ended', () => console.log('🔊 Audio: ended'));
+                audio.addEventListener('error', (e) => {
+                    console.error('❌ Audio error event:', e);
+                    console.error('❌ Audio error details:', {
+                        error: audio.error,
+                        networkState: audio.networkState,
+                        readyState: audio.readyState,
+                        currentSrc: audio.currentSrc
+                    });
+                });
+
+                console.log('🔊 Calling audio.play()...');
+
+                audio.play().then(() => {
+                    console.log('✅ Audio.play() promise resolved successfully');
+                    const soundDisplayName = soundFile.includes('sound-') ?
+                        `custom sound (${soundFile})` : soundFile;
+                    addNotification('success', `🔊 Playing ${soundDisplayName}`);
+                }).catch(error => {
+                    console.error('❌ Audio.play() promise rejected:', error);
+                    console.log('🔊 Falling back to system beep...');
+
+                    // Fallback to system beep for both built-in and custom sounds
+                    try {
+                        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+                        if (!AudioContextClass) {
+                            console.error('❌ AudioContext not supported for fallback');
+                            addNotification('error', '❌ Audio not supported');
+                            return;
+                        }
+
+                        const context = new AudioContextClass();
+                        console.log('🔊 Fallback AudioContext created');
+
+                        if (context.state === 'suspended') {
+                            console.log('🔊 Resuming suspended fallback AudioContext...');
+                            context.resume().then(() => {
+                                playFallbackBeep(context, soundFile);
+                            }).catch(err => {
+                                console.error('❌ Failed to resume fallback AudioContext:', err);
+                                addNotification('error', '❌ Failed to play sound');
+                            });
+                        } else {
+                            playFallbackBeep(context, soundFile);
+                        }
+
+                        function playFallbackBeep(ctx, originalSoundFile) {
+                            const oscillator = ctx.createOscillator();
+                            const gainNode = ctx.createGain();
+
+                            oscillator.connect(gainNode);
+                            gainNode.connect(ctx.destination);
+
+                            // Different tones for different sound types
+                            if (originalSoundFile.includes('success')) {
+                                oscillator.frequency.value = 800; // Higher pitch for success
+                                gainNode.gain.setValueAtTime(0.3, ctx.currentTime);
+                            } else if (originalSoundFile.includes('alert')) {
+                                oscillator.frequency.value = 400; // Lower pitch for alerts
+                                gainNode.gain.setValueAtTime(0.4, ctx.currentTime);
+                            } else if (originalSoundFile.includes('chime')) {
+                                oscillator.frequency.value = 1000; // Even higher for chimes
+                                gainNode.gain.setValueAtTime(0.2, ctx.currentTime);
+                            } else if (originalSoundFile.includes('sound-')) {
+                                oscillator.frequency.value = 600; // Custom sound fallback
+                                gainNode.gain.setValueAtTime(0.3, ctx.currentTime);
+                            } else {
+                                oscillator.frequency.value = 600; // Default fallback
+                                gainNode.gain.setValueAtTime(0.2, ctx.currentTime);
+                            }
+
+                            oscillator.type = 'square';
+                            gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+
+                            oscillator.start(ctx.currentTime);
+                            oscillator.stop(ctx.currentTime + 0.3);
+
+                            console.log('🔊 Fallback beep played for:', originalSoundFile);
+
+                            const fallbackMessage = originalSoundFile.includes('sound-') ?
+                                `🔊 Playing fallback beep (custom sound "${soundFile}" not accessible)` :
+                                `🔊 Playing fallback beep ("${soundFile}" not found)`;
+
+                            addNotification('info', fallbackMessage);
+                        }
+                    } catch (fallbackError) {
+                        console.error('❌ Fallback beep also failed:', fallbackError);
+                        addNotification('error', '❌ All audio methods failed');
+                    }
                 });
             }
-
-            tweetCache.pendingSync = new Set(data.pendingSync || []);
-            console.log(`✅ Loaded ${tweetCache.tweets.size} tweets from cache file`);
         } catch (error) {
-            console.log('📄 No tweet cache file found, loading from Firebase...');
-            await loadInitialTweetsFromFirebase();
+            console.error('❌ Top-level sound preview error:', error);
+            console.error('❌ Error stack:', error.stack);
+            addNotification('error', '❌ Failed to preview sound');
         }
+    };
 
-        startPeriodicTweetFirebaseSync();
-    } catch (error) {
-        console.error('❌ Error initializing tweet cache:', error);
-    }
-}
+    const saveToLocalStorage = (key, data) => {
+        try {
+            localStorage.setItem(key, JSON.stringify(data));
+            console.log(`💾 Saved ${key} to localStorage:`, data);
+        } catch (error) {
+            console.error('Failed to save to localStorage:', error);
+            addNotification('error', '❌ Failed to save settings locally');
+        }
+    };
 
-async function loadInitialTweetsFromFirebase() {
-    try {
-        const snapshot = await db.collection('usedTweets').get();
-        let loadedCount = 0;
-
-        snapshot.forEach(doc => {
-            const data = doc.data();
-            tweetCache.tweets.set(doc.id, {
-                firstUsed: data.firstUsedAt?.toDate?.()?.toISOString() || new Date().toISOString(),
-                username: data.username,
-                tokenAddress: data.tokenAddress,
-                tokenName: data.tokenName,
-                platform: data.platform
+    const clearLocalStorage = () => {
+        try {
+            Object.values(STORAGE_KEYS).forEach(key => {
+                localStorage.removeItem(key);
             });
-            loadedCount++;
-        });
-
-        console.log(`✅ Loaded ${loadedCount} tweets from Firebase`);
-        await saveTweetCacheToFile();
-    } catch (error) {
-        console.error('❌ Error loading tweets from Firebase:', error);
-    }
-}
-
-function startPeriodicTweetFirebaseSync() {
-    setInterval(async () => {
-        if (tweetCache.pendingSync.size > 0) {
-            await syncPendingTweetsToFirebase();
+            addNotification('success', '🗑️ All settings cleared from local storage');
+        } catch (error) {
+            console.error('Failed to clear localStorage:', error);
         }
-    }, FIREBASE_SYNC_INTERVAL);
-}
+    };
 
-async function syncPendingTweetsToFirebase() {
-    if (tweetCache.pendingSync.size === 0) return;
-
-    console.log(`🔄 Syncing ${tweetCache.pendingSync.size} tweets to Firebase...`);
-
-    const batch = db.batch();
-    let syncCount = 0;
-
-    for (const tweetId of tweetCache.pendingSync) {
-        const tweetData = tweetCache.tweets.get(tweetId);
-        if (tweetData) {
-            const docRef = db.collection('usedTweets').doc(tweetId);
-            batch.set(docRef, {
-                tweetId: tweetId,
-                username: tweetData.username,
-                firstUsedAt: admin.firestore.FieldValue.serverTimestamp(),
-                tokenAddress: tweetData.tokenAddress,
-                tokenName: tweetData.tokenName,
-                platform: tweetData.platform,
-                createdAt: admin.firestore.FieldValue.serverTimestamp()
+    // Twitter session management functions
+    const checkTwitterSession = async () => {
+        try {
+            setTwitterSessionStatus(prev => ({ ...prev, checking: true }));
+            const response = await apiCall('/twitter-session-status');
+            setTwitterSessionStatus({
+                ...response,
+                checking: false
             });
-            syncCount++;
-        }
-    }
 
-    try {
-        await batch.commit();
-        console.log(`✅ Successfully synced ${syncCount} tweets to Firebase`);
-        tweetCache.pendingSync.clear();
-        tweetCache.lastSyncToFirebase = new Date().toISOString();
-        await saveTweetCacheToFile();
-    } catch (error) {
-        console.error('❌ Error syncing tweets to Firebase:', error);
-    }
-}
-
-async function getPairAddressFromDexScreener(tokenAddress) {
-    try {
-        console.log(`🔍 Fetching pair address for token: ${tokenAddress}`);
-
-        // Use the actual token address, not hardcoded one
-        const url = `https://api.dexscreener.com/latest/dex/tokens/${tokenAddress}`;
-
-        const response = await fetch(url, {
-            timeout: 10000, // 10 second timeout
-            headers: {
-                'User-Agent': 'DevScope-Bot/1.0'
+            if (response.loggedIn) {
+                addNotification('success', '✅ Twitter session is active');
+            } else {
+                addNotification('info', '🔑 Twitter session not active - manual login required');
             }
-        });
-
-        if (!response.ok) {
-            console.log(`❌ DexScreener API error: ${response.status}`);
-            return null;
+        } catch (error) {
+            setTwitterSessionStatus(prev => ({
+                ...prev,
+                checking: false,
+                error: error.message
+            }));
+            addNotification('error', 'Failed to check Twitter session status');
         }
+    };
 
-        const data = await response.json();
-        console.log(`📊 DexScreener response:`, data);
+    const openTwitterLogin = async () => {
+        try {
+            setTwitterSessionStatus(prev => ({ ...prev, checking: true }));
 
-        if (data.pairs && data.pairs.length > 0) {
-            // Find Raydium pair first, or fallback to first available pair
-            let bestPair = data.pairs.find(pair =>
-                pair.dexId === 'raydium' ||
-                pair.dexId.toLowerCase().includes('raydium')
-            ) || data.pairs[0];
+            const response = await apiCall('/twitter-open-login', { method: 'POST' });
 
-            console.log(`✅ Found pair on ${bestPair.dexId}: ${bestPair.pairAddress}`);
+            addNotification('success', '🔐 Automatic Twitter login successful');
 
-            return {
-                pairAddress: bestPair.pairAddress,
-                dexId: bestPair.dexId,
-                baseToken: bestPair.baseToken,
-                quoteToken: bestPair.quoteToken,
-                liquidity: bestPair.liquidity,
-                url: bestPair.url
+            // Check session status immediately
+            setTimeout(() => {
+                checkTwitterSession();
+            }, 2000);
+
+        } catch (error) {
+            addNotification('error', 'Automatic login failed - check server credentials');
+            setTwitterSessionStatus(prev => ({ ...prev, checking: false }));
+        }
+    };
+
+    // WebSocket connection
+    const connectWebSocket = useCallback(() => {
+        try {
+            const ws = new WebSocket('wss://devscope.fun:3002');
+            //const ws = new WebSocket('wss://devscope.fun:3002');
+
+            ws.onopen = () => {
+                console.log('WebSocket connected');
+                setConnectionStatus('connected');
+                setWebsocket(ws);
             };
-        }
 
-        console.log(`❌ No pairs found for token: ${tokenAddress}`);
-        return null;
-    } catch (error) {
-        console.error('❌ Error fetching pair data from DexScreener:', error);
-        return null;
-    }
-}
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                handleWebSocketMessage(data);
+            };
 
-async function markCommunityAsUsedInFirebase(communityId, tokenData) {
-    try {
-        console.log(`💾 Adding community ${communityId} to local cache`);
+            ws.onclose = () => {
+                console.log('WebSocket disconnected');
+                setConnectionStatus('disconnected');
+                setWebsocket(null);
+                setTimeout(connectWebSocket, 3000);
+            };
 
-        // Add to in-memory cache immediately
-        communityCache.communities.set(communityId.toString(), {
-            firstUsed: new Date().toISOString(),
-            tokenCount: 1,
-            tokenAddress: tokenData.tokenAddress,
-            tokenName: tokenData.name,
-            platform: tokenData.platform
-        });
+            ws.onerror = (error) => {
+                console.error('WebSocket error:', error);
+                setConnectionStatus('error');
+            };
 
-        // Mark for Firebase sync
-        communityCache.pendingSync.add(communityId.toString());
-
-        // Save to local file immediately for crash protection
-        await saveCacheToFile();
-
-        console.log(`✅ Community ${communityId} added to cache and marked for Firebase sync`);
-        return true;
-    } catch (error) {
-        console.error(`❌ ERROR adding community ${communityId} to cache:`, error);
-        return false;
-    }
-}
-
-// Initialize cache on startup
-async function initializeCommunityCache() {
-    try {
-        console.log('🚀 Initializing local community cache...');
-
-        // Load from file if exists
-        try {
-            const fileContent = await fsPromises.readFile(COMMUNITY_CACHE_FILE, 'utf8');
-            const data = JSON.parse(fileContent);
-
-            // Convert to Map for performance
-            if (data.communities) {
-                Object.entries(data.communities).forEach(([id, info]) => {
-                    communityCache.communities.set(id, info);
-                });
-            }
-
-            communityCache.lastSyncToFirebase = data.lastSyncToFirebase;
-            communityCache.pendingSync = new Set(data.pendingSync || []);
-
-            console.log(`✅ Loaded ${communityCache.communities.size} communities from cache file`);
         } catch (error) {
-            console.log('📄 No cache file found, loading from Firebase...');
-            await loadInitialDataFromFirebase();
+            console.error('Failed to connect WebSocket:', error);
+            setConnectionStatus('error');
         }
+    }, []);
 
-        // Start periodic sync
-        startPeriodicFirebaseSync();
 
-    } catch (error) {
-        console.error('❌ Error initializing community cache:', error);
-    }
-}
+    // Add this useEffect to fetch demo templates
+    useEffect(() => {
+        fetchDemoTemplates();
+    }, []);
 
-// Load initial data from Firebase (one-time)
-async function loadInitialDataFromFirebase() {
-    try {
-        const snapshot = await db.collection('usedCommunities').get();
-        let loadedCount = 0;
+    useEffect(() => {
+        checkTwitterSession();
+    }, []);
 
-        snapshot.forEach(doc => {
-            const data = doc.data();
-            communityCache.communities.set(doc.id, {
-                firstUsed: data.firstUsedAt?.toDate?.()?.toISOString() || new Date().toISOString(),
-                tokenCount: 1,
-                tokenAddress: data.tokenAddress,
-                tokenName: data.tokenName,
-                platform: data.platform
-            });
-            loadedCount++;
-        });
+    useEffect(() => {
+        fetchStatus();
+        fetchLists();
+        fetchDetectedTokens();
+        fetchUsedCommunities();
+        fetchUsedTweets();
+        fetchSoundFiles();
+        connectWebSocket();
 
-        console.log(`✅ Loaded ${loadedCount} communities from Firebase`);
-        await saveCacheToFile();
-    } catch (error) {
-        console.error('❌ Error loading from Firebase:', error);
-    }
-}
-
-// Save cache to local file
-async function saveCacheToFile() {
-    try {
-        const cacheData = {
-            communities: Object.fromEntries(communityCache.communities),
-            pendingSync: Array.from(communityCache.pendingSync),
-            lastSyncToFirebase: communityCache.lastSyncToFirebase,
-            lastUpdated: new Date().toISOString()
+        return () => {
+            if (websocket) {
+                websocket.close();
+            }
         };
+    }, [connectWebSocket]);
 
-        await fsPromises.writeFile(COMMUNITY_CACHE_FILE, JSON.stringify(cacheData, null, 2));
-        console.log(`💾 Cache saved to file (${communityCache.communities.size} communities)`);
-    } catch (error) {
-        console.error('❌ Error saving cache to file:', error);
-    }
-}
-
-// Periodic Firebase sync
-function startPeriodicFirebaseSync() {
-    setInterval(async () => {
-        if (communityCache.pendingSync.size > 0) {
-            await syncPendingToFirebase();
+    // Add these functions to your App component
+    const fetchDemoTemplates = async () => {
+        try {
+            const data = await apiCall('/demo/templates');
+            setDemoTemplates(data.templates);
+        } catch (error) {
+            console.error('Failed to fetch demo templates');
         }
-    }, FIREBASE_SYNC_INTERVAL);
+    };
 
-    console.log(`⏰ Started periodic Firebase sync (every ${FIREBASE_SYNC_INTERVAL / 60000} minutes)`);
-}
+    const injectDemoToken = async (customData = {}) => {
+        try {
+            const payload = {
+                templateIndex: selectedTemplate,
+                customWallet: customWallet || null,
+                customTwitter: customTwitter || null,
+                customCommunity: customCommunity || null,
+                customTweet: customTweet || null, // ADD THIS LINE
+            };
 
-// Sync pending communities to Firebase
-async function syncPendingToFirebase() {
-    if (communityCache.pendingSync.size === 0) return;
+            if (customData && typeof customData === 'object' && !customData.target) {
+                Object.assign(payload, customData);
+            }
 
-    console.log(`🔄 Syncing ${communityCache.pendingSync.size} communities to Firebase...`);
-
-    const batch = db.batch();
-    let syncCount = 0;
-
-    for (const communityId of communityCache.pendingSync) {
-        const communityData = communityCache.communities.get(communityId);
-        if (communityData) {
-            const docRef = db.collection('usedCommunities').doc(communityId);
-            batch.set(docRef, {
-                communityId: communityId,
-                firstUsedAt: admin.firestore.FieldValue.serverTimestamp(),
-                tokenAddress: communityData.tokenAddress,
-                tokenName: communityData.tokenName,
-                platform: communityData.platform,
-                createdAt: admin.firestore.FieldValue.serverTimestamp()
+            await apiCall('/demo/inject-token', {
+                method: 'POST',
+                body: JSON.stringify(payload)
             });
-            syncCount++;
+            addNotification('success', '🧪 Demo token injected successfully');
+        } catch (error) {
+            addNotification('error', '❌ Failed to inject demo token');
+            console.error('Demo injection error:', error);
         }
-    }
+    };
 
-    try {
-        await batch.commit();
-        console.log(`✅ Successfully synced ${syncCount} communities to Firebase`);
+    const injectDemoBatch = async () => {
+        try {
+            await apiCall('/demo/inject-batch', {
+                method: 'POST',
+                body: JSON.stringify({
+                    count: 5,
+                    delay: 3000
+                })
+            });
+            addNotification('success', '🧪 Injecting 5 demo tokens with 3s delay');
+        } catch (error) {
+            addNotification('error', '❌ Failed to inject demo batch');
+        }
+    };
 
-        // Clear pending sync
-        communityCache.pendingSync.clear();
-        communityCache.lastSyncToFirebase = new Date().toISOString();
+    const injectFromList = async (listType) => {
+        try {
+            await apiCall('/demo/inject-from-list', {
+                method: 'POST',
+                body: JSON.stringify({
+                    listType,
+                    templateIndex: selectedTemplate
+                })
+            });
+            addNotification('success', `🧪 Demo token injected using ${listType} entry`);
+        } catch (error) {
+            addNotification('error', `❌ Failed to inject from ${listType}`);
+        }
+    };
 
-        // Update local file
-        await saveCacheToFile();
-    } catch (error) {
-        console.error('❌ Error syncing to Firebase:', error);
-    }
-}
+    // Lists state
+    const [lists, setLists] = useState({
+        primary_admins: [],
+        secondary_admins: []
+    });
 
-async function getTwitterDataFromToken(tokenData) {
-    try {
-        let twitterData = { type: null, id: null, handle: null, admin: null };
+    // Form states
+    const [showAddForm, setShowAddForm] = useState({ type: null, show: false });
+    const [formData, setFormData] = useState({
+        address: '',
+        username: '',
+        amount: 0.01,
+        fees: 10,
+        mevProtection: true,
+        soundNotification: 'default.wav'
+    });
+    // App.js - Part 2: WebSocket and Message Handling
 
-        // Get enhanced metadata using new Token Metadata API
-        const metadata = await fetchTokenMetadata(tokenData);
 
-        console.log('🔍 Enhanced metadata available:', {
-            hasEnhancedData: metadata.hasEnhancedData,
-            isBonkToken: metadata.isBonkToken,
-            twitterHandle: metadata.twitterHandle,
-            websites: metadata.websites?.length || 0
-        });
+    const [secondaryPopup, setSecondaryPopup] = useState({
+        show: false,
+        tokenData: null
+    });
 
-        // Enhanced Twitter extraction with priority system
-        const twitterSources = [];
 
-        // Priority 1: Direct twitter handle from enhanced metadata
-        if (metadata.hasEnhancedData) {
-            if (metadata.twitterHandle) {
-                twitterSources.push({
-                    value: metadata.twitterHandle,
-                    source: 'enhanced_metadata_twitter_handle'
-                });
-            }
+    // Auto-play sound when secondary popup appears
+    useEffect(() => {
+        if (secondaryPopup.show && secondaryPopup.tokenData) {
+            console.log('🔔 Secondary popup opened, auto-playing notification sound...');
+            console.log('🔔 Token data:', secondaryPopup.tokenData);
+            console.log('🔔 Token config:', secondaryPopup.tokenData.config);
+            console.log('🔔 Global sound setting:', settings.globalSnipeSettings.soundNotification);
 
-            // Check websites for Twitter links
-            if (metadata.websites && Array.isArray(metadata.websites)) {
-                metadata.websites.forEach((website, index) => {
-                    if (website && typeof website === 'string' &&
-                        (website.includes('twitter.com') || website.includes('x.com'))) {
-                        twitterSources.push({
-                            value: website,
-                            source: `enhanced_metadata_websites[${index}]`
-                        });
+            // Use the token's specific sound notification or fall back to global setting
+            const soundToPlay = secondaryPopup.tokenData.config?.soundNotification || settings.globalSnipeSettings.soundNotification;
+            console.log('🔔 Sound selected to auto-play:', soundToPlay);
+
+            // Small delay to ensure popup is fully rendered
+            const timeoutId = setTimeout(() => {
+                console.log('🔔 Calling previewSound with:', soundToPlay);
+                previewSound(soundToPlay);
+            }, 300);
+
+            // Cleanup timeout on unmount
+            return () => clearTimeout(timeoutId);
+        }
+    }, [secondaryPopup.show, secondaryPopup.tokenData?.tokenAddress, settings.globalSnipeSettings.soundNotification]);
+
+    const fetchUsedCommunities = async () => {
+        try {
+            const data = await apiCall('/firebase/used-communities');
+            setUsedCommunities(data.communities || []);
+            addNotification('success', `📊 Loaded ${data.communities.length} used communities from Firebase`);
+        } catch (error) {
+            console.error('Failed to fetch used communities');
+            addNotification('error', '❌ Failed to fetch used communities from Firebase');
+        }
+    };
+
+    const fetchUsedTweets = async () => {
+        try {
+            const data = await apiCall('/firebase/used-tweets');
+            setUsedTweets(data.tweets || []);
+            addNotification('success', `📊 Loaded ${data.tweets.length} used tweets from Firebase`);
+        } catch (error) {
+            console.error('Failed to fetch used tweets');
+            addNotification('error', '❌ Failed to fetch used tweets from Firebase');
+        }
+    };
+
+    const clearUsedTweets = async () => {
+        try {
+            await apiCall('/firebase/used-tweets', { method: 'DELETE' });
+            setUsedTweets([]);
+            addNotification('success', '🗑️ All used tweets cleared from Firebase');
+        } catch (error) {
+            addNotification('error', '❌ Failed to clear used tweets');
+        }
+    };
+
+    const removeUsedTweet = async (tweetId) => {
+        try {
+            await apiCall(`/firebase/used-tweets/${tweetId}`, { method: 'DELETE' });
+            setUsedTweets(prev => prev.filter(t => t.id !== tweetId));
+            addNotification('success', `🗑️ Tweet ${tweetId} removed from Firebase`);
+        } catch (error) {
+            addNotification('error', '❌ Failed to remove tweet');
+        }
+    };
+
+    const clearUsedCommunities = async () => {
+        try {
+            await apiCall('/firebase/used-communities', { method: 'DELETE' });
+            setUsedCommunities([]);
+            addNotification('success', '🗑️ All used communities cleared from Firebase');
+        } catch (error) {
+            addNotification('error', '❌ Failed to clear used communities');
+        }
+    };
+
+    const removeUsedCommunity = async (communityId) => {
+        try {
+            await apiCall(`/firebase/used-communities/${communityId}`, { method: 'DELETE' });
+            setUsedCommunities(prev => prev.filter(c => c.id !== communityId));
+            addNotification('success', `🗑️ Community ${communityId} removed from Firebase`);
+        } catch (error) {
+            addNotification('error', '❌ Failed to remove community');
+        }
+    };
+
+    const testFirebaseConnection = async () => {
+        try {
+            const data = await apiCall('/test-firebase');
+            addNotification('success', '✅ Firebase connection successful!');
+        } catch (error) {
+            addNotification('error', '❌ Firebase connection failed');
+        }
+    };
+
+    const handleWebSocketMessage = (data) => {
+        switch (data.type) {
+            case 'bot_status':
+                // Fix: Use the correct state setter name
+                setBotStatus(prev => ({ ...prev, isRunning: data.data.isRunning }));
+                break;
+
+            case 'logs':
+                console.log('Server log:', data.data);
+                break;
+
+            case 'snipe_success':
+                console.log('🎯 SNIPE SUCCESS:', data.data);
+
+                // ⏱️ START BROWSER TIMING FOR SNIPE SUCCESS
+                const snipeSuccessBrowserStart = performance.now();
+
+                if (data.data.openTokenPage) {
+                    // Enhanced notification that shows first
+                    addNotification('success', `🎯 Sniped ${data.data.tokenAddress.substring(0, 8)}... successfully!`);
+
+                    // Small delay to ensure notification shows first
+                    setTimeout(() => {
+                        if (window.electronAPI && window.electronAPI.openExternalURL) {
+                            window.electronAPI.openExternalURL(data.data.tokenPageUrl);
+
+                            // ⏱️ LOG SNIPE SUCCESS BROWSER TIMING (Electron)
+                            const browserOpenTime = performance.now() - snipeSuccessBrowserStart;
+                            console.log(`⏱️ SNIPE SUCCESS BROWSER TIMING (Electron): ${browserOpenTime.toFixed(2)}ms`);
+
+                            addNotification('info', '🌐 Token page opened automatically');
+                        } else {
+                            window.open(data.data.tokenPageUrl, '_blank');
+
+                            // ⏱️ LOG SNIPE SUCCESS BROWSER TIMING (Browser)
+                            const browserOpenTime = performance.now() - snipeSuccessBrowserStart;
+                            console.log(`⏱️ SNIPE SUCCESS BROWSER TIMING (Browser): ${browserOpenTime.toFixed(2)}ms`);
+
+                            addNotification('info', '🌐 Token page opened automatically in new tab');
+                        }
+                    }, 500); // 500ms delay
+                }
+                break;
+
+            case 'auto_open_token_page':
+                console.log('🌐 Auto-opening token page:', data.data);
+
+                // ⏱️ START BROWSER TIMING FOR AUTO OPEN
+                const autoOpenBrowserStart = performance.now();
+
+                if (window.electronAPI && window.electronAPI.openExternalURL) {
+                    window.electronAPI.openExternalURL(data.data.tokenPageUrl);
+
+                    // ⏱️ LOG AUTO OPEN BROWSER TIMING (Electron)
+                    const browserOpenTime = performance.now() - autoOpenBrowserStart;
+                    console.log(`⏱️ AUTO OPEN BROWSER TIMING (Electron): ${browserOpenTime.toFixed(2)}ms`);
+                    console.log(`   Token: ${data.data.tokenAddress}`);
+                    console.log(`   Destination: ${data.data.destination}`);
+                    console.log(`   URL: ${data.data.tokenPageUrl}`);
+
+                    addNotification('info', `🌐 ${data.data.destination === 'axiom' ? 'Axiom' : 'Neo BullX'} opened automatically`);
+                } else {
+                    window.open(data.data.tokenPageUrl, '_blank');
+
+                    // ⏱️ LOG AUTO OPEN BROWSER TIMING (Browser)
+                    const browserOpenTime = performance.now() - autoOpenBrowserStart;
+                    console.log(`⏱️ AUTO OPEN BROWSER TIMING (Browser): ${browserOpenTime.toFixed(2)}ms`);
+                    console.log(`   Token: ${data.data.tokenAddress}`);
+                    console.log(`   Destination: ${data.data.destination}`);
+                    console.log(`   URL: ${data.data.tokenPageUrl}`);
+
+                    addNotification('info', `🌐 ${data.data.destination === 'axiom' ? 'Axiom' : 'Neo BullX'} opened automatically`);
+                }
+                break;
+
+            case 'snipe_error':
+                addNotification('error', `❌ Snipe failed: ${data.data.error}`);
+                break;
+
+            case 'secondary_notification':
+                addNotification('info', `🔔 Token found in secondary list: ${data.data.tokenAddress.substring(0, 8)}...`);
+                if (data.data.soundNotification && window.electronAPI) {
+                    window.electronAPI.playSound(data.data.soundNotification);
+                }
+                break;
+
+            case 'token_detected':
+                console.log('📱 FRONTEND RECEIVED TOKEN DATA:');
+                console.log('Platform:', data.data.platform);
+                console.log('Has GeckoTerminal Data:', data.data.hasGeckoTerminalData);
+                console.log('Full token object received by frontend:', data.data);
+                console.log('Name displayed:', data.data.name);
+                console.log('Symbol displayed:', data.data.symbol);
+                console.log('Image URI:', data.data.uri);
+                console.log('Description:', data.data.description);
+                console.log('================================================');
+
+                setDetectedTokens(prev => {
+                    // Check if token already exists
+                    const exists = prev.some(token => token.tokenAddress === data.data.tokenAddress);
+                    if (exists) {
+                        console.log(`Token ${data.data.tokenAddress} already exists, skipping duplicate`);
+                        return prev; // Don't add duplicate
                     }
+                    return [data.data, ...prev.slice(0, 99)];
                 });
-            }
 
-            // Check website field
-            if (metadata.website &&
-                (metadata.website.includes('twitter.com') || metadata.website.includes('x.com'))) {
-                twitterSources.push({
-                    value: metadata.website,
-                    source: 'enhanced_metadata_website'
+                const matchTypeText = {
+                    'primary_wallet': '🎯 Primary Wallet',
+                    'primary_admin': '🎯 Primary Admin',
+                    'secondary_wallet': '🔔 Secondary Wallet',
+                    'secondary_admin': '🔔 Secondary Admin',
+                    'snipe_all': '⚡ Snipe All',
+                    'no_filters': '📢 No Filters'
+                };
+
+                // Enhanced notification with Twitter type info
+                const twitterInfo = data.data.twitterType === 'community'
+                    ? `(Community ${data.data.twitterCommunityId})`
+                    : data.data.twitterHandle
+                        ? `(@${data.data.twitterHandle})`
+                        : '';
+
+                addNotification('info', `${matchTypeText[data.data.matchType] || '🔍 Match'} ${data.data.name || data.data.symbol} ${twitterInfo}`);
+
+                // Sound notification
+                if (data.data.config && data.data.config.soundNotification && window.electronAPI) {
+                    window.electronAPI.playSound(data.data.config.soundNotification);
+                }
+                break;
+
+            case 'secondary_popup_trigger':
+                console.log('🔔 SECONDARY ADMIN MATCH DETECTED');
+                console.log('📊 Token data:', data.data.tokenData);
+
+                const tokenData = data.data.tokenData;
+
+                // Show popup modal immediately
+                setSecondaryPopup({
+                    show: true,
+                    tokenData: tokenData,
+                    globalSettings: data.data.globalSnipeSettings
                 });
-            }
 
-            // If we have raw metadata, extract from it too
-            if (metadata.rawMetadata) {
-                const twitterFromRaw = tokenMetadataExtractor.extractTwitterHandle(metadata.rawMetadata);
-                if (twitterFromRaw.handle) {
-                    twitterSources.push({
-                        value: twitterFromRaw.handle,
-                        source: 'raw_metadata_extraction'
+                addNotification('info', `🔔 Secondary match found: ${tokenData.tokenAddress.substring(0, 8)}...`);
+
+                // 🚀 START PAIR ADDRESS DETECTION IMMEDIATELY
+                console.log('🔍 Starting pair address detection for secondary match...');
+                checkPairAddressWithRetry(tokenData.tokenAddress);
+
+                break;
+
+            case 'community_admin_match_found':
+                console.log('🎯 COMMUNITY ADMIN MATCH FOUND!', data.data);
+
+                // Show enhanced notification
+                const matchTypeIcon = data.data.matchType === 'primary' ? '🎯' : '🔔';
+                addNotification('info', `${matchTypeIcon} Community admin match: ${data.data.matchedAdmin.username} in ${data.data.communityId}`);
+
+                break;
+
+            case 'community_scraping_error':
+                console.log('❌ COMMUNITY SCRAPING ERROR:', data.data);
+
+                if (data.data.reason === 'session_expired') {
+                    addNotification('warning', '🔑 Twitter session expired - please login again');
+                } else {
+                    addNotification('warning', `❌ Community ${data.data.communityId} scraping failed: ${data.data.reason}`);
+                }
+                break;
+
+            case 'community_admins_scraped':
+                console.log('👑 COMMUNITY ADMINS SCRAPED:', data.data);
+                console.table(data.data.admins);
+                console.log('📋 Your Primary Admin List:', data.data.yourPrimaryList);
+                console.log('📋 Your Secondary Admin List:', data.data.yourSecondaryList);
+
+                // Show detailed comparison
+                console.log('🔍 DETAILED COMPARISON CHECK:');
+                data.data.admins.forEach(admin => {
+                    const adminLower = admin.username.toLowerCase().trim();
+                    const adminWithAt = `@${adminLower}`;
+
+                    const inPrimary = data.data.yourPrimaryList.some(item => {
+                        const itemLower = item.toLowerCase().trim();
+                        return itemLower === adminLower || itemLower === adminWithAt;
                     });
-                } else if (twitterFromRaw.id) {
-                    twitterSources.push({
-                        value: `https://x.com/i/communities/${twitterFromRaw.id}`,
-                        source: 'raw_metadata_community'
+
+                    const inSecondary = data.data.yourSecondaryList.some(item => {
+                        const itemLower = item.toLowerCase().trim();
+                        return itemLower === adminLower || itemLower === adminWithAt;
                     });
+
+                    console.log(`${inPrimary ? '🎯' : inSecondary ? '🔔' : '❌'} @${admin.username} - ${admin.badgeType} ${inPrimary ? '(PRIMARY MATCH!)' : inSecondary ? '(SECONDARY MATCH!)' : '(NO MATCH)'}`);
+                });
+
+                addNotification('info', `👑 Community ${data.data.communityId} scraped: ${data.data.totalAdmins} admins found - check console`);
+                break;
+
+            case 'twitter_session_check':
+                console.log('🔍 Twitter session status:', data.data);
+                setTwitterSessionStatus(prev => ({
+                    ...prev,
+                    ...data.data,
+                    checking: false
+                }));
+                break;
+
+            case 'twitter_login_attempt':
+                console.log('🔑 Twitter login attempt:', data.data);
+                if (data.data.success) {
+                    addNotification('success', `✅ Twitter login successful: ${data.data.url}`);
+                    setTwitterSessionStatus(prev => ({
+                        ...prev,
+                        loggedIn: true,
+                        url: data.data.url,
+                        error: null,
+                        checking: false
+                    }));
+                } else {
+                    addNotification('error', `❌ Twitter login failed: ${data.data.error}`);
+                    setTwitterSessionStatus(prev => ({
+                        ...prev,
+                        loggedIn: false,
+                        error: data.data.error,
+                        checking: false
+                    }));
+                }
+                break;
+
+            default:
+                console.log('Unknown WebSocket message type:', data.type);
+        }
+    };
+
+    const cleanupAutoRetryTimer = (tokenAddress) => {
+        if (autoRetryTimers[tokenAddress]) {
+            clearTimeout(autoRetryTimers[tokenAddress]);
+            setAutoRetryTimers(prev => {
+                const newTimers = { ...prev };
+                delete newTimers[tokenAddress];
+                return newTimers;
+            });
+        }
+    };
+
+
+    useEffect(() => {
+        return () => {
+            // Cleanup all timers on unmount
+            Object.values(autoRetryTimers).forEach(timer => {
+                if (timer) clearTimeout(timer);
+            });
+        };
+    }, [autoRetryTimers]);
+
+    const clearGlobalSettingsMessage = (delay = 3000) => {
+        setTimeout(() => {
+            setGlobalSettingsMessage('');
+        }, delay);
+    };
+
+    const syncAdminListsFromFirebase = async () => {
+        try {
+            await apiCall('/firebase/sync-admin-lists', { method: 'POST' });
+            addNotification('success', '🔄 Admin lists synchronized from Firebase');
+        } catch (error) {
+            addNotification('error', '❌ Failed to sync admin lists from Firebase');
+        }
+    };
+
+    const clearAdminListFromFirebase = async (listType) => {
+        try {
+            await apiCall(`/firebase/admin-lists/${listType}`, { method: 'DELETE' });
+            await fetchLists(); // Refresh the lists
+            addNotification('success', `🗑️ All ${listType.replace('_', ' ')} cleared from Firebase`);
+        } catch (error) {
+            addNotification('error', `❌ Failed to clear ${listType} from Firebase`);
+        }
+    };
+
+    const getFirebaseAdminLists = async () => {
+        try {
+            const data = await apiCall('/firebase/admin-lists');
+            addNotification('success', `📥 Firebase admin lists loaded: ${data.stats.primaryCount} primary, ${data.stats.secondaryCount} secondary`);
+            return data;
+        } catch (error) {
+            addNotification('error', '❌ Failed to load admin lists from Firebase');
+        }
+    };
+
+    const addNotification = (type, message) => {
+        const notification = {
+            id: Date.now(),
+            type,
+            message,
+            timestamp: new Date().toLocaleTimeString()
+        };
+        setNotifications(prev => [notification, ...prev.slice(0, 49)]);
+    };
+    // App.js - Part 3: Utility Functions and API Calls
+
+    // Enhanced utility functions with notifications
+
+    const copyToClipboard = (text, label = 'Text', itemId = null) => {
+        try {
+            navigator.clipboard.writeText(text);
+
+            // Show success notification with custom message
+            addNotification('success', `📋 ${label} copied to clipboard`);
+
+            // Handle visual feedback for specific items
+            if (itemId) {
+                setCopiedStates(prev => ({ ...prev, [itemId]: true }));
+                setTimeout(() => {
+                    setCopiedStates(prev => ({ ...prev, [itemId]: false }));
+                }, 2000);
+            }
+        } catch (error) {
+            addNotification('error', '❌ Failed to copy to clipboard');
+            console.error('Copy failed:', error);
+        }
+    };
+
+    const viewToken = async (token) => {
+        console.log('🌐 Opening token page for:', token.tokenAddress);
+
+        // ⏱️ START TIMING
+        const viewTokenStart = performance.now();
+
+        // Clear previous status for this token
+        setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: null }));
+
+        let url;
+
+        // Check user's preference for token page destination
+        if (settings.tokenPageDestination === 'axiom') {
+            // 🔥 NEW: Check if token already has bonding curve stored
+            if (token.bondingCurveAddress) {
+                console.log(`✅ Using stored bonding curve for Axiom: ${token.bondingCurveAddress}`);
+                url = `https://axiom.trade/meme/${token.bondingCurveAddress}`;
+                addNotification('success', `🎯 Opening Axiom with bonding curve: ${token.bondingCurveAddress.substring(0, 8)}...`);
+                setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: 'success' }));
+
+                // ⏱️ LOG URL GENERATION TIME
+                const urlGenerationTime = performance.now() - viewTokenStart;
+                console.log(`⏱️ URL GENERATION TIME (stored bonding curve): ${urlGenerationTime.toFixed(2)}ms`);
+
+                // ⏱️ START BROWSER TIMING
+                const browserOpenStart = performance.now();
+
+                // Open the URL directly
+                if (window.electronAPI && window.electronAPI.openExternalURL) {
+                    window.electronAPI.openExternalURL(url);
+                } else {
+                    window.open(url, '_blank');
+                }
+
+                // ⏱️ LOG BROWSER TIMING
+                const browserOpenTime = performance.now() - browserOpenStart;
+                const totalTime = performance.now() - viewTokenStart;
+                console.log(`⏱️ MANUAL TOKEN OPEN TIMING (stored bonding curve):`);
+                console.log(`   URL Generation: ${urlGenerationTime.toFixed(2)}ms`);
+                console.log(`   Browser Open: ${browserOpenTime.toFixed(2)}ms`);
+                console.log(`   Total: ${totalTime.toFixed(2)}ms`);
+
+            } else {
+                // Original logic for tokens without stored bonding curve
+                try {
+                    const apiCallStart = performance.now();
+                    const response = await apiCall(`/pair-address/${token.tokenAddress}`);
+                    const apiCallTime = performance.now() - apiCallStart;
+                    console.log(`⏱️ API CALL TIME: ${apiCallTime.toFixed(2)}ms`);
+                    console.log('🔍 Backend response:', response);
+
+                    if (response.success) {
+                        if (response.isPumpFun && response.bondingCurveData) {
+                            console.log(`✅ Backend found bonding curve for Axiom: ${response.bondingCurveData.bondingCurveAddress}`);
+                            url = response.axiomUrl;
+                            addNotification('success', `🎯 Opening Axiom with bonding curve: ${response.bondingCurveData.bondingCurveAddress.substring(0, 8)}...`);
+                            setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: 'success' }));
+
+                            // ⏱️ LOG URL GENERATION TIME
+                            const urlGenerationTime = performance.now() - viewTokenStart;
+                            console.log(`⏱️ URL GENERATION TIME (API bonding curve): ${urlGenerationTime.toFixed(2)}ms`);
+
+                            // ⏱️ START BROWSER TIMING
+                            const browserOpenStart = performance.now();
+
+                            if (window.electronAPI && window.electronAPI.openExternalURL) {
+                                window.electronAPI.openExternalURL(url);
+                            } else {
+                                window.open(url, '_blank');
+                            }
+
+                            // ⏱️ LOG BROWSER TIMING
+                            const browserOpenTime = performance.now() - browserOpenStart;
+                            const totalTime = performance.now() - viewTokenStart;
+                            console.log(`⏱️ MANUAL TOKEN OPEN TIMING (API bonding curve):`);
+                            console.log(`   API Call: ${apiCallTime.toFixed(2)}ms`);
+                            console.log(`   URL Generation: ${urlGenerationTime.toFixed(2)}ms`);
+                            console.log(`   Browser Open: ${browserOpenTime.toFixed(2)}ms`);
+                            console.log(`   Total: ${totalTime.toFixed(2)}ms`);
+
+                        } else if (!response.isPumpFun && response.pairData && response.pairData.pairAddress) {
+                            console.log(`✅ Backend found pair for Axiom: ${response.pairData.pairAddress}`);
+                            url = response.axiomUrl;
+                            addNotification('success', `🎯 Opening Axiom with pair: ${response.pairData.pairAddress.substring(0, 8)}...`);
+                            setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: 'success' }));
+
+                            // ⏱️ LOG URL GENERATION TIME
+                            const urlGenerationTime = performance.now() - viewTokenStart;
+                            console.log(`⏱️ URL GENERATION TIME (API pair): ${urlGenerationTime.toFixed(2)}ms`);
+
+                            // ⏱️ START BROWSER TIMING
+                            const browserOpenStart = performance.now();
+
+                            if (window.electronAPI && window.electronAPI.openExternalURL) {
+                                window.electronAPI.openExternalURL(url);
+                            } else {
+                                window.open(url, '_blank');
+                            }
+
+                            // ⏱️ LOG BROWSER TIMING
+                            const browserOpenTime = performance.now() - browserOpenStart;
+                            const totalTime = performance.now() - viewTokenStart;
+                            console.log(`⏱️ MANUAL TOKEN OPEN TIMING (API pair):`);
+                            console.log(`   API Call: ${apiCallTime.toFixed(2)}ms`);
+                            console.log(`   URL Generation: ${urlGenerationTime.toFixed(2)}ms`);
+                            console.log(`   Browser Open: ${browserOpenTime.toFixed(2)}ms`);
+                            console.log(`   Total: ${totalTime.toFixed(2)}ms`);
+
+                        } else {
+                            console.log('⚠️ Backend found no pair/bonding curve, using token address for Axiom');
+                            url = response.fallbackAxiomUrl || `https://axiom.trade/meme/${token.tokenAddress}`;
+                            setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: 'no-pair' }));
+                            addNotification('warning', '🔍 No pair/bonding curve found yet, check again in few seconds');
+                            return;
+                        }
+                    } else {
+                        console.log('⚠️ Backend error, using fallback URL');
+                        url = response.fallbackAxiomUrl || `https://axiom.trade/meme/${token.tokenAddress}`;
+                        setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: 'error' }));
+                    }
+                } catch (error) {
+                    console.error('❌ Error fetching from backend for Axiom:', error);
+                    url = `https://axiom.trade/meme/${token.tokenAddress}`;
+                    setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: 'error' }));
+
+                    // ⏱️ LOG ERROR TIMING
+                    const errorTime = performance.now() - viewTokenStart;
+                    console.log(`⏱️ ERROR IN TOKEN OPEN: ${errorTime.toFixed(2)}ms`);
                 }
             }
+        } else {
+            // Neo BullX or other destinations
+            url = `https://neo.bullx.io/terminal?chainId=1399811149&address=${token.tokenAddress}`;
         }
 
-        // Priority 2: Original token data fields (fallback)
-        const fieldsToCheck = [
-            { field: 'twitter', source: 'token_twitter' },
-            { field: 'social?.twitter', source: 'token_social_twitter' },
-            { field: 'website', source: 'token_website' },
-            { field: 'metadata?.twitter', source: 'metadata_twitter' },
-            { field: 'metadata?.social?.twitter', source: 'metadata_social_twitter' },
-            { field: 'metadata?.website', source: 'metadata_website' },
-            { field: 'metadata?.external_url', source: 'metadata_external_url' }
-        ];
+        // Simple check for platform-specific URLs (keep existing logic for pump.fun/letsbonk.fun)
+        if (token.pool === 'bonk' && settings.tokenPageDestination !== 'axiom') {
+            url = `https://letsbonk.fun/token/${token.tokenAddress}`;
+        } else if (token.pool === 'pump' && settings.tokenPageDestination !== 'axiom') {
+            url = `https://pump.fun/${token.tokenAddress}`;
+        }
 
-        fieldsToCheck.forEach(({ field, source }) => {
-            const value = getNestedValue(tokenData, field);
-            if (value && typeof value === 'string') {
-                twitterSources.push({ value, source });
-            }
+        console.log('TOKEN DEBUG:', {
+            pool: token.pool,
+            tokenAddress: token.tokenAddress,
+            destination: settings.tokenPageDestination,
+            bondingCurveAddress: token.bondingCurveAddress,
+            finalURL: url
         });
 
-        console.log('🔍 Enhanced fields to check for Twitter data:', twitterSources.map(s => `${s.value} (${s.source})`));
+        // ⏱️ FINAL URL GENERATION AND BROWSER OPEN (for non-Axiom or fallback cases)
+        if (!url.includes('axiom.trade') || settings.tokenPageDestination !== 'axiom') {
+            const urlGenerationTime = performance.now() - viewTokenStart;
+            console.log(`⏱️ URL GENERATION TIME (non-Axiom): ${urlGenerationTime.toFixed(2)}ms`);
 
-        // Process each source and use the first valid match
-        for (const twitterSource of twitterSources) {
-            if (twitterSource.value && typeof twitterSource.value === 'string') {
-                const extracted = extractTwitterDataRobust(twitterSource.value, twitterSource.source);
-                if (extracted.type) {
-                    console.log(`✅ Found Twitter data: ${extracted.type} - ${extracted.handle || extracted.id} from ${twitterSource.source}`);
-                    if (metadata.hasEnhancedData) {
-                        console.log('🚀 Twitter data source: Token Metadata API');
-                    }
-                    twitterData = extracted;
-                    break;
+            const browserOpenStart = performance.now();
+
+            // Open the URL (only if we haven't returned earlier and haven't opened already)
+            if (!token.bondingCurveAddress || settings.tokenPageDestination !== 'axiom') {
+                if (window.electronAPI && window.electronAPI.openExternalURL) {
+                    window.electronAPI.openExternalURL(url);
+                } else {
+                    window.open(url, '_blank');
                 }
             }
+
+            // ⏱️ LOG FINAL BROWSER TIMING
+            const browserOpenTime = performance.now() - browserOpenStart;
+            const totalTime = performance.now() - viewTokenStart;
+            console.log(`⏱️ MANUAL TOKEN OPEN TIMING (final):`);
+            console.log(`   URL Generation: ${urlGenerationTime.toFixed(2)}ms`);
+            console.log(`   Browser Open: ${browserOpenTime.toFixed(2)}ms`);
+            console.log(`   Total: ${totalTime.toFixed(2)}ms`);
         }
 
-        // Set admin based on type
-        if (twitterData.type === 'individual') {
-            twitterData.admin = twitterData.handle;
-        } else if (twitterData.type === 'community') {
-            twitterData.admin = twitterData.id;
-        }
+        addNotification('success', `🌐 Opening token page: ${url}`);
 
-        console.log('🔍 Final enhanced Twitter data result:', twitterData);
+        // Clear status after 5 seconds
+        setTimeout(() => {
+            setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: null }));
+        }, 10000);
+    };
 
-        return {
-            ...twitterData,
-            enhancedMetadata: metadata
-        };
-    } catch (error) {
-        console.error('Error extracting enhanced Twitter data:', error);
-        return {
-            type: null,
-            id: null,
-            handle: null,
-            admin: null,
-            enhancedMetadata: { hasEnhancedData: false, isBonkToken: false }
-        };
-    }
-}
+    const viewTokenPageFromPopup = async (token) => {
+        console.log('🌐 Opening token page from popup for:', token.tokenAddress);
 
-app.get('/api/test-token-metadata/:tokenAddress', async (req, res) => {
-    try {
-        const { tokenAddress } = req.params;
+        // Clear previous status for this token
+        setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: null }));
 
-        console.log(`🧪 Testing Token Metadata API for: ${tokenAddress}`);
+        let url;
 
-        const completeMetadata = await tokenMetadataExtractor.getCompleteTokenMetadata(tokenAddress);
-        const twitterInfo = tokenMetadataExtractor.extractTwitterHandle(completeMetadata);
-        const bestMetadata = tokenMetadataExtractor.getBestMetadata(completeMetadata);
+        // Check user's preference for token page destination
+        if (settings.tokenPageDestination === 'axiom') {
+            // 🔥 NEW: Check if token already has bonding curve stored
+            if (token.bondingCurveAddress) {
+                console.log(`✅ Using stored bonding curve for Axiom: ${token.bondingCurveAddress}`);
+                url = `https://axiom.trade/meme/${token.bondingCurveAddress}`;
+                addNotification('success', `🎯 Opening Axiom with bonding curve: ${token.bondingCurveAddress.substring(0, 8)}...`);
+                setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: 'success' }));
+            } else {
+                // Original logic for tokens without stored bonding curve
+                try {
+                    const response = await apiCall(`/pair-address/${token.tokenAddress}`);
+                    console.log('🔍 Backend response:', response);
 
-        res.json({
-            success: true,
-            tokenAddress,
-            completeMetadata,
-            bestMetadata,
-            twitterInfo,
-            extractedFields: {
-                name: bestMetadata?.name,
-                symbol: bestMetadata?.symbol,
-                logoURI: bestMetadata?.logoURI,
-                twitter_handle: twitterInfo?.handle,
-                twitter_community: twitterInfo?.id,
-                website: bestMetadata?.website,
-                description: bestMetadata?.description,
-                supply: bestMetadata?.supply
+                    if (response.success) {
+                        if (response.isPumpFun && response.bondingCurveData) {
+                            console.log(`✅ Backend found bonding curve for Axiom: ${response.bondingCurveData.bondingCurveAddress}`);
+                            url = response.axiomUrl;
+                            addNotification('success', `🎯 Opening Axiom with bonding curve: ${response.bondingCurveData.bondingCurveAddress.substring(0, 8)}...`);
+                            setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: 'success' }));
+                        } else if (!response.isPumpFun && response.pairData && response.pairData.pairAddress) {
+                            console.log(`✅ Backend found pair for Axiom: ${response.pairData.pairAddress}`);
+                            url = response.axiomUrl;
+                            addNotification('success', `🎯 Opening Axiom with pair: ${response.pairData.pairAddress.substring(0, 8)}...`);
+                            setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: 'success' }));
+                        } else {
+                            console.log('⚠️ Backend found no pair/bonding curve, using token address for Axiom');
+                            url = response.fallbackAxiomUrl || `https://axiom.trade/meme/${token.tokenAddress}`;
+                            setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: 'no-pair' }));
+                            addNotification('warning', '🔍 No pair/bonding curve found yet, check again in few seconds');
+                            return;
+                        }
+                    } else {
+                        console.log('⚠️ Backend error, using fallback URL');
+                        url = response.fallbackAxiomUrl || `https://axiom.trade/meme/${token.tokenAddress}`;
+                        setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: 'error' }));
+                    }
+                } catch (error) {
+                    console.error('❌ Error fetching from backend for Axiom:', error);
+                    url = `https://axiom.trade/meme/${token.tokenAddress}`;
+                    setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: 'error' }));
+                }
             }
-        });
-    } catch (error) {
-        console.error('❌ Token Metadata API test failed:', error);
-        res.status(500).json({
-            success: false,
-            error: error.message,
-            tokenAddress: req.params.tokenAddress
-        });
-    }
-});
-
-console.log('🔥 Firebase Admin SDK initialized');
-console.log('Project ID:', admin.app().options.projectId);
-
-// Test Firebase connection at startup
-async function testFirebase() {
-    try {
-        const testDoc = await db.collection('test').doc('connection').set({
-            test: true,
-            timestamp: admin.firestore.FieldValue.serverTimestamp()
-        });
-        console.log('✅ Firebase connection test successful');
-    } catch (error) {
-        console.error('❌ Firebase connection test failed:', error);
-    }
-}
-
-// ========== TRADING FUNCTIONS ==========
-
-async function executeAPITrade(params) {
-    try {
-        const response = await fetch(`https://pumpportal.fun/api/trade?api-key=${PUMP_PORTAL_API_KEY}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                ...params,
-                pool: params.pool || 'auto',
-                skipPreflight: "true",
-                jitoOnly: "true"
-            })
-        });
-
-        const data = await response.json();
-
-        if (!response.ok || data.error) {
-            throw new Error(data.error || 'Unknown API error');
+        } else {
+            // Neo BullX or other destinations
+            url = `https://neo.bullx.io/terminal?chainId=1399811149&address=${token.tokenAddress}`;
         }
 
-        return {
-            signature: data.signature,
-            confirmationPromise: connection.confirmTransaction(data.signature, 'processed')
-        };
-    } catch (error) {
-        console.error(`API trade failed:`, error.message);
-        throw error;
-    }
-}
+        // Simple check for platform-specific URLs
+        if (token.pool === 'bonk' && settings.tokenPageDestination !== 'axiom') {
+            url = `https://letsbonk.fun/token/${token.tokenAddress}`;
+        } else if (token.pool === 'pump' && settings.tokenPageDestination !== 'axiom') {
+            url = `https://pump.fun/${token.tokenAddress}`;
+        }
 
-async function fetchTokenMetadata(tokenData) {
-    console.log('🔍 Starting metadata fetch for Bonk token...');
-    console.log('⏳ This will take 30-40 seconds for proper indexing...');
-
-    try {
-        const metadata = await tokenMetadataExtractor.getCompleteTokenMetadata(tokenData.mint);
-
-        console.log('✅ METADATA FETCH COMPLETE after delays:', {
-            name: metadata.name,
-            symbol: metadata.symbol,
-            hasTwitter: !!metadata.twitter,
-            source: metadata.hasData ? 'GeckoTerminal/Metaplex' : 'Fallback'
+        console.log('POPUP TOKEN DEBUG:', {
+            pool: token.pool,
+            tokenAddress: token.tokenAddress,
+            destination: settings.tokenPageDestination,
+            bondingCurveAddress: token.bondingCurveAddress,
+            finalURL: url
         });
 
-        // Extract Twitter data
-        let twitterHandle = null;
-        let twitterType = null;
-        let twitterId = null;
-
-        if (metadata.twitter) {
-            const twitterData = tokenMetadataExtractor.extractTwitterHandle(metadata);
-            twitterHandle = twitterData.handle;
-            twitterType = twitterData.type;
-            twitterId = twitterData.id;
+        // Open the URL
+        if (window.electronAPI && window.electronAPI.openExternalURL) {
+            window.electronAPI.openExternalURL(url);
+        } else {
+            window.open(url, '_blank');
         }
 
-        return {
-            name: metadata.name,
-            symbol: metadata.symbol,
-            description: metadata.description,
-            imageUrl: metadata.image,
-            website: null,
-            twitterHandle: twitterHandle,
-            twitterUrl: metadata.twitter,
-            twitterType: twitterType,
-            twitterCommunityId: twitterId,
-            hasEnhancedData: metadata.hasData,
-            isBonkToken: true // This function is only called for Bonk tokens
+        addNotification('success', `🌐 Opening token page: ${url}`);
+
+        // Clear status after 5 seconds
+        setTimeout(() => {
+            setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: null }));
+        }, 10000);
+    };
+
+    // Format numbers for display
+    const formatNumber = (num) => {
+        if (!num || num === 0) return '0';
+        if (num >= 1000000000) {
+            return (num / 1000000000).toFixed(2) + 'B';
+        } else if (num >= 1000000) {
+            return (num / 1000000).toFixed(2) + 'M';
+        } else if (num >= 1000) {
+            return (num / 1000).toFixed(2) + 'K';
+        } else if (num < 1) {
+            return num.toFixed(6);
+        }
+        return num.toFixed(2);
+    };
+
+    const formatSol = (amount) => {
+        if (!amount || amount === 0) return '0.0000';
+        return parseFloat(amount).toFixed(4);
+    };
+
+    // API calls
+    const apiCall = async (endpoint, options = {}) => {
+        try {
+            const response = await fetch(`${API_BASE}${endpoint}`, {
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...options.headers
+                },
+                ...options
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            return await response.json();
+        } catch (error) {
+            console.error('API call failed:', error);
+            addNotification('error', `API Error: ${error.message}`);
+            throw error;
+        }
+    };
+
+    const fetchStatus = async () => {
+        try {
+            const data = await apiCall('/status');
+            setBotStatus(data);
+            setSettings(data.settings);
+            setOriginalSettings(data.settings);
+        } catch (error) {
+            console.error('Failed to fetch status');
+        }
+    };
+
+    const fetchLists = async () => {
+        try {
+            const listTypes = ['primary_admins', 'secondary_admins'];
+            const listData = {};
+
+            for (const listType of listTypes) {
+                const data = await apiCall(`/lists/${listType}`);
+                listData[listType] = data.list || [];
+            }
+
+            setLists(listData);
+        } catch (error) {
+            console.error('Failed to fetch lists');
+        }
+    };
+
+    const fetchDetectedTokens = async () => {
+        try {
+            const data = await apiCall('/detected-tokens');
+            setDetectedTokens(data.tokens || []);
+            addNotification('info', '🔄 Detected tokens refreshed');
+        } catch (error) {
+            console.error('Failed to fetch detected tokens');
+            addNotification('error', '❌ Failed to refresh detected tokens');
+        }
+    };
+
+    const clearDetectedTokens = async () => {
+        try {
+            await apiCall('/detected-tokens', { method: 'DELETE' });
+            setDetectedTokens([]);
+            addNotification('success', '🗑️ All detected tokens cleared successfully');
+        } catch (error) {
+            addNotification('error', '❌ Failed to clear detected tokens');
+        }
+    };
+
+    const snipeDetectedToken = async (tokenAddress) => {
+        try {
+            await apiCall(`/detected-tokens/${tokenAddress}/snipe`, { method: 'POST' });
+            addNotification('success', `🎯 Manually sniped token: ${tokenAddress.substring(0, 8)}...`);
+        } catch (error) {
+            addNotification('error', `❌ Failed to snipe token: ${error.message}`);
+        }
+    };
+    // App.js - Part 4: Settings and Bot Control Functions
+
+    const hasBasicSettingsChanged = () => {
+        return settings.privateKey !== originalSettings.privateKey ||
+            settings.tokenPageDestination !== originalSettings.tokenPageDestination;
+    };
+
+    const hasFilterSettingsChanged = () => {
+        return settings.enableAdminFilter !== originalSettings.enableAdminFilter ||
+            settings.enableCommunityReuse !== originalSettings.enableCommunityReuse ||
+            settings.snipeAllTokens !== originalSettings.snipeAllTokens ||
+            settings.detectionOnlyMode !== originalSettings.detectionOnlyMode;
+    };
+
+    const clearButtonMessage = (type, delay = 3000) => {
+        setTimeout(() => {
+            setButtonMessages(prev => ({ ...prev, [type]: '' }));
+        }, delay);
+    };
+
+    const startBot = async () => {
+        try {
+            await apiCall('/start', { method: 'POST' });
+            addNotification('success', '✅ Bot started successfully');
+        } catch (error) {
+            addNotification('error', '❌ Failed to start bot');
+        }
+    };
+
+    const stopBot = async () => {
+        try {
+            await apiCall('/stop', { method: 'POST' });
+            addNotification('info', '⏹️ Bot stopped');
+        } catch (error) {
+            addNotification('error', '❌ Failed to stop bot');
+        }
+    };
+
+    const updateSettings = async (newSettings) => {
+        try {
+            await apiCall('/settings', {
+                method: 'POST',
+                body: JSON.stringify(newSettings)
+            });
+
+            const updatedSettings = { ...settings, ...newSettings };
+            setSettings(updatedSettings);
+
+            // Save to localStorage
+            saveToLocalStorage(STORAGE_KEYS.SETTINGS, updatedSettings);
+
+            addNotification('success', '✅ Settings updated and saved locally');
+            setButtonMessages(prev => ({ ...prev, basicSettings: '✅ Settings saved successfully!' }));
+            clearButtonMessage('basicSettings');
+        } catch (error) {
+            addNotification('error', '❌ Failed to update settings');
+            setButtonMessages(prev => ({ ...prev, basicSettings: '❌ Failed to save settings' }));
+            clearButtonMessage('basicSettings');
+        }
+    };
+
+    const updateFilterSettings = async (filterSettings) => {
+        try {
+            await apiCall('/filter-settings', {
+                method: 'POST',
+                body: JSON.stringify(filterSettings)
+            });
+
+            const updatedSettings = { ...settings, ...filterSettings };
+            setSettings(updatedSettings);
+
+            // Save filter settings separately
+            saveToLocalStorage(STORAGE_KEYS.FILTER_SETTINGS, filterSettings);
+            // Save complete settings
+            saveToLocalStorage(STORAGE_KEYS.SETTINGS, updatedSettings);
+
+            addNotification('success', '✅ Filter settings updated and saved locally');
+            setButtonMessages(prev => ({ ...prev, filterSettings: '✅ Filter settings saved successfully!' }));
+            clearButtonMessage('filterSettings');
+        } catch (error) {
+            addNotification('error', '❌ Failed to update filter settings');
+            setButtonMessages(prev => ({ ...prev, filterSettings: '❌ Failed to save filter settings' }));
+            clearButtonMessage('filterSettings');
+        }
+    };
+
+    const addListItem = async (listType, item) => {
+        try {
+            await apiCall(`/lists/${listType}`, {
+                method: 'POST',
+                body: JSON.stringify(item)
+            });
+            await fetchLists();
+            addNotification('success', '✅ Item added to list');
+            setShowAddForm({ type: null, show: false });
+            resetForm();
+        } catch (error) {
+            addNotification('error', '❌ Failed to add item');
+        }
+    };
+
+    const removeListItem = async (listType, id) => {
+        try {
+            await apiCall(`/lists/${listType}/${id}`, { method: 'DELETE' });
+            await fetchLists();
+            addNotification('success', '🗑️ Item removed from list');
+        } catch (error) {
+            addNotification('error', '❌ Failed to remove item');
+        }
+    };
+
+    const resetForm = () => {
+        setFormData({
+            address: '',
+            username: '',
+            amount: 0.01,
+            fees: 10,
+            mevProtection: true,
+            soundNotification: 'default.wav'
+        });
+    };
+
+    // Effects
+    useEffect(() => {
+        fetchStatus();
+        fetchLists();
+        fetchDetectedTokens();
+        connectWebSocket();
+
+        return () => {
+            if (websocket) {
+                websocket.close();
+            }
         };
+    }, [connectWebSocket]);
+    // App.js - Part 5: Render Functions - Status and Dashboard
 
-    } catch (error) {
-        console.error('❌ Metadata fetch failed after delays:', error.message);
+    // 4. Add global settings API calls
+    const updateGlobalSnipeSettings = async (newSettings) => {
+        try {
+            await apiCall('/global-snipe-settings', {
+                method: 'POST',
+                body: JSON.stringify(newSettings)
+            });
 
-        return {
-            name: tokenData.name || `Token ${tokenData.mint.slice(0, 8)}`,
-            symbol: tokenData.symbol || 'TOKEN',
-            description: null,
-            imageUrl: tokenData.uri,
-            website: null,
-            twitterHandle: null,
-            hasEnhancedData: false,
-            isBonkToken: true
-        };
-    }
-}
+            const updatedGlobalSettings = { ...settings.globalSnipeSettings, ...newSettings };
+            const updatedSettings = {
+                ...settings,
+                globalSnipeSettings: updatedGlobalSettings
+            };
 
-async function checkIfPumpFunToken(tokenAddress) {
-    try {
-        // Simple check - if it's 44 characters and base58, likely a Solana token
-        return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(tokenAddress);
-    } catch (error) {
-        return false;
-    }
-}
+            setSettings(updatedSettings);
 
-app.get('/api/pair-address/:tokenAddress', async (req, res) => {
-    try {
-        const { tokenAddress } = req.params;
+            // Save global snipe settings separately
+            saveToLocalStorage(STORAGE_KEYS.GLOBAL_SNIPE, updatedGlobalSettings);
+            // Save complete settings
+            saveToLocalStorage(STORAGE_KEYS.SETTINGS, updatedSettings);
 
-        if (!tokenAddress) {
-            return res.status(400).json({ error: 'Token address is required' });
+            addNotification('success', '✅ Global snipe settings updated and saved locally');
+        } catch (error) {
+            addNotification('error', '❌ Failed to update global snipe settings');
+        }
+    };
+
+    const snipeWithGlobalSettings = async (tokenAddress) => {
+        // ⏱️ START SNIPE TIMING - DECLARE OUTSIDE TRY BLOCK
+        const snipeStart = performance.now();
+
+        try {
+            await apiCall(`/snipe-with-global-settings/${tokenAddress}`, { method: 'POST' });
+
+            // ⏱️ LOG SNIPE API TIMING
+            const snipeApiTime = performance.now() - snipeStart;
+            console.log(`⏱️ SECONDARY SNIPE API TIME: ${snipeApiTime.toFixed(2)}ms`);
+
+            addNotification('success', `🎯 Token sniped using global settings: ${tokenAddress.substring(0, 8)}...`);
+
+            // Close popup
+            setSecondaryPopup({ show: false, tokenData: null });
+
+            // ✅ AUTOMATICALLY OPEN TOKEN PAGE AFTER SECONDARY SNIPE
+            console.log('🌐 Auto-opening token page after secondary snipe...');
+
+            // Use a small delay
+            setTimeout(async () => {
+                // ⏱️ START BROWSER TIMING FOR SECONDARY SNIPE
+                const secondaryBrowserStart = performance.now();
+
+                if (settings.tokenPageDestination === 'axiom') {
+                    try {
+                        const response = await apiCall(`/pair-address/${tokenAddress}`);
+
+                        if (response.success && response.pairData && response.pairData.pairAddress) {
+                            const axiomUrl = `https://axiom.trade/meme/${response.pairData.pairAddress}`;
+
+                            if (window.electronAPI && window.electronAPI.openExternalURL) {
+                                window.electronAPI.openExternalURL(axiomUrl);
+                            } else {
+                                window.open(axiomUrl, '_blank');
+                            }
+
+                            // ⏱️ LOG SECONDARY SNIPE BROWSER TIMING
+                            const browserOpenTime = performance.now() - secondaryBrowserStart;
+                            console.log(`⏱️ SECONDARY SNIPE BROWSER TIMING: ${browserOpenTime.toFixed(2)}ms`);
+                            console.log(`   Total Snipe Time: ${(performance.now() - snipeStart).toFixed(2)}ms`);
+
+                            addNotification('success', `🌐 Axiom opened automatically with pair: ${response.pairData.pairAddress.substring(0, 8)}...`);
+                        } else {
+                            const fallbackUrl = `https://axiom.trade/meme/${tokenAddress}`;
+                            if (window.electronAPI && window.electronAPI.openExternalURL) {
+                                window.electronAPI.openExternalURL(fallbackUrl);
+                            } else {
+                                window.open(fallbackUrl, '_blank');
+                            }
+
+                            // ⏱️ LOG FALLBACK BROWSER TIMING
+                            const browserOpenTime = performance.now() - secondaryBrowserStart;
+                            console.log(`⏱️ SECONDARY SNIPE FALLBACK BROWSER TIMING: ${browserOpenTime.toFixed(2)}ms`);
+
+                            addNotification('warning', '🔍 No Bonding Curve found yet, opening Axiom with token address');
+                        }
+                    } catch (error) {
+                        console.error('Error opening Axiom with pair:', error);
+                        addNotification('error', '❌ Error opening token page');
+                    }
+                } else {
+                    // Neo BullX
+                    const neoBullxUrl = `https://neo.bullx.io/terminal?chainId=1399811149&address=${tokenAddress}`;
+                    if (window.electronAPI && window.electronAPI.openExternalURL) {
+                        window.electronAPI.openExternalURL(neoBullxUrl);
+                    } else {
+                        window.open(neoBullxUrl, '_blank');
+                    }
+
+                    // ⏱️ LOG NEO BULLX BROWSER TIMING
+                    const browserOpenTime = performance.now() - secondaryBrowserStart;
+                    console.log(`⏱️ SECONDARY SNIPE NEO BULLX BROWSER TIMING: ${browserOpenTime.toFixed(2)}ms`);
+
+                    addNotification('success', `🌐 Neo BullX opened automatically`);
+                }
+            }, 1000); // 1 second delay for secondary snipes
+
+        } catch (error) {
+            // ⏱️ LOG ERROR TIMING - NOW snipeStart IS ACCESSIBLE
+            const errorTime = performance.now() - snipeStart;
+            console.log(`⏱️ SECONDARY SNIPE ERROR TIME: ${errorTime.toFixed(2)}ms`);
+
+            addNotification('error', `❌ Failed to snipe token: ${error.message}`);
+        }
+    };
+
+    const uploadSoundFile = async (file) => {
+        if (!file) return;
+
+        console.log('🔧 uploadSoundFile called with:', file.name); // ADD THIS
+
+        const formData = new FormData();
+        formData.append('soundFile', file);
+
+        try {
+            setUploadingSound(true);
+            console.log('🔧 Making API call to upload sound...'); // ADD THIS
+
+            const response = await fetch(`${API_BASE}/upload-sound`, {
+                method: 'POST',
+                body: formData
+            });
+
+            console.log('🔧 API response status:', response.status); // ADD THIS
+
+            if (!response.ok) {
+                throw new Error('Upload failed');
+            }
+
+            const result = await response.json();
+            console.log('🔧 API response data:', result); // ADD THIS
+
+            // Refresh sound files list
+            console.log('🔧 Calling fetchSoundFiles...'); // ADD THIS
+            await fetchSoundFiles();
+
+            addNotification('success', `🔊 Sound uploaded: ${result.filename}`);
+            return result;
+        } catch (error) {
+            console.log('🔧 Upload error occurred:', error); // ADD THIS
+            addNotification('error', `❌ Upload failed: ${error.message}`);
+            throw error;
+        } finally {
+            setUploadingSound(false);
+        }
+    };
+
+    const fetchSoundFiles = async () => {
+        try {
+            const data = await apiCall('/sound-files');
+            setSoundFiles(data.files || []);
+        } catch (error) {
+            console.error('Failed to fetch sound files');
+        }
+    };
+
+    const deleteSoundFile = async (filename) => {
+        try {
+            await apiCall(`/sound-files/${filename}`, { method: 'DELETE' });
+            await fetchSoundFiles();
+            addNotification('success', `🗑️ Sound deleted: ${filename}`);
+        } catch (error) {
+            addNotification('error', `❌ Failed to delete sound: ${error.message}`);
+        }
+    };
+
+    const renderCommunityManagement = () => (
+        <div className="space-y-4 md:space-y-6">
+            {/* Firebase Status & Controls */}
+            <div className="bg-gray-800 rounded-lg p-4 md:p-6">
+                <div className="flex flex-col space-y-4 md:flex-row md:items-center md:justify-between md:space-y-0 mb-4">
+                    <div>
+                        <h2 className="text-lg md:text-xl font-semibold text-white">Firebase Community Tracking</h2>
+                        <p className="text-sm text-gray-400">Manage used Twitter communities to prevent duplicate sniping</p>
+                    </div>
+                    <div className="flex flex-col space-y-2 md:flex-row md:space-y-0 md:space-x-4">
+                        <button
+                            onClick={fetchUsedCommunities}
+                            className="w-full md:w-auto px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors text-sm"
+                        >
+                            🔄 Refresh
+                        </button>
+                        <button
+                            onClick={clearUsedCommunities}
+                            className="w-full md:w-auto px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors text-sm"
+                        >
+                            🗑️ Clear All
+                        </button>
+                    </div>
+                </div>
+
+                <div className="text-sm text-gray-400">
+                    Used communities: <span className="text-white font-semibold">{usedCommunities.length}</span>
+                </div>
+            </div>
+
+            {/* Used Communities List */}
+            <div className="bg-gray-800 rounded-lg p-4 md:p-6">
+                <h3 className="text-lg font-semibold text-white mb-4">Used Communities</h3>
+
+                {usedCommunities.length === 0 ? (
+                    <div className="text-center py-8">
+                        <div className="text-gray-400 mb-4">
+                            <Users size={48} className="mx-auto mb-2" />
+                            <p>No used communities tracked yet</p>
+                            <p className="text-sm">Communities will appear here after tokens are detected</p>
+                        </div>
+                    </div>
+                ) : (
+                    <div className="space-y-3">
+                        {usedCommunities.map(community => (
+                            <div key={community.id} className="bg-gray-700 rounded-lg p-4">
+                                <div className="flex flex-col md:flex-row md:items-center md:justify-between space-y-2 md:space-y-0">
+                                    <div className="flex-1">
+                                        <div className="flex items-center space-x-2 mb-2">
+                                            <h4 className="text-white font-medium">Community {community.communityId}</h4>
+                                            <button
+                                                onClick={() => copyToClipboard(community.communityId, 'Community ID')}
+                                                className="text-blue-400 hover:text-blue-300 text-sm"
+                                            >
+                                                📋
+                                            </button>
+                                        </div>
+
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-sm">
+                                            <div>
+                                                <span className="text-gray-400">Token: </span>
+                                                <span className="text-green-400">{community.tokenName || 'Unknown'}</span>
+                                            </div>
+                                            <div>
+                                                <span className="text-gray-400">Platform: </span>
+                                                <span className="text-blue-400">{community.platform || 'Unknown'}</span>
+                                            </div>
+                                            <div>
+                                                <span className="text-gray-400">Used: </span>
+                                                <span className="text-yellow-400">
+                                                    {(() => {
+                                                        if (community.firstUsedAt) {
+                                                            try {
+                                                                // Handle Firebase Timestamp
+                                                                if (community.firstUsedAt.toDate) {
+                                                                    return community.firstUsedAt.toDate().toLocaleString();
+                                                                }
+                                                                // Handle regular Date object
+                                                                if (community.firstUsedAt instanceof Date) {
+                                                                    return community.firstUsedAt.toLocaleString();
+                                                                }
+                                                                // Handle timestamp number
+                                                                if (typeof community.firstUsedAt === 'number') {
+                                                                    return new Date(community.firstUsedAt).toLocaleString();
+                                                                }
+                                                                // Handle ISO string
+                                                                if (typeof community.firstUsedAt === 'string') {
+                                                                    return new Date(community.firstUsedAt).toLocaleString();
+                                                                }
+                                                            } catch (error) {
+                                                                console.error('Error formatting timestamp:', error);
+                                                            }
+                                                        }
+                                                        return 'Just now';
+                                                    })()}
+                                                </span>
+                                            </div>
+                                        </div>
+
+                                        {community.tokenAddress && (
+                                            <div className="mt-2">
+                                                <span className="text-gray-400 text-xs">Token Address: </span>
+                                                <code className="text-xs text-white bg-gray-600 px-2 py-1 rounded">
+                                                    {community.tokenAddress.substring(0, 12)}...{community.tokenAddress.substring(-8)}
+                                                </code>
+                                                <button
+                                                    onClick={() => copyToClipboard(community.tokenAddress, 'Token address')}
+                                                    className="ml-2 text-blue-400 hover:text-blue-300 text-xs"
+                                                >
+                                                    📋
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <div className="flex space-x-2">
+                                        <button
+                                            onClick={() => {
+                                                const communityUrl = `https://x.com/i/communities/${community.communityId}`;
+                                                if (window.electronAPI && window.electronAPI.openExternalURL) {
+                                                    window.electronAPI.openExternalURL(communityUrl);
+                                                } else {
+                                                    window.open(communityUrl, '_blank');
+                                                }
+                                                addNotification('success', `🌐 Opening community ${community.communityId}`);
+                                            }}
+                                            className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm"
+                                        >
+                                            🔗 View
+                                        </button>
+                                        <button
+                                            onClick={() => removeUsedCommunity(community.communityId)}
+                                            className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-sm"
+                                        >
+                                            🗑️ Remove
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+
+            {/* Community Detection Stats */}
+            <div className="bg-gray-800 rounded-lg p-4 md:p-6">
+                <h3 className="text-lg font-semibold text-white mb-4">Detection Statistics</h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="bg-gray-700 rounded-lg p-4 text-center">
+                        <div className="text-2xl font-bold text-green-400">{usedCommunities.length}</div>
+                        <div className="text-sm text-gray-400">Used Communities</div>
+                    </div>
+                    <div className="bg-gray-700 rounded-lg p-4 text-center">
+                        <div className="text-2xl font-bold text-blue-400">
+                            {detectedTokens.filter(t => t.twitterType === 'community').length}
+                        </div>
+                        <div className="text-sm text-gray-400">Community Tokens Detected</div>
+                    </div>
+                    <div className="bg-gray-700 rounded-lg p-4 text-center">
+                        <div className="text-2xl font-bold text-purple-400">
+                            {detectedTokens.filter(t => t.twitterType === 'individual').length}
+                        </div>
+                        <div className="text-sm text-gray-400">Individual Account Tokens</div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Twitter Detection Help */}
+            <div className="bg-gray-800 rounded-lg p-4 md:p-6">
+                <h3 className="text-lg font-semibold text-white mb-4">🔍 Twitter Detection Guide</h3>
+                <div className="space-y-4">
+                    <div className="bg-gray-700 rounded-lg p-4">
+                        <h4 className="text-white font-medium mb-2">✅ Individual Twitter Accounts</h4>
+                        <div className="text-sm text-gray-300 space-y-1">
+                            <p>• <code className="bg-gray-600 px-1 rounded">https://x.com/username</code></p>
+                            <p>• <code className="bg-gray-600 px-1 rounded">https://twitter.com/username</code></p>
+                            <p>• <code className="bg-gray-600 px-1 rounded">@username</code></p>
+                            <p>• <code className="bg-gray-600 px-1 rounded">username</code></p>
+                        </div>
+                    </div>
+
+                    <div className="bg-gray-700 rounded-lg p-4">
+                        <h4 className="text-white font-medium mb-2">🏘️ Twitter Communities</h4>
+                        <div className="text-sm text-gray-300 space-y-1">
+                            <p>• <code className="bg-gray-600 px-1 rounded">https://x.com/i/communities/1864891560858468809</code></p>
+                            <p>• <code className="bg-gray-600 px-1 rounded">https://twitter.com/i/communities/1234567890</code></p>
+                            <p className="text-yellow-400 mt-2">⚠️ Community IDs are tracked in Firebase to prevent duplicates</p>
+                        </div>
+                    </div>
+
+                    <div className="bg-blue-900/20 border border-blue-500/30 rounded-lg p-4">
+                        <h4 className="text-blue-400 font-medium mb-2">💡 Tips for List Management</h4>
+                        <div className="text-sm text-blue-300 space-y-1">
+                            <p>• For individual accounts, add the username to your admin lists</p>
+                            <p>• For communities, add the community ID (numbers) to your admin lists</p>
+                            <p>• Primary lists = Auto-snipe | Secondary lists = Notification popup</p>
+                            <p>• Enable "Community Reuse Prevention" to avoid duplicate community sniping</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+
+    const renderTweetManagement = () => (
+        <div className="space-y-4 md:space-y-6">
+            {/* Firebase Status & Controls */}
+            <div className="bg-gray-800 rounded-lg p-4 md:p-6">
+                <div className="flex flex-col space-y-4 md:flex-row md:items-center md:justify-between md:space-y-0 mb-4">
+                    <div>
+                        <h2 className="text-lg md:text-xl font-semibold text-white">Firebase Tweet Tracking</h2>
+                        <p className="text-sm text-gray-400">Manage used Twitter tweets/status links to prevent duplicate sniping</p>
+                    </div>
+                    <div className="flex flex-col space-y-2 md:flex-row md:space-y-0 md:space-x-4">
+                        <button
+                            onClick={fetchUsedTweets}
+                            className="w-full md:w-auto px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors text-sm"
+                        >
+                            🔄 Refresh
+                        </button>
+                        <button
+                            onClick={clearUsedTweets}
+                            className="w-full md:w-auto px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors text-sm"
+                        >
+                            🗑️ Clear All
+                        </button>
+                    </div>
+                </div>
+
+                <div className="text-sm text-gray-400">
+                    Used tweets: <span className="text-white font-semibold">{usedTweets.length}</span>
+                </div>
+            </div>
+
+            {/* Used Tweets List */}
+            <div className="bg-gray-800 rounded-lg p-4 md:p-6">
+                <h3 className="text-lg font-semibold text-white mb-4">Used Tweets</h3>
+
+                {usedTweets.length === 0 ? (
+                    <div className="text-center py-8">
+                        <div className="text-gray-400 mb-4">
+                            <div className="text-5xl mb-2">📱</div>
+                            <p>No used tweets tracked yet</p>
+                            <p className="text-sm">Tweets will appear here after tokens are detected</p>
+                        </div>
+                    </div>
+                ) : (
+                    <div className="space-y-3">
+                        {usedTweets.map(tweet => (
+                            <div key={tweet.id} className="bg-gray-700 rounded-lg p-4">
+                                <div className="flex flex-col md:flex-row md:items-center md:justify-between space-y-2 md:space-y-0">
+                                    <div className="flex-1">
+                                        <div className="flex items-center space-x-2 mb-2">
+                                            <h4 className="text-white font-medium">Tweet ID: {tweet.tweetId}</h4>
+                                            <button
+                                                onClick={() => copyToClipboard(tweet.tweetId, 'Tweet ID')}
+                                                className="text-blue-400 hover:text-blue-300 text-sm"
+                                            >
+                                                📋
+                                            </button>
+                                        </div>
+
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-sm">
+                                            <div>
+                                                <span className="text-gray-400">Author: </span>
+                                                <span className="text-blue-400">@{tweet.username || 'Unknown'}</span>
+                                            </div>
+                                            <div>
+                                                <span className="text-gray-400">Token: </span>
+                                                <span className="text-green-400">{tweet.tokenName || 'Unknown'}</span>
+                                            </div>
+                                            <div>
+                                                <span className="text-gray-400">Platform: </span>
+                                                <span className="text-purple-400">{tweet.platform || 'Unknown'}</span>
+                                            </div>
+                                        </div>
+
+                                        <div className="mt-2 text-sm">
+                                            <span className="text-gray-400">Used: </span>
+                                            <span className="text-yellow-400">
+                                                {(() => {
+                                                    if (tweet.firstUsedAt) {
+                                                        try {
+                                                            if (tweet.firstUsedAt.toDate) {
+                                                                return tweet.firstUsedAt.toDate().toLocaleString();
+                                                            }
+                                                            if (tweet.firstUsedAt instanceof Date) {
+                                                                return tweet.firstUsedAt.toLocaleString();
+                                                            }
+                                                            if (typeof tweet.firstUsedAt === 'number') {
+                                                                return new Date(tweet.firstUsedAt).toLocaleString();
+                                                            }
+                                                            if (typeof tweet.firstUsedAt === 'string') {
+                                                                return new Date(tweet.firstUsedAt).toLocaleString();
+                                                            }
+                                                        } catch (error) {
+                                                            console.error('Error formatting timestamp:', error);
+                                                        }
+                                                    }
+                                                    return 'Just now';
+                                                })()}
+                                            </span>
+                                        </div>
+
+                                        {tweet.tokenAddress && (
+                                            <div className="mt-2">
+                                                <span className="text-gray-400 text-xs">Token Address: </span>
+                                                <code className="text-xs text-white bg-gray-600 px-2 py-1 rounded">
+                                                    {tweet.tokenAddress.substring(0, 12)}...{tweet.tokenAddress.substring(-8)}
+                                                </code>
+                                                <button
+                                                    onClick={() => copyToClipboard(tweet.tokenAddress, 'Token address')}
+                                                    className="ml-2 text-blue-400 hover:text-blue-300 text-xs"
+                                                >
+                                                    📋
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <div className="flex space-x-2">
+                                        <button
+                                            onClick={() => {
+                                                const tweetUrl = `https://x.com/${tweet.username}/status/${tweet.tweetId}`;
+                                                if (window.electronAPI && window.electronAPI.openExternalURL) {
+                                                    window.electronAPI.openExternalURL(tweetUrl);
+                                                } else {
+                                                    window.open(tweetUrl, '_blank');
+                                                }
+                                                addNotification('success', `🌐 Opening tweet ${tweet.tweetId}`);
+                                            }}
+                                            className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm"
+                                        >
+                                            🔗 View
+                                        </button>
+                                        <button
+                                            onClick={() => removeUsedTweet(tweet.tweetId)}
+                                            className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-sm"
+                                        >
+                                            🗑️ Remove
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+
+            {/* Tweet Detection Stats */}
+            <div className="bg-gray-800 rounded-lg p-4 md:p-6">
+                <h3 className="text-lg font-semibold text-white mb-4">Tweet Detection Statistics</h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="bg-gray-700 rounded-lg p-4 text-center">
+                        <div className="text-2xl font-bold text-blue-400">{usedTweets.length}</div>
+                        <div className="text-sm text-gray-400">Used Tweets</div>
+                    </div>
+                    <div className="bg-gray-700 rounded-lg p-4 text-center">
+                        <div className="text-2xl font-bold text-green-400">
+                            {detectedTokens.filter(t => t.twitterType === 'tweet').length}
+                        </div>
+                        <div className="text-sm text-gray-400">Tweet-based Tokens</div>
+                    </div>
+                    <div className="bg-gray-700 rounded-lg p-4 text-center">
+                        <div className="text-2xl font-bold text-purple-400">
+                            {usedTweets.filter(t => t.platform === 'pumpfun').length}
+                        </div>
+                        <div className="text-sm text-gray-400">Pump.fun Tweet Tokens</div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Twitter Detection Guide - Updated */}
+            <div className="bg-gray-800 rounded-lg p-4 md:p-6">
+                <h3 className="text-lg font-semibold text-white mb-4">🔍 Twitter Detection Guide</h3>
+                <div className="space-y-4">
+                    <div className="bg-gray-700 rounded-lg p-4">
+                        <h4 className="text-white font-medium mb-2">📱 Twitter Tweets/Status URLs</h4>
+                        <div className="text-sm text-gray-300 space-y-1">
+                            <p>• <code className="bg-gray-600 px-1 rounded">https://x.com/username/status/1234567890</code></p>
+                            <p>• <code className="bg-gray-600 px-1 rounded">https://twitter.com/username/status/1234567890</code></p>
+                            <p className="text-yellow-400 mt-2">⚠️ Tweet IDs are tracked in Firebase to prevent duplicates</p>
+                            <p className="text-green-400">✅ Tweet authors are checked against admin lists for matching</p>
+                        </div>
+                    </div>
+
+                    <div className="bg-gray-700 rounded-lg p-4">
+                        <h4 className="text-white font-medium mb-2">✅ Individual Twitter Accounts</h4>
+                        <div className="text-sm text-gray-300 space-y-1">
+                            <p>• <code className="bg-gray-600 px-1 rounded">https://x.com/username</code></p>
+                            <p>• <code className="bg-gray-600 px-1 rounded">https://twitter.com/username</code></p>
+                            <p>• <code className="bg-gray-600 px-1 rounded">@username</code></p>
+                            <p>• <code className="bg-gray-600 px-1 rounded">username</code></p>
+                        </div>
+                    </div>
+
+                    <div className="bg-gray-700 rounded-lg p-4">
+                        <h4 className="text-white font-medium mb-2">🏘️ Twitter Communities</h4>
+                        <div className="text-sm text-gray-300 space-y-1">
+                            <p>• <code className="bg-gray-600 px-1 rounded">https://x.com/i/communities/1864891560858468809</code></p>
+                            <p>• <code className="bg-gray-600 px-1 rounded">https://twitter.com/i/communities/1234567890</code></p>
+                            <p className="text-yellow-400 mt-2">⚠️ Community IDs are tracked in Firebase to prevent duplicates</p>
+                        </div>
+                    </div>
+
+                    <div className="bg-blue-900/20 border border-blue-500/30 rounded-lg p-4">
+                        <h4 className="text-blue-400 font-medium mb-2">💡 How Tweet Detection Works</h4>
+                        <div className="text-sm text-blue-300 space-y-1">
+                            <p>1️⃣ When a token has a tweet URL, the tweet ID is extracted</p>
+                            <p>2️⃣ System checks if tweet was already used (prevents duplicates)</p>
+                            <p>3️⃣ The tweet author's username is checked against admin lists</p>
+                            <p>4️⃣ If author matches primary list = Auto-snipe | Secondary = Notify</p>
+                            <p>5️⃣ Tweet ID is saved to Firebase for future duplicate prevention</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+
+    const renderDemoTab = () => (
+        <div className="space-y-4 md:space-y-6">
+            {/* Demo Control Panel */}
+            <div className="bg-gray-800 rounded-lg p-4 md:p-6">
+                <div className="flex items-center space-x-2 mb-4">
+                    <h2 className="text-lg md:text-xl font-semibold text-white">🧪 Demo Token Injection</h2>
+                    <div className="px-2 py-1 bg-orange-600 text-white text-xs rounded">
+                        TESTING ONLY
+                    </div>
+                </div>
+                <p className="text-sm text-gray-400 mb-6">
+                    Inject fake tokens to test your filtering and sniping logic without waiting for real tokens.
+                </p>
+
+                {/*{!botStatus.isRunning && (
+                    <div className="bg-red-900/20 border border-red-500/30 rounded-lg p-4 mb-6">
+                        <p className="text-red-400">⚠️ Bot will be running to inject demo tokens</p>
+                    </div>
+                )}*/}
+
+                {/* Template Selection */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-2">
+                            Demo Template
+                        </label>
+                        <select
+                            value={selectedTemplate}
+                            onChange={(e) => setSelectedTemplate(parseInt(e.target.value))}
+                            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
+                        //disabled={!botStatus.isRunning}
+                        >
+                            {demoTemplates.map((template, index) => (
+                                <option key={index} value={index}>
+                                    {template.name} ({template.symbol}) - {template.platform}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-2">
+                            Custom Wallet
+                        </label>
+                        <input
+                            type="text"
+                            value={customWallet}
+                            onChange={(e) => setCustomWallet(e.target.value)}
+                            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
+                            placeholder="Override creator wallet"
+                        //disabled={!botStatus.isRunning}
+                        />
+                    </div>
+
+
+                    <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-2">
+                            Custom Twitter (Optional)
+                        </label>
+                        <input
+                            type="text"
+                            value={customTwitter}
+                            onChange={(e) => setCustomTwitter(e.target.value)} // UNCOMMENT THIS LINE
+                            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
+                            placeholder="Override Twitter handle"
+                        // disabled={!botStatus.isRunning} // COMMENT OR REMOVE THIS LINE
+                        />
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-2">
+                            Custom Twitter Community (Optional)
+                        </label>
+                        <input
+                            type="text"
+                            value={customCommunity}
+                            onChange={(e) => setCustomCommunity(e.target.value)}
+                            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
+                            placeholder="Community ID (e.g., 1234567890)"
+                        // disabled={!botStatus.isRunning}
+                        />
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-2">
+                            Custom Twitter Status/Tweet (Optional)
+                        </label>
+                        <input
+                            type="text"
+                            value={customTweet}
+                            onChange={(e) => setCustomTweet(e.target.value)}
+                            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
+                            placeholder="Tweet URL (e.g., x.com/user/status/123...)"
+                        // disabled={!botStatus.isRunning}
+                        />
+                    </div>
+
+                </div>
+
+                {/* Quick Action Buttons */}
+                <div className="mt-6 grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <button
+                        onClick={() => injectDemoToken()}  // <-- Add empty parentheses
+                        // disabled={!botStatus.isRunning}
+                        className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white rounded-lg transition-colors text-sm"
+                    >
+                        🧪 Inject Single
+                    </button>
+
+                    <button
+                        onClick={injectDemoBatch}
+                        disabled={!botStatus.isRunning}
+                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white rounded-lg transition-colors text-sm"
+                    >
+                        🚀 Inject Batch (5)
+                    </button>
+
+                    <button
+                        onClick={() => injectDemoToken({ platform: 'pumpfun' })}
+                        disabled={!botStatus.isRunning}
+                        className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white rounded-lg transition-colors text-sm"
+                    >
+                        🎯 Force Pump.fun
+                    </button>
+
+                    <button
+                        onClick={() => injectDemoToken({ platform: 'letsbonk' })}
+                        disabled={!botStatus.isRunning}
+                        className="px-4 py-2 bg-orange-600 hover:bg-orange-700 disabled:bg-gray-600 text-white rounded-lg transition-colors text-sm"
+                    >
+                        🎯 Force LetsBonk
+                    </button>
+                </div>
+            </div>
+
+            {/* Test With Your Lists */}
+            <div className="bg-gray-800 rounded-lg p-4 md:p-6">
+                <h3 className="text-lg font-semibold text-white mb-4">Test With Your Lists</h3>
+                <p className="text-sm text-gray-400 mb-4">
+                    Inject tokens that will match entries in your lists to test primary/secondary detection
+                </p>
+
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <button
+                        onClick={() => injectFromList('primary_admins')}
+                        disabled={!botStatus.isRunning || lists.primary_admins.length === 0}
+                        className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white rounded-lg transition-colors text-sm"
+                    >
+                        🎯 Primary Wallet
+                        <div className="text-xs opacity-75">({lists.primary_admins.length} entries)</div>
+                    </button>
+
+                    <button
+                        onClick={() => injectFromList('primary_admins')}
+                        disabled={!botStatus.isRunning || lists.primary_admins.length === 0}
+                        className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white rounded-lg transition-colors text-sm"
+                    >
+                        🎯 Primary Admin
+                        <div className="text-xs opacity-75">({lists.primary_admins.length} entries)</div>
+                    </button>
+
+                    <button
+                        onClick={() => injectFromList('secondary_admins')}
+                        disabled={!botStatus.isRunning || lists.secondary_admins.length === 0}
+                        className="px-4 py-2 bg-yellow-600 hover:bg-yellow-700 disabled:bg-gray-600 text-white rounded-lg transition-colors text-sm"
+                    >
+                        🔔 Secondary Wallet
+                        <div className="text-xs opacity-75">({lists.secondary_admins.length} entries)</div>
+                    </button>
+
+                    <button
+                        onClick={() => injectFromList('secondary_admins')}
+                        disabled={!botStatus.isRunning || lists.secondary_admins.length === 0}
+                        className="px-4 py-2 bg-orange-600 hover:bg-orange-700 disabled:bg-gray-600 text-white rounded-lg transition-colors text-sm"
+                    >
+                        🔔 Secondary Admin
+                        <div className="text-xs opacity-75">({lists.secondary_admins.length} entries)</div>
+                    </button>
+                </div>
+            </div>
+
+            {/* Demo Templates Info */}
+            <div className="bg-gray-800 rounded-lg p-4 md:p-6">
+                <h3 className="text-lg font-semibold text-white mb-4">Available Demo Templates</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {demoTemplates.map((template, index) => (
+                        <div
+                            key={index}
+                            className={`p-3 rounded-lg border-2 transition-colors cursor-pointer ${selectedTemplate === index
+                                ? 'border-blue-500 bg-blue-900/20'
+                                : 'border-gray-600 bg-gray-700 hover:border-gray-500'
+                                }`}
+                            onClick={() => setSelectedTemplate(index)}
+                        >
+                            <div className="flex items-center space-x-2 mb-2">
+                                <h4 className="font-semibold text-white">{template.name}</h4>
+                                <span className="text-xs px-2 py-1 bg-gray-600 text-white rounded">
+                                    {template.symbol}
+                                </span>
+                            </div>
+                            <div className="text-xs text-gray-400 space-y-1">
+                                <p>Platform: {template.platform}</p>
+                                <p>Twitter: @{template.twitterHandle}</p>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+
+            {/* Speed Test Section */}
+            <div className="bg-gray-800 rounded-lg p-4 md:p-6">
+                <h3 className="text-lg font-semibold text-white mb-4">⚡ Speed Testing</h3>
+                <p className="text-sm text-gray-400 mb-4">
+                    Test the speed of your detection and sniping logic
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <button
+                        onClick={() => injectDemoBatch()}
+                        disabled={!botStatus.isRunning}
+                        className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-gray-600 text-white rounded-lg transition-colors text-sm"
+                    >
+                        🔥 Rapid Fire (5 tokens)
+                    </button>
+                    <button
+                        onClick={async () => {
+                            for (let i = 0; i < 10; i++) {
+                                await injectDemoToken();
+                                await new Promise(resolve => setTimeout(resolve, 100));
+                            }
+                        }}
+                        disabled={!botStatus.isRunning}
+                        className="px-4 py-2 bg-red-700 hover:bg-red-800 disabled:bg-gray-600 text-white rounded-lg transition-colors text-sm"
+                    >
+                        ⚡ Lightning (10 tokens)
+                    </button>
+                    <button
+                        onClick={() => {
+                            // Inject one token that should match primary list immediately
+                            if (lists.primary_admins.length > 0) {
+                                injectFromList('primary_admins');
+                                addNotification('info', '🏁 Speed test: Primary wallet token injected!');
+                            } else {
+                                addNotification('warning', '⚠️ Add wallets to primary list first');
+                            }
+                        }}
+                        disabled={!botStatus.isRunning}
+                        className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white rounded-lg transition-colors text-sm"
+                    >
+                        🏁 Speed Test Snipe
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+
+    const renderGlobalSnipeSettings = () => (
+        <div className="bg-gray-800 rounded-lg p-4 md:p-6">
+            <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg md:text-xl font-semibold text-white">Global Snipe Settings</h2>
+                <div className="flex items-center space-x-2">
+                    <div className="w-2 h-2 rounded-full bg-green-500" title="Auto-saved locally"></div>
+                    <span className="text-xs text-gray-400">Auto-saved</span>
+                </div>
+            </div>
+            <p className="text-sm text-gray-400 mb-4">
+                These settings are used when manually sniping tokens from secondary lists
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">Amount (SOL)</label>
+                    <input
+                        type="number"
+                        step="0.001"
+                        value={settings.globalSnipeSettings.amount}
+                        onChange={(e) => {
+                            const newAmount = parseFloat(e.target.value);
+                            setSettings(prev => ({
+                                ...prev,
+                                globalSnipeSettings: {
+                                    ...prev.globalSnipeSettings,
+                                    amount: newAmount
+                                }
+                            }));
+                            setHasGlobalSettingsChanged(true); // Add this line
+
+                            // Auto-save to localStorage
+                            const updatedGlobalSettings = { ...settings.globalSnipeSettings, amount: newAmount };
+                            saveToLocalStorage(STORAGE_KEYS.GLOBAL_SNIPE, updatedGlobalSettings);
+                        }}
+                        className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
+                    />
+                </div>
+
+                <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">Fees (%)</label>
+                    <input
+                        type="number"
+                        value={settings.globalSnipeSettings.fees}
+                        onChange={(e) => {
+                            const newFees = parseInt(e.target.value);
+                            setSettings(prev => ({
+                                ...prev,
+                                globalSnipeSettings: {
+                                    ...prev.globalSnipeSettings,
+                                    fees: newFees
+                                }
+                            }));
+
+                            setHasGlobalSettingsChanged(true); // Add this line
+
+                            // Auto-save to localStorage
+                            const updatedGlobalSettings = { ...settings.globalSnipeSettings, fees: newFees };
+                            saveToLocalStorage(STORAGE_KEYS.GLOBAL_SNIPE, updatedGlobalSettings);
+                        }}
+                        className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
+                    />
+                </div>
+
+                <div className="flex items-center space-x-2">
+                    <input
+                        type="checkbox"
+                        checked={settings.globalSnipeSettings.mevProtection}
+                        onChange={(e) => {
+                            const newMevProtection = e.target.checked;
+                            setSettings(prev => ({
+                                ...prev,
+                                globalSnipeSettings: {
+                                    ...prev.globalSnipeSettings,
+                                    mevProtection: newMevProtection
+                                }
+                            }));
+
+                            setHasGlobalSettingsChanged(true); // Add this line
+
+                            // Auto-save to localStorage
+                            const updatedGlobalSettings = { ...settings.globalSnipeSettings, mevProtection: newMevProtection };
+                            saveToLocalStorage(STORAGE_KEYS.GLOBAL_SNIPE, updatedGlobalSettings);
+                        }}
+                        className="w-4 h-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500"
+                    />
+                    <label className="text-sm text-gray-300">🛡️ MEV Protection</label>
+                </div>
+
+                <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">Sound Notification</label>
+                    <div className="flex space-x-2">
+                        <select
+                            value={settings.globalSnipeSettings.soundNotification}
+                            onChange={(e) => {
+                                const newSound = e.target.value;
+                                setSettings(prev => ({
+                                    ...prev,
+                                    globalSnipeSettings: {
+                                        ...prev.globalSnipeSettings,
+                                        soundNotification: newSound
+                                    }
+                                }));
+
+                                setHasGlobalSettingsChanged(true); // Add this line
+
+                                // Auto-save to localStorage
+                                const updatedGlobalSettings = { ...settings.globalSnipeSettings, soundNotification: newSound };
+                                saveToLocalStorage(STORAGE_KEYS.GLOBAL_SNIPE, updatedGlobalSettings);
+
+                            }}
+                            className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
+                        >
+                            {SOUND_OPTIONS.map(option => (
+                                <option key={option.value} value={option.value}>
+                                    {option.label}
+                                </option>
+                            ))}
+                        </select>
+                        <button
+                            onClick={() => previewSound(settings.globalSnipeSettings.soundNotification)}
+                            className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                            title="Preview sound"
+                        >
+                            🔊
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            {/*<div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+                <button
+                    onClick={() => updateGlobalSnipeSettings(settings.globalSnipeSettings)}
+                    className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors"
+                >
+                    💾 Save to Server
+                </button>
+
+                <button
+                    onClick={clearLocalStorage}
+                    className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
+                >
+                    🗑️ Clear Local Storage
+                </button>
+            </div>*/}
+
+            <div className="mt-6 space-y-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <button
+                        onClick={async () => {
+                            try {
+                                await updateGlobalSnipeSettings(settings.globalSnipeSettings);
+                                setGlobalSettingsMessage('✅ Global snipe settings saved to server!');
+                                setHasGlobalSettingsChanged(false);
+                                clearGlobalSettingsMessage();
+                            } catch (error) {
+                                setGlobalSettingsMessage('❌ Failed to save settings to server');
+                                clearGlobalSettingsMessage();
+                            }
+                        }}
+                        disabled={!hasGlobalSettingsChanged}
+                        className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
+                    >
+                        💾 Save to Server
+                    </button>
+
+                    <button
+                        onClick={() => {
+                            clearLocalStorage();
+                            setGlobalSettingsMessage('🗑️ Local storage cleared successfully!');
+                            clearGlobalSettingsMessage();
+                        }}
+                        className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
+                    >
+                        🗑️ Clear Local Storage
+                    </button>
+                </div>
+
+                {/* Message display */}
+                {globalSettingsMessage && (
+                    <div className={`text-sm px-3 py-2 rounded ${globalSettingsMessage.includes('✅')
+                        ? 'bg-green-900/20 text-green-400 border border-green-500/30'
+                        : globalSettingsMessage.includes('🗑️')
+                            ? 'bg-blue-900/20 text-blue-400 border border-blue-500/30'
+                            : 'bg-red-900/20 text-red-400 border border-red-500/30'
+                        }`}>
+                        {globalSettingsMessage}
+                    </div>
+                )}
+            </div>
+
+            {/* Local Storage Status */}
+            <div className="mt-4 p-3 bg-gray-700/50 rounded-lg">
+                <h4 className="text-sm font-semibold text-white mb-2">💾 Local Storage Status</h4>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
+                    <div className="flex items-center space-x-2">
+                        <div className="w-2 h-2 rounded-full bg-green-500"></div>
+                        <span className="text-gray-300">Settings: Saved</span>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                        <div className="w-2 h-2 rounded-full bg-green-500"></div>
+                        <span className="text-gray-300">Filters: Saved</span>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                        <div className="w-2 h-2 rounded-full bg-green-500"></div>
+                        <span className="text-gray-300">Global Snipe: Saved</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+
+    // Add this new function after renderGlobalSnipeSettings()
+    const renderSoundManagement = () => (
+        <div className="bg-gray-800 rounded-lg p-4 md:p-6">
+            <h2 className="text-lg md:text-xl font-semibold text-white mb-4">🔊 Sound Management</h2>
+            <p className="text-sm text-gray-400 mb-6">
+                Upload custom notification sounds for your snipe alerts
+            </p>
+
+            {/* Upload Section */}
+            <div className="bg-gray-700 rounded-lg p-4 mb-6">
+                <h3 className="text-lg font-semibold text-white mb-3">Upload New Sound</h3>
+
+                <div className="space-y-4">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-2">
+                            Choose Sound File
+                        </label>
+                        <input
+                            type="file"
+                            accept="audio/*,.wav,.mp3,.ogg,.m4a"
+                            onChange={async (e) => {
+                                const file = e.target.files[0];
+                                console.log('🔧 File selected:', file); // ADD THIS LINE
+                                if (file) {
+                                    console.log('🔧 File details:', {
+                                        name: file.name,
+                                        size: file.size,
+                                        type: file.type
+                                    }); // ADD THIS LINE
+                                    try {
+                                        console.log('🔧 Starting upload...'); // ADD THIS LINE
+                                        await uploadSoundFile(file);
+                                        e.target.value = ''; // Clear input
+                                        console.log('🔧 Upload completed successfully'); // ADD THIS LINE
+                                    } catch (error) {
+                                        console.error('🔧 Upload error:', error);
+                                    }
+                                }
+                            }}
+                            disabled={uploadingSound}
+                            className="w-full px-3 py-2 bg-gray-600 border border-gray-500 rounded-lg text-white focus:ring-2 focus:ring-blue-500 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:bg-blue-600 file:text-white hover:file:bg-blue-700"
+                        />
+                        <p className="text-xs text-gray-400 mt-1">
+                            Supported formats: WAV, MP3, OGG, M4A (Max 5MB)
+                        </p>
+                    </div>
+
+                    {uploadingSound && (
+                        <div className="flex items-center space-x-2 text-blue-400">
+                            <div className="animate-spin w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full"></div>
+                            <span className="text-sm">Uploading sound...</span>
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            {/* Uploaded Sounds List */}
+            <div className="bg-gray-700 rounded-lg p-4">
+                <h3 className="text-lg font-semibold text-white mb-3">
+                    Uploaded Sounds ({soundFiles.length})
+                </h3>
+
+                {soundFiles.length === 0 ? (
+                    <div className="text-center py-8">
+                        <div className="text-gray-400 mb-4">
+                            <Bell size={48} className="mx-auto mb-2" />
+                            <p>No custom sounds uploaded</p>
+                            <p className="text-sm">Upload audio files to use as notification sounds</p>
+                        </div>
+                    </div>
+                ) : (
+                    <div className="space-y-3">
+                        {soundFiles.map(file => (
+                            <div key={file.filename} className="flex items-center justify-between p-3 bg-gray-600 rounded-lg">
+                                <div className="flex-1">
+                                    <h4 className="text-white font-medium">{file.originalName || file.filename}</h4>
+                                    <div className="flex items-center space-x-4 text-sm text-gray-400 mt-1">
+                                        <span>Size: {(file.size / 1024).toFixed(1)} KB</span>
+                                        <span>Format: {file.mimetype}</span>
+                                        <span>Uploaded: {new Date(file.uploadedAt).toLocaleDateString()}</span>
+                                    </div>
+                                </div>
+
+                                <div className="flex items-center space-x-2">
+                                    <button
+                                        onClick={() => previewSound(file.filename)}
+                                        className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm"
+                                    >
+                                        🔊 Play
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            if (window.confirm(`Delete "${file.originalName || file.filename}"?`)) {
+                                                deleteSoundFile(file.filename);
+                                            }
+                                        }}
+                                        className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-sm"
+                                    >
+                                        🗑️ Delete
+                                    </button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+
+            {/* Default Sounds */}
+            <div className="bg-gray-700 rounded-lg p-4 mt-4">
+                <h3 className="text-lg font-semibold text-white mb-3">Built-in Sounds</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {[
+                        { value: 'default.wav', label: '🔊 System Beep' },
+                        { value: 'success.wav', label: '✅ Success Tone' },
+                        { value: 'alert.wav', label: '⚠️ Alert Tone' },
+                        { value: 'chime.wav', label: '🔔 Chime Tone' }
+                    ].map(sound => (
+                        <div key={sound.value} className="flex items-center justify-between p-2 bg-gray-600 rounded">
+                            <span className="text-white text-sm">{sound.label}</span>
+                            <button
+                                onClick={() => previewSound(sound.value)}
+                                className="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs"
+                            >
+                                🔊 Play
+                            </button>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        </div>
+    );
+
+    const performTwitterLogout = async () => {
+        try {
+            setTwitterSessionStatus(prev => ({ ...prev, checking: true }));
+
+            const response = await apiCall('/twitter-logout', { method: 'POST' });
+
+            // Update status based on actual logout result
+            setTwitterSessionStatus(prev => ({
+                ...prev,
+                loggedIn: false, // Always set to false after logout attempt
+                checking: false,
+                lastChecked: new Date().toISOString()
+            }));
+
+            if (response.loggedOut) {
+                addNotification('success', '✅ Successfully logged out from Twitter');
+            } else {
+                addNotification('warning', '⚠️ Please complete logout manually in browser window');
+            }
+
+            // Auto-check status after 3 seconds to confirm
+            setTimeout(() => {
+                checkTwitterSession();
+            }, 3000);
+
+        } catch (error) {
+            setTwitterSessionStatus(prev => ({ ...prev, checking: false, error: error.message }));
+            addNotification('error', '❌ Failed to logout from Twitter');
+        }
+    };
+
+    const renderSecondaryPopup = () => {
+        if (!secondaryPopup.show || !secondaryPopup.tokenData) return null;
+
+        const token = secondaryPopup.tokenData;
+        const currentPairStatus = pairDetectionStatus[token.tokenAddress] || 'checking';
+
+        return (
+            <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+                <div className="bg-gray-800 rounded-lg p-6 w-full max-w-2xl max-h-screen overflow-y-auto">
+                    {/* Header */}
+                    <div className="flex items-center justify-between mb-6">
+                        <h2 className="text-2xl font-bold text-white">🔔 Secondary Match Found!</h2>
+                        <button
+                            onClick={() => {
+                                setSecondaryPopup({ show: false, tokenData: null });
+                                // Clear any running timers
+                                if (autoRetryTimers[token.tokenAddress]) {
+                                    clearTimeout(autoRetryTimers[token.tokenAddress]);
+                                    setAutoRetryTimers(prev => {
+                                        const newTimers = { ...prev };
+                                        delete newTimers[token.tokenAddress];
+                                        return newTimers;
+                                    });
+                                }
+                            }}
+                            className="text-gray-400 hover:text-white"
+                        >
+                            ✖️
+                        </button>
+                    </div>
+
+                    {/* Token Details */}
+                    <div className="space-y-4 mb-6">
+                        <div className="flex items-center space-x-4">
+                            <div className="w-16 h-16 rounded-full overflow-hidden bg-gray-600">
+                                {token.uri ? (
+                                    <img src={token.uri} alt={token.name} className="w-full h-full object-cover" />
+                                ) : (
+                                    <div className="w-full h-full flex items-center justify-center">
+                                        <Coins className="text-gray-400" size={24} />
+                                    </div>
+                                )}
+                            </div>
+                            <div>
+                                <h3 className="text-xl font-bold text-white">{token.name || 'Unknown Token'}</h3>
+                                <p className="text-gray-300">${token.symbol || 'UNKNOWN'}</p>
+                                <p className="text-sm text-gray-400">Matched: {token.matchedEntity}</p>
+                            </div>
+                        </div>
+
+                        {/* Quick Stats */}
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="bg-gray-700 p-3 rounded">
+                                <p className="text-sm text-gray-400">Platform</p>
+                                <p className="text-white font-bold">{token.platform?.toUpperCase() || 'UNKNOWN'}</p>
+                            </div>
+                            <div className="bg-gray-700 p-3 rounded">
+                                <p className="text-sm text-gray-400">Market Cap</p>
+                                <p className="text-white font-bold">{formatNumber(token.marketCapSol)} SOL</p>
+                            </div>
+                        </div>
+
+                        {/* Token Address */}
+                        <div className="bg-gray-700 p-3 rounded">
+                            <p className="text-sm text-gray-400 mb-2">Token Address:</p>
+                            <div className="flex items-center space-x-2">
+                                <code className="text-sm font-mono text-white flex-1 break-all">
+                                    {token.tokenAddress}
+                                </code>
+                                <button
+                                    onClick={() => copyToClipboard(token.tokenAddress, 'Token address')}
+                                    className="text-blue-400 hover:text-blue-300 px-2 py-1"
+                                >
+                                    📋
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* 🚀 NEW: PAIR ADDRESS DETECTION STATUS SECTION */}
+                    {/* 🚀 UPDATED: ADDRESS DETECTION STATUS SECTION */}
+                    <div className="bg-gray-700 p-4 rounded mb-6 border-l-4 border-blue-500">
+                        <h4 className="text-lg font-semibold text-white mb-3 flex items-center">
+                            <TrendingUp className="mr-2" size={16} />
+                            {currentPairStatus === 'checking' && 'Address Detection Status'}
+                            {currentPairStatus === 'found' && (pairDetectionStatus[token.tokenAddress]?.bondingCurveData ? 'Bonding Curve Address Found' : 'Pair Address Found')}
+                            {currentPairStatus === 'not_found' && 'Address Not Detected Yet'}
+                            {currentPairStatus === 'error' && 'Address Detection Error'}
+                        </h4>
+
+                        {currentPairStatus === 'checking' && (
+                            <div className="flex items-center space-x-3">
+                                <div className="animate-spin w-5 h-5 border-2 border-blue-400 border-t-transparent rounded-full"></div>
+                                <div>
+                                    <p className="text-blue-400 font-medium">🔍 Checking for address...</p>
+                                    <p className="text-sm text-gray-400">Determining if this is a pump.fun token or needs pair detection</p>
+                                </div>
+                            </div>
+                        )}
+
+                        {currentPairStatus === 'found' && pairDetectionStatus[token.tokenAddress]?.bondingCurveData && (
+                            <div className="space-y-3">
+                                <div className="flex items-center space-x-3">
+                                    <div className="w-5 h-5 bg-green-500 rounded-full flex items-center justify-center">
+                                        <span className="text-white text-xs">✓</span>
+                                    </div>
+                                    <div>
+                                        <p className="text-green-400 font-medium">✅ Bonding Curve Address Found!</p>
+                                        <p className="text-sm text-gray-400">Pump.fun token detected - using bonding curve for trading</p>
+                                    </div>
+                                </div>
+
+                                <div className="bg-gray-600 p-3 rounded">
+                                    <p className="text-sm text-gray-400 mb-1">Bonding Curve Address:</p>
+                                    <div className="flex items-center space-x-2">
+                                        <code className="text-sm font-mono text-green-400 flex-1 break-all">
+                                            {pairDetectionStatus[token.tokenAddress]?.bondingCurveData?.bondingCurveAddress}
+                                        </code>
+                                        <button
+                                            onClick={() => copyToClipboard(
+                                                pairDetectionStatus[token.tokenAddress]?.bondingCurveData?.bondingCurveAddress,
+                                                'Bonding curve address'
+                                            )}
+                                            className="text-blue-400 hover:text-blue-300 px-2 py-1 text-xs"
+                                        >
+                                            📋
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div className="bg-gray-600 p-2 rounded text-center">
+                                        <p className="text-xs text-gray-400">Type</p>
+                                        <p className="text-white font-medium text-sm">Pump.fun</p>
+                                    </div>
+                                    <div className="bg-gray-600 p-2 rounded text-center">
+                                        <p className="text-xs text-gray-400">Trading</p>
+                                        <p className="text-white font-medium text-sm">Bonding Curve</p>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {currentPairStatus === 'found' && pairDetectionStatus[token.tokenAddress]?.pairData && (
+                            <div className="space-y-3">
+                                <div className="flex items-center space-x-3">
+                                    <div className="w-5 h-5 bg-green-500 rounded-full flex items-center justify-center">
+                                        <span className="text-white text-xs">✓</span>
+                                    </div>
+                                    <div>
+                                        <p className="text-green-400 font-medium">✅ Pair Address Found!</p>
+                                        <p className="text-sm text-gray-400">Liquidity pool detected on {pairDetectionStatus[token.tokenAddress]?.pairData?.dexId}</p>
+                                    </div>
+                                </div>
+
+                                <div className="bg-gray-600 p-3 rounded">
+                                    <p className="text-sm text-gray-400 mb-1">Pair Address:</p>
+                                    <div className="flex items-center space-x-2">
+                                        <code className="text-sm font-mono text-green-400 flex-1 break-all">
+                                            {pairDetectionStatus[token.tokenAddress]?.pairData?.pairAddress}
+                                        </code>
+                                        <button
+                                            onClick={() => copyToClipboard(
+                                                pairDetectionStatus[token.tokenAddress]?.pairData?.pairAddress,
+                                                'Pair address'
+                                            )}
+                                            className="text-blue-400 hover:text-blue-300 px-2 py-1 text-xs"
+                                        >
+                                            📋
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div className="bg-gray-600 p-2 rounded text-center">
+                                        <p className="text-xs text-gray-400">DEX</p>
+                                        <p className="text-white font-medium text-sm">{pairDetectionStatus[token.tokenAddress]?.pairData?.dexId}</p>
+                                    </div>
+                                    <div className="bg-gray-600 p-2 rounded text-center">
+                                        <p className="text-xs text-gray-400">Liquidity</p>
+                                        <p className="text-white font-medium text-sm">
+                                            {pairDetectionStatus[token.tokenAddress]?.pairData?.liquidity ?
+                                                `$${formatNumber(pairDetectionStatus[token.tokenAddress]?.pairData?.liquidity?.usd || 0)}` :
+                                                'Available'
+                                            }
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {currentPairStatus === 'not_found' && (
+                            <div className="space-y-3">
+                                <div className="flex items-center space-x-3">
+                                    <div className="w-5 h-5 bg-yellow-500 rounded-full flex items-center justify-center">
+                                        <span className="text-white text-xs">!</span>
+                                    </div>
+                                    <div>
+                                        <p className="text-yellow-400 font-medium">⚠️ Address Not Detected Yet</p>
+                                        <p className="text-sm text-gray-400">
+                                            {token.platform === 'pumpfun' || token.tokenAddress?.endsWith('pump')
+                                                ? 'Bonding curve not accessible - token might be very new'
+                                                : 'No liquidity pool found - token might be too new'
+                                            }
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <div className="bg-yellow-900/20 border border-yellow-500/30 rounded p-3">
+                                    <p className="text-yellow-300 text-sm">
+                                        💡 <strong>What this means:</strong>
+                                        {token.platform === 'pumpfun' || token.tokenAddress?.endsWith('pump')
+                                            ? ' The bonding curve exists but may not be accessible yet. This is normal for very new pump.fun tokens.'
+                                            : ' The token exists but hasn\'t been added to a liquidity pool yet. This is normal for very new tokens.'
+                                        } Auto-retry will check again in 3 seconds.
+                                    </p>
+                                </div>
+
+                                {/* Countdown Timer */}
+                                <PairDetectionCountdown
+                                    tokenAddress={token.tokenAddress}
+                                    onRetry={() => checkPairAddressWithRetry(token.tokenAddress)}
+                                />
+                            </div>
+                        )}
+
+                        {currentPairStatus === 'error' && (
+                            <div className="flex items-center space-x-3">
+                                <div className="w-5 h-5 bg-red-500 rounded-full flex items-center justify-center">
+                                    <span className="text-white text-xs">✗</span>
+                                </div>
+                                <div>
+                                    <p className="text-red-400 font-medium">❌ Error Checking Address</p>
+                                    <p className="text-sm text-gray-400">API error occurred - will retry automatically</p>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Current Global Snipe Settings Display */}
+                    <div className="bg-gray-700 p-4 rounded mb-6">
+                        <h4 className="text-lg font-semibold text-white mb-3">Current Global Snipe Settings:</h4>
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                            <div className="text-center">
+                                <p className="text-sm text-gray-400">Amount</p>
+                                <p className="text-white font-bold">{settings.globalSnipeSettings.amount} SOL</p>
+                            </div>
+                            <div className="text-center">
+                                <p className="text-sm text-gray-400">Fees</p>
+                                <p className="text-white font-bold">{settings.globalSnipeSettings.fees}%</p>
+                            </div>
+                            <div className="text-center">
+                                <p className="text-sm text-gray-400">MEV Protection</p>
+                                <p className="text-white font-bold">{settings.globalSnipeSettings.mevProtection ? '🛡️ ON' : '❌ OFF'}</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Enhanced Action Buttons */}
+                    {/* Action Buttons */}
+                    <div className="flex flex-col space-y-3 md:flex-row md:space-y-0 md:space-x-4">
+                        <div className="flex-1">
+                            <button
+                                onClick={() => viewTokenPageFromPopup(token)}
+                                className="w-full px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center justify-center space-x-2"
+                            >
+                                <span>🌐 View Token Page</span>
+                                {currentPairStatus === 'found' && pairDetectionStatus[token.tokenAddress]?.bondingCurveData && <span className="text-green-300">(With Bonding Curve)</span>}
+                                {currentPairStatus === 'found' && pairDetectionStatus[token.tokenAddress]?.pairData && <span className="text-green-300">(With Pair)</span>}
+                                {currentPairStatus === 'not_found' && <span className="text-yellow-300">(Token Address)</span>}
+                            </button>
+                        </div>
+
+                        <button
+                            onClick={() => snipeWithGlobalSettings(token.tokenAddress)}
+                            className="flex-1 px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors font-bold flex items-center justify-center space-x-2"
+                        >
+                            <Target size={20} />
+                            <span>SNIPE ({settings.globalSnipeSettings.amount} SOL)</span>
+                        </button>
+                    </div>
+
+                    {/* Status message under buttons */}
+                    {tokenPairStatus[token.tokenAddress] === 'no-pair' && (
+                        <div className="mt-3 p-2 bg-yellow-900/20 border border-yellow-500/30 rounded text-xs text-yellow-400 text-center">
+                            🔍 {token.platform === 'pumpfun' || token.tokenAddress?.endsWith('pump')
+                                ? 'Bonding curve not accessible yet, check again in few seconds'
+                                : 'No Boding Curve found yet, check again in few seconds'
+                            }
+                        </div>
+                    )}
+                    {tokenPairStatus[token.tokenAddress] === 'error' && (
+                        <div className="mt-3 p-2 bg-red-900/20 border border-red-500/30 rounded text-xs text-red-400 text-center">
+                            ❌ Error fetching address data, using token address
+                        </div>
+                    )}
+                    {tokenPairStatus[token.tokenAddress] === 'success' && (
+                        <div className="mt-3 p-2 bg-green-900/20 border border-green-500/30 rounded text-xs text-green-400 text-center">
+                            ✅ {pairDetectionStatus[token.tokenAddress]?.bondingCurveData
+                                ? 'Bonding curve found! Opening with trading interface'
+                                : 'Boding Curve found! Opening with liquidity pool'
+                            }
+                        </div>
+                    )}
+
+                    {/* Status message under buttons */}
+                    {tokenPairStatus[token.tokenAddress] === 'no-pair' && (
+                        <div className="mt-3 p-2 bg-yellow-900/20 border border-yellow-500/30 rounded text-xs text-yellow-400 text-center">
+                            🔍 No Boding Curve found yet, check again in few seconds
+                        </div>
+                    )}
+                    {tokenPairStatus[token.tokenAddress] === 'error' && (
+                        <div className="mt-3 p-2 bg-red-900/20 border border-red-500/30 rounded text-xs text-red-400 text-center">
+                            ❌ Error fetching pair data, using token address
+                        </div>
+                    )}
+                    {tokenPairStatus[token.tokenAddress] === 'success' && (
+                        <div className="mt-3 p-2 bg-green-900/20 border border-green-500/30 rounded text-xs text-green-400 text-center">
+                            ✅ Boding Curve found! Opening with liquidity pool
+                        </div>
+                    )}
+                </div>
+            </div>
+        );
+    };
+
+    // 3. COUNTDOWN TIMER COMPONENT
+    const PairDetectionCountdown = ({ tokenAddress, onRetry }) => {
+        const [countdown, setCountdown] = useState(3);
+        const [isActive, setIsActive] = useState(true);
+
+        useEffect(() => {
+            if (!isActive) return;
+
+            const timer = setInterval(() => {
+                setCountdown(prev => {
+                    if (prev <= 1) {
+                        setIsActive(false);
+                        onRetry();
+                        return 0;
+                    }
+                    return prev - 1;
+                });
+            }, 1000);
+
+            return () => clearInterval(timer);
+        }, [isActive, onRetry]);
+
+        if (!isActive) {
+            return (
+                <div className="flex items-center space-x-2 text-blue-400">
+                    <div className="animate-spin w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full"></div>
+                    <span className="text-sm">🔄 Retrying pair detection...</span>
+                </div>
+            );
         }
 
-        console.log(`🔍 Getting address for token: ${tokenAddress}`);
+        return (
+            <div className="flex items-center space-x-2 text-blue-400">
+                <div className="w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center">
+                    <span className="text-white text-xs">{countdown}</span>
+                </div>
+                <span className="text-sm">⏰ Auto-retry in {countdown} seconds...</span>
+            </div>
+        );
+    };
 
-        // 🔥 FIRST: Check if we have the bonding curve stored from detection
-        const detectedToken = botState.detectedTokens.get(tokenAddress);
+    // 5. AUTO-OPEN WITH ADDRESS (Updated for bonding curves)
+    const autoOpenTokenPageWithAddress = async (tokenAddress, url, addressType) => {
+        console.log(`🚀 AUTO-OPENING TOKEN PAGE WITH ${addressType.toUpperCase()}`);
+        console.log(`🔗 URL: ${url}`);
+        console.log(`🎯 Token: ${tokenAddress}`);
+
+        try {
+            const popupResult = await attemptPopupWithDetection(url, tokenAddress, `auto-open-with-${addressType}`);
+
+            if (popupResult.success) {
+                console.log(`✅ AUTO-OPEN WITH ${addressType.toUpperCase()} SUCCEEDED`);
+                addNotification('success', `🚀 Token page auto-opened with ${addressType === 'bonding_curve' ? 'bonding curve' : 'pair address'}!`);
+
+                // Close the popup since we successfully opened the page
+                setSecondaryPopup({ show: false, tokenData: null });
+
+            } else {
+                console.error(`❌ AUTO-OPEN WITH ${addressType.toUpperCase()} FAILED:`, popupResult.reason);
+                addNotification('warning', '🚫 Auto-open blocked - use "View Token Page" button');
+                handlePopupBlockedScenario(url, tokenAddress, popupResult.reason, `auto-open-with-${addressType}`);
+            }
+        } catch (error) {
+            console.error(`❌ Error in auto-open with ${addressType}:`, error);
+            addNotification('error', `❌ Auto-open error: ${error.message}`);
+        }
+    };
+
+    // 4. ENHANCED ADDRESS CHECKING WITH RETRY (Updated for bonding curves)
+    const checkPairAddressWithRetry = async (tokenAddress, maxRetries = 3, currentRetry = 0) => {
+        console.log(`🔍 Checking address for ${tokenAddress} (attempt ${currentRetry + 1}/${maxRetries})`);
+
+        // 🔥 NEW: Check if token already has bonding curve stored
+        const detectedToken = detectedTokens.find(t => t.tokenAddress === tokenAddress);
 
         if (detectedToken && detectedToken.bondingCurveAddress) {
-            console.log(`✅ Found stored bonding curve: ${detectedToken.bondingCurveAddress}`);
+            console.log(`✅ Token already has stored bonding curve: ${detectedToken.bondingCurveAddress}`);
 
-            res.json({
-                success: true,
-                tokenAddress,
+            // Update status to found immediately
+            setPairDetectionStatus(prev => ({
+                ...prev,
+                [tokenAddress]: 'found',
                 bondingCurveData: {
                     bondingCurveAddress: detectedToken.bondingCurveAddress,
                     type: 'pump_fun_bonding_curve',
                     source: 'stored_from_detection'
-                },
-                axiomUrl: `https://axiom.trade/meme/${detectedToken.bondingCurveAddress}`,
-                fallbackAxiomUrl: `https://axiom.trade/meme/${tokenAddress}`,
-                isPumpFun: true
-            });
+                }
+            }));
+
+            // AUTO-OPEN WITH BONDING CURVE ADDRESS AFTER 3 SECONDS
+            console.log(`🚀 Starting 3-second auto-open countdown for stored bonding curve ${tokenAddress}...`);
+            const autoOpenTimer = setTimeout(() => {
+                console.log(`🚀 AUTO-OPENING TOKEN PAGE WITH STORED BONDING CURVE`);
+                autoOpenTokenPageWithAddress(tokenAddress, `https://axiom.trade/meme/${detectedToken.bondingCurveAddress}`, 'bonding_curve');
+            }, 3000);
+
+            setAutoRetryTimers(prev => ({
+                ...prev,
+                [tokenAddress]: autoOpenTimer
+            }));
+
+            addNotification('success', `✅ Bonding curve ready! Auto-opening in 3 seconds...`);
             return;
         }
 
-        // Check if this is a pump.fun token (ends with 'pump' or detected as pump.fun)
-        const isPumpFunToken = tokenAddress.endsWith('pump') || await checkIfPumpFunToken(tokenAddress);
-
-        if (isPumpFunToken) {
-            try {
-                console.log(`🎯 Pump.fun token detected, calculating bonding curve address as fallback`);
-
-                const { PublicKey } = require('@solana/web3.js');
-                const PUMP_FUN_PROGRAM = new PublicKey("6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P");
-
-                const mintPublicKey = new PublicKey(tokenAddress);
-                const [bondingCurve] = PublicKey.findProgramAddressSync(
-                    [Buffer.from("bonding-curve"), mintPublicKey.toBytes()],
-                    PUMP_FUN_PROGRAM
-                );
-
-                console.log(`✅ Calculated bonding curve as fallback: ${bondingCurve.toString()}`);
-
-                res.json({
-                    success: true,
-                    tokenAddress,
-                    bondingCurveData: {
-                        bondingCurveAddress: bondingCurve.toString(),
-                        type: 'pump_fun_bonding_curve',
-                        source: 'calculated_fallback'
-                    },
-                    axiomUrl: `https://axiom.trade/meme/${bondingCurve.toString()}`,
-                    fallbackAxiomUrl: `https://axiom.trade/meme/${tokenAddress}`,
-                    isPumpFun: true
-                });
-
-            } catch (error) {
-                console.error('❌ Error calculating bonding curve:', error);
-
-                res.json({
-                    success: false,
-                    tokenAddress,
-                    message: 'Failed to get bonding curve address',
-                    fallbackAxiomUrl: `https://axiom.trade/meme/${tokenAddress}`,
-                    isPumpFun: true,
-                    error: error.message
-                });
-            }
-        } else {
-            // For non-pump.fun tokens, use the existing pair address logic
-            const pairData = await getPairAddressFromDexScreener(tokenAddress);
-
-            if (pairData) {
-                console.log(`✅ Found pair data:`, pairData);
-
-                res.json({
-                    success: true,
-                    tokenAddress,
-                    pairData,
-                    axiomUrl: `https://axiom.trade/meme/${pairData.pairAddress}`,
-                    fallbackAxiomUrl: `https://axiom.trade/meme/${tokenAddress}`,
-                    isPumpFun: false
-                });
-            } else {
-                console.log(`❌ No pair found for token: ${tokenAddress}`);
-
-                res.json({
-                    success: false,
-                    tokenAddress,
-                    message: 'No pair found for this token',
-                    fallbackAxiomUrl: `https://axiom.trade/meme/${tokenAddress}`,
-                    isPumpFun: false
-                });
-            }
-        }
-    } catch (error) {
-        console.error('❌ Error in pair-address endpoint:', error);
-        res.status(500).json({
-            success: false,
-            error: error.message,
-            fallbackAxiomUrl: `https://axiom.trade/meme/${req.params.tokenAddress}`
-        });
-    }
-});
-
-async function snipeToken(tokenAddress, config) {
-    console.log(`🎯 SNIPING: ${tokenAddress} with ${config.amount} SOL`);
-
-    try {
-        const params = {
-            action: "buy",
-            mint: tokenAddress,
-            amount: config.amount,
-            denominatedInSol: "true",
-            slippage: config.fees || 10,
-            priorityFee: config.mevProtection ? 0.00005 : 0.00001
-        };
-
-        const { signature } = await executeAPITrade(params);
-
-        // 🔥 GENERATE TOKEN PAGE URL BEFORE BROADCASTING
-        const tokenPageUrl = await getTokenPageUrl(tokenAddress, botState.settings.tokenPageDestination);
-
-        broadcastToClients({
-            type: 'snipe_success',
-            data: {
-                tokenAddress,
-                signature,
-                amount: config.amount,
-                tokenPageUrl,
-                timestamp: new Date().toISOString(),
-                openTokenPage: true,
-                destination: botState.settings.tokenPageDestination // ADD THIS LINE
-            }
-        });
-
-        return { success: true, signature, tokenPageUrl };
-    } catch (error) {
-        console.error('Snipe failed:', error.message);
-
-        broadcastToClients({
-            type: 'snipe_error',
-            data: {
-                tokenAddress,
-                error: error.message,
-                timestamp: new Date().toISOString()
-            }
-        });
-
-        return { success: false, error: error.message };
-    }
-}
-
-async function getTokenPageUrl(tokenAddress, destination, platform = null) {
-    console.log(`🌐 Generating token page URL for ${tokenAddress} on ${destination}`);
-
-    switch (destination) {
-        case 'neo_bullx':
-            return `https://neo.bullx.io/terminal?chainId=1399811149&address=${tokenAddress}`;
-
-        case 'axiom':
-            // Always try to get pair address from DexScreener for Axiom
-            try {
-                console.log(`🔍 Fetching pair address for Axiom...`);
-                const pairData = await getPairAddressFromDexScreener(tokenAddress);
-
-                if (pairData && pairData.pairAddress) {
-                    console.log(`🎯 Using Axiom with pair address: ${pairData.pairAddress}`);
-                    return `https://axiom.trade/meme/${pairData.pairAddress}`;
-                } else {
-                    console.log(`⚠️ No pair found, using token address for Axiom: ${tokenAddress}`);
-                    return `https://axiom.trade/meme/${tokenAddress}`;
-                }
-            } catch (error) {
-                console.error('❌ Error getting pair address for Axiom:', error);
-                return `https://axiom.trade/meme/${tokenAddress}`;
-            }
-
-        default:
-            return `https://neo.bullx.io/terminal?chainId=1399811149&address=${tokenAddress}`;
-    }
-}
-
-// ========== TOKEN PROCESSING ==========
-// ========== REVERT TO YOUR ORIGINAL WORKING CODE ==========
-// Only fix the community detection logic, keep everything else EXACTLY the same
-
-// KEEP YOUR ORIGINAL connectToPumpPortal() - DON'T CHANGE IT
-// KEEP YOUR ORIGINAL connectToLetsBonk() - DON'T CHANGE IT  
-// KEEP YOUR ORIGINAL start/stop endpoints - DON'T CHANGE THEM
-
-async function performActualScraping(communityId, tokenData, tokenStartTime) {
-    const logger = createBlueLogger();
-
-    // ✅ DIRECTLY START WITH BROWSER SCRAPING (NO COMMUNITY ID CHECKING)
-    logger.logBold('🔍 PHASE 1: Attempting to scrape community admin list...');
-    logger.log(`🎯 Target Community: ${communityId}`);
-    logger.log(`💰 Token: ${tokenData.tokenAddress || 'Unknown'}`);
-    logger.log(`🏷️ Token Name: ${tokenData.name || 'Unknown'}`);
-
-    // Initialize scraper if needed
-    if (!twitterScraper.isInitialized) {
-        logger.log('🤖 Twitter scraper not initialized, initializing...');
-        const initSuccess = await twitterScraper.init();
-        if (!initSuccess) {
-            logger.error('Failed to initialize Twitter scraper');
-            throw new Error('Failed to initialize Twitter scraper');
-        }
-        logger.success('Twitter scraper initialized successfully');
-    }
-
-    // Check session status
-    logger.log('🔍 Checking Twitter login session status...');
-    const sessionStatus = await twitterScraper.checkSessionStatus();
-
-    if (!sessionStatus.loggedIn) {
-        logger.error('Twitter session not active');
-        throw new Error('Twitter session not active - admin needs to login manually');
-    }
-
-    logger.success('Twitter session active! Proceeding with community scraping...');
-
-    // ✅ ACTUAL SCRAPING HAPPENS HERE
-    logger.logBold(`🕷️ PHASE 2: Scraping community ${communityId} admin list...`);
-    logger.log(`🌐 Target URL: https://x.com/i/communities/${communityId}/moderators`);
-
-    const communityAdmins = await twitterScraper.scrapeCommunityAdmins(communityId);
-    logger.log(`📊 Scraping completed! Found ${communityAdmins.length} admin(s)`);
-
-    if (communityAdmins.length === 0) {
-        logger.warning('No admins found in community (private/empty/restricted)');
-        return null;
-    }
-
-    // ✅ PHASE 3: ADMIN MATCHING LOGIC
-    logger.success(`SUCCESS! Found ${communityAdmins.length} admin(s) in community ${communityId}:`);
-    communityAdmins.forEach((admin, index) => {
-        logger.log(`   ${index + 1}. @${admin.username} (${admin.badgeType}) - Source: ${admin.source}`);
-    });
-
-    // Check if any community admin is in our lists
-    for (const admin of communityAdmins) {
-        logger.log(`🔍 Checking scraped admin: @${admin.username} (${admin.badgeType})`);
-
-        // ✅ CORRECT: Check admin username in primary list
-        const primaryAdminConfig = botState.checkAdminInPrimary(admin.username);
-        if (primaryAdminConfig) {
-            logger.success(`ADMIN MATCH FOUND! @${admin.username} found in PRIMARY admin list!`);
-
-            return {
-                matchType: 'primary_admin',
-                matchedEntity: admin.username,
-                detectionReason: `Primary Community Admin: @${admin.username} (${admin.badgeType}) from Community ${communityId}`,
-                config: primaryAdminConfig,
-                communityAdmins: communityAdmins,
-                matchedAdmin: admin,
-                scrapingMethod: 'community_admin_scraping'
-            };
-        }
-
-        // ✅ CORRECT: Check admin username in secondary list
-        const secondaryAdminConfig = botState.checkAdminInSecondary(admin.username);
-        if (secondaryAdminConfig) {
-            // ✅ ENHANCED TIMING LOG
-            const matchTime = Date.now() - tokenStartTime;
-            logSecondaryMatch(tokenData.tokenAddress, admin.username, matchTime);
-            logAdminMatchTiming(tokenData.tokenAddress, admin.username, 'secondary_admin', matchTime); // ADD THIS LINE
-
-            logger.success(`ADMIN MATCH FOUND! @${admin.username} found in SECONDARY admin list!`);
-
-            return {
-                matchType: 'secondary_admin',
-                matchedEntity: admin.username,
-                detectionReason: `Secondary Community Admin: @${admin.username} (${admin.badgeType}) from Community ${communityId}`,
-                config: secondaryAdminConfig,
-                communityAdmins: communityAdmins,
-                matchedAdmin: admin,
-                scrapingMethod: 'community_admin_scraping'
-            };
-        }
-
-        // Check variations
-        const usernameVariations = [
-            admin.username,
-            `@${admin.username}`,
-            admin.username.toLowerCase(),
-            `@${admin.username.toLowerCase()}`
-        ];
-
-        logger.log(`🔄 Checking variations for @${admin.username}: [${usernameVariations.join(', ')}]`);
-
-        for (const variation of usernameVariations) {
-            const primaryVariationConfig = botState.checkAdminInPrimary(variation);
-            if (primaryVariationConfig) {
-                logger.success(`VARIATION MATCH FOUND! @${admin.username} found in PRIMARY list as "${variation}"!`);
-
-                return {
-                    matchType: 'primary_admin',
-                    matchedEntity: variation,
-                    detectionReason: `Primary Community Admin: @${admin.username} (${admin.badgeType}) from Community ${communityId} (matched as ${variation})`,
-                    config: primaryVariationConfig,
-                    communityAdmins: communityAdmins,
-                    matchedAdmin: admin,
-                    scrapingMethod: 'community_admin_scraping_variation'
-                };
-            }
-
-            const secondaryVariationConfig = botState.checkAdminInSecondary(variation);
-            if (secondaryVariationConfig) {
-                // ✅ LOG SECONDARY MATCH FOR VARIATIONS
-                const matchTime = Date.now() - tokenStartTime;
-                logSecondaryMatch(tokenData.tokenAddress, variation, matchTime);
-
-                logger.success(`VARIATION MATCH FOUND! @${admin.username} found in SECONDARY list as "${variation}"!`);
-
-                return {
-                    matchType: 'secondary_admin',
-                    matchedEntity: variation,
-                    detectionReason: `Secondary Community Admin: @${admin.username} (${admin.badgeType}) from Community ${communityId} (matched as ${variation})`,
-                    config: secondaryVariationConfig,
-                    communityAdmins: communityAdmins,
-                    matchedAdmin: admin,
-                    scrapingMethod: 'community_admin_scraping_variation'
-                };
-            }
-        }
-
-        logger.warning(`No match found for @${admin.username} in any admin lists`);
-    }
-
-    logger.error('NO MATCHES FOUND! None of the scraped admins are in your admin lists');
-    return null;
-}
-
-async function applyScrapingResultToToken(scrapingResult, communityId, tokenData, tokenStartTime) {
-    const logger = createBlueLogger();
-
-    if (!scrapingResult) {
-        return null;
-    }
-
-    // ✅ CRITICAL FIX: Always log secondary matches with proper timing for each token
-    if (scrapingResult.matchType === 'secondary_admin') {
-        const matchTime = Date.now() - tokenStartTime;
-        logSecondaryMatch(tokenData.tokenAddress, scrapingResult.matchedEntity, matchTime);
-        logger.success(`🔔 Secondary match logged for this token: ${scrapingResult.matchedEntity} - ${matchTime}ms`);
-    }
-
-    // Broadcast the match found event for this specific token
-    broadcastToClients({
-        type: 'community_admin_match_found',
-        data: {
-            communityId: communityId,
-            matchType: scrapingResult.matchType === 'primary_admin' ? 'primary' : 'secondary',
-            matchedAdmin: scrapingResult.matchedAdmin || { username: scrapingResult.matchedEntity },
-            matchedAs: scrapingResult.scrapingMethod,
-            allScrapedAdmins: scrapingResult.communityAdmins || []
-        }
-    });
-
-    return scrapingResult;
-}
-
-async function scrapeCommunityAndMatchAdmins(communityId, tokenData) {
-    try {
-        console.log(`🚀 API SCRAPING: Community ${communityId} (replacing browser scraping)`);
-
-        // ✅ STEP 1: Use twitterapi.io API instead of browser scraping
-        const moderators = await twitterAPI.getAllCommunityModerators(communityId);
-
-        if (!moderators || moderators.length === 0) {
-            console.log('❌ No moderators found in community');
-
-            // Broadcast that no moderators were found
-            broadcastToClients({
-                type: 'community_scraping_info',
-                data: {
-                    communityId: communityId,
-                    reason: 'No moderators found in community',
-                    tokenAddress: tokenData.tokenAddress,
-                    timestamp: new Date().toISOString()
-                }
-            });
-
-            return null;
-        }
-
-        // ✅ STEP 2: Transform API response to match your existing format
-        const transformedAdmins = moderators.map(moderator => ({
-            username: moderator.screen_name || moderator.name || 'unknown',
-            displayName: moderator.name || moderator.screen_name || 'Unknown',
-            userId: moderator.id,
-            isVerified: moderator.verified || moderator.isBlueVerified,
-            followersCount: moderator.followers_count,
-            location: moderator.location,
-            description: moderator.description,
-            profileImageUrl: moderator.profile_image_url_https,
-            badgeType: 'Admin',
-            source: 'api_fetch'
+        // Set status to checking if no stored bonding curve
+        setPairDetectionStatus(prev => ({
+            ...prev,
+            [tokenAddress]: 'checking'
         }));
 
-        console.log(`✅ Successfully fetched ${transformedAdmins.length} moderators from community ${communityId}:`);
-        transformedAdmins.forEach((admin, index) => {
-            console.log(`   ${index + 1}. @${admin.username} (${admin.displayName}) - ${admin.followersCount || 0} followers`);
-        });
-
-        // ✅ STEP 3: Check against your admin lists using botState methods
-        for (const admin of transformedAdmins) {
-            console.log(`🔍 Checking scraped admin: @${admin.username}`);
-
-            // Check against primary admin list
-            const primaryAdminConfig = botState.checkAdminInPrimary(admin.username);
-            if (primaryAdminConfig) {
-                console.log(`✅ ADMIN MATCH FOUND! @${admin.username} found in PRIMARY admin list!`);
-
-                return {
-                    matchType: 'primary_admin',
-                    matchedEntity: admin.username,
-                    detectionReason: `Primary Community Admin: @${admin.username} from Community ${communityId}`,
-                    config: primaryAdminConfig,
-                    matchedAdmin: admin,
-                    scrapingMethod: 'api_fetch'
-                };
-            }
-
-            // Check against secondary admin list
-            const secondaryAdminConfig = botState.checkAdminInSecondary(admin.username);
-            if (secondaryAdminConfig) {
-                console.log(`✅ ADMIN MATCH FOUND! @${admin.username} found in SECONDARY admin list!`);
-
-                return {
-                    matchType: 'secondary_admin',
-                    matchedEntity: admin.username,
-                    detectionReason: `Secondary Community Admin: @${admin.username} from Community ${communityId}`,
-                    config: secondaryAdminConfig,
-                    matchedAdmin: admin,
-                    scrapingMethod: 'api_fetch'
-                };
-            }
-
-            // Check username variations
-            const usernameVariations = [
-                admin.username,
-                `@${admin.username}`,
-                admin.username.toLowerCase(),
-                `@${admin.username.toLowerCase()}`
-            ];
-
-            console.log(`🔄 Checking variations for @${admin.username}: [${usernameVariations.join(', ')}]`);
-
-            for (const variation of usernameVariations) {
-                const primaryVariationConfig = botState.checkAdminInPrimary(variation);
-                if (primaryVariationConfig) {
-                    console.log(`✅ VARIATION MATCH FOUND! "${variation}" found in PRIMARY admin list!`);
-
-                    return {
-                        matchType: 'primary_admin',
-                        matchedEntity: variation,
-                        detectionReason: `Primary Community Admin: @${admin.username} (variation: ${variation}) from Community ${communityId}`,
-                        config: primaryVariationConfig,
-                        matchedAdmin: admin,
-                        scrapingMethod: 'api_fetch'
-                    };
-                }
-
-                const secondaryVariationConfig = botState.checkAdminInSecondary(variation);
-                if (secondaryVariationConfig) {
-                    console.log(`✅ VARIATION MATCH FOUND! "${variation}" found in SECONDARY admin list!`);
-
-                    return {
-                        matchType: 'secondary_admin',
-                        matchedEntity: variation,
-                        detectionReason: `Secondary Community Admin: @${admin.username} (variation: ${variation}) from Community ${communityId}`,
-                        config: secondaryVariationConfig,
-                        matchedAdmin: admin,
-                        scrapingMethod: 'api_fetch'
-                    };
-                }
-            }
-        }
-
-        console.log('❌ No matching admins found in configured lists');
-
-        // Broadcast that no matches were found
-        broadcastToClients({
-            type: 'community_scraping_info',
-            data: {
-                communityId: communityId,
-                reason: `${transformedAdmins.length} admins scraped, but none match your lists`,
-                scrapedAdmins: transformedAdmins,
-                tokenAddress: tokenData.tokenAddress,
-                timestamp: new Date().toISOString()
-            }
-        });
-
-        return null;
-
-    } catch (error) {
-        console.error('❌ Error in API-based community scraping:', error);
-
-        // ✅ NEW: Check for specific API errors and broadcast to frontend
-        let errorType = 'general_error';
-        let userMessage = 'Unknown Twitter API error occurred';
-
-        if (error.message.includes('402 Payment Required') || error.message.includes('Credits is not enough')) {
-            errorType = 'credits_exhausted';
-            userMessage = 'Twitter API credits are exhausted. Please recharge your account.';
-            console.log('💳 Twitter API credits exhausted - broadcasting to frontend');
-        } else if (error.message.includes('401') || error.message.includes('Unauthorized')) {
-            errorType = 'unauthorized';
-            userMessage = 'Twitter API access denied. Check your API key configuration.';
-        } else if (error.message.includes('403')) {
-            errorType = 'forbidden';
-            userMessage = 'Twitter API access forbidden. Your account may be restricted.';
-        } else if (error.message.includes('429')) {
-            errorType = 'rate_limited';
-            userMessage = 'Twitter API rate limit exceeded. Please wait before trying again.';
-        } else if (error.message.includes('timeout') || error.message.includes('TIMEOUT')) {
-            errorType = 'timeout';
-            userMessage = 'Twitter API request timed out. Please try again.';
-        }
-
-        // Broadcast the error to frontend
-        broadcastToClients({
-            type: 'twitter_api_error',
-            data: {
-                communityId: communityId,
-                error: userMessage,
-                errorType: errorType,
-                message: userMessage,
-                tokenAddress: tokenData.tokenAddress,
-                originalError: error.message,
-                timestamp: new Date().toISOString()
-            }
-        });
-
-        throw error; // Re-throw so calling code can handle it
-    }
-}
-
-async function processNewToken(tokenData, platform) {
-    const tokenAddress = tokenData.mint;
-    const creatorWallet = tokenData.creator || tokenData.traderPublicKey;
-    const tokenStartTime = Date.now();
-
-    // Check if this is a bonk token
-    const isBonkToken = platform === 'letsbonk' ||
-        tokenData.pool === 'bonk' ||
-        tokenData.pool === 'letsbonk';
-
-    // Check for duplicates
-    if (botState.processedTokens.has(tokenAddress)) {
-        return;
-    }
-
-    botState.processedTokens.add(tokenAddress);
-
-    // Check if this is a demo token (has metadata field from demo injection)
-    const isDemoToken = tokenData.metadata && (tokenData.metadata.twitter || tokenData.metadata.name);
-
-    let enhancedData = null;
-    let twitterData = { type: null, id: null, handle: null, admin: null };
-
-    // Handle DEMO tokens specially
-    if (isDemoToken) {
-        console.log('🧪 DEMO TOKEN DETECTED - Using provided metadata directly');
-
-        // Use metadata directly from demo without API calls
-        enhancedData = {
-            name: tokenData.metadata.name || tokenData.name || 'Demo Token',
-            symbol: tokenData.metadata.symbol || tokenData.symbol || 'DEMO',
-            description: tokenData.metadata.description || 'Demo token for testing',
-            imageUrl: tokenData.uri || null,
-            twitterUrl: tokenData.metadata.twitter || null,
-            website: tokenData.metadata.website || null,
-            hasEnhancedData: true
-        };
-
-        // Extract Twitter data from demo metadata
-        if (tokenData.metadata.twitter) {
-            const twitterInfo = extractTwitterDataRobust(tokenData.metadata.twitter);
-            twitterData = {
-                type: twitterInfo.type,
-                id: twitterInfo.id,
-                handle: twitterInfo.handle,
-                admin: twitterInfo.handle || twitterInfo.id,
-                originalUrl: tokenData.metadata.twitter
-            };
-        }
-    }
-    // BONK TOKEN - Special processing with delays
-    else if (isBonkToken) {
-        console.log('\n');
-        console.log('╔══════════════════════════════════════════════════════════════════════════════╗');
-        console.log('║                         🦎 BONK TOKEN DETECTED! 🦎                          ║');
-        console.log('╚══════════════════════════════════════════════════════════════════════════════╝');
-        console.log(`┌─ MINT ADDRESS: ${tokenAddress}`);
-        console.log(`├─ Platform: ${platform}`);
-        console.log(`├─ Pool: ${tokenData.pool}`);
-        console.log(`└─ Detection Time: ${new Date().toISOString()}`);
-
-        console.log('\n⏳ [BONK-DELAY] Adding 3 second initial delay for token indexing...');
-        await new Promise(resolve => setTimeout(resolve, 3000));
-
-        let retryCount = 0;
-        const maxRetries = 5;
-        const retryDelays = [3000, 5000, 7000, 10000, 15000];
-
-        while (retryCount < maxRetries) {
-            try {
-                if (retryCount > 0) {
-                    console.log(`🔄 RETRY ${retryCount}/${maxRetries} - Waiting ${retryDelays[retryCount - 1]}ms`);
-                    await new Promise(resolve => setTimeout(resolve, retryDelays[retryCount - 1]));
-                }
-
-                const metadata = await fetchEnhancedBonkMetadata(tokenAddress, tokenData);
-
-                if (metadata && (metadata.name !== 'Unknown' || metadata.symbol !== 'Unknown')) {
-                    enhancedData = metadata;
-                    console.log(`✅ [BONK] Metadata extracted: "${metadata.name}" (${metadata.symbol})`);
-                    break;
-                }
-            } catch (error) {
-                console.log(`❌ [BONK] Attempt ${retryCount + 1} failed: ${error.message}`);
-            }
-            retryCount++;
-        }
-
-        if (!enhancedData) {
-            enhancedData = {
-                name: tokenData.name || `Bonk Token ${tokenAddress.slice(0, 8)}`,
-                symbol: tokenData.symbol || 'BONK',
-                description: tokenData.description || 'New Bonk Token',
-                imageUrl: tokenData.uri || null,
-                twitterUrl: null,
-                hasEnhancedData: false
-            };
-        }
-    }
-    // PUMP TOKEN - Fast processing, no delays
-    else {
-        console.log(`🚀 [PUMP] Processing Pump.fun token: ${tokenAddress}`);
-
         try {
-            const completeMetadata = await tokenMetadataExtractor.getCompleteTokenMetadata(tokenAddress, false);
-            const bestMetadata = tokenMetadataExtractor.getBestMetadata(completeMetadata);
-
-            enhancedData = {
-                name: bestMetadata.name !== 'Unknown' ? bestMetadata.name : tokenData.name || 'New Token',
-                symbol: bestMetadata.symbol !== 'Unknown' ? bestMetadata.symbol : tokenData.symbol || 'TOKEN',
-                description: bestMetadata.description,
-                imageUrl: bestMetadata.logoURI !== 'Not found' ? bestMetadata.logoURI : tokenData.uri || null,
-                twitterUrl: bestMetadata.twitter !== 'Not available' ? bestMetadata.twitter : null,
-                website: bestMetadata.website !== 'Not available' ? bestMetadata.website : null,
-                hasEnhancedData: true
-            };
-        } catch (error) {
-            enhancedData = {
-                name: tokenData.name || `Token ${tokenAddress.slice(0, 8)}`,
-                symbol: tokenData.symbol || 'TOKEN',
-                description: null,
-                imageUrl: tokenData.uri || null,
-                twitterUrl: null,
-                website: null,
-                hasEnhancedData: false
-            };
-        }
-    }
-
-    // Extract Twitter data if available (for both types) - only if not already set by demo
-    if (!isDemoToken && enhancedData.twitterUrl) {
-        const twitterInfo = tokenMetadataExtractor.extractTwitterDataRobust(enhancedData.twitterUrl);
-        twitterData = {
-            type: twitterInfo.type,
-            id: twitterInfo.id,
-            handle: twitterInfo.handle,
-            admin: twitterInfo.handle || twitterInfo.id,
-            originalUrl: enhancedData.twitterUrl
-        };
-    }
-
-    // Create token data object
-    const completeTokenData = {
-        tokenAddress,
-        platform,
-        creatorWallet,
-        name: enhancedData.name,
-        symbol: enhancedData.symbol,
-        description: enhancedData.description,
-        uri: enhancedData.imageUrl,
-        imageUrl: enhancedData.imageUrl,
-        logoURI: enhancedData.imageUrl,
-        marketCapSol: tokenData.marketCapSol || 0,
-        solAmount: tokenData.solAmount || 0,
-        pool: tokenData.pool,
-        twitter: enhancedData.twitterUrl,
-        twitterType: twitterData.type,
-        twitterCommunityId: twitterData.id,
-        twitterHandle: twitterData.handle,
-        twitterAdmin: twitterData.admin,
-        website: enhancedData.website,
-        hasTokenMetadataData: enhancedData.hasEnhancedData,
-        isBonkToken: isBonkToken
-    };
-
-    console.log(`🔍 Processing token with metadata extracted. Now checking filters...`);
-
-    // 2.5 Check Twitter Tweet/Status Reuse - SIMPLIFIED VERSION
-    if (twitterData.type === 'tweet' && twitterData.id) {
-        console.log(`📱 TWEET DETECTED: Tweet ID ${twitterData.id} from @${twitterData.handle}`);
-
-        // Check if tweet was already used
-        if (botState.settings.enableCommunityReuse) {
-            const tweetUsed = await isTweetUsedInFirebase(twitterData.id);
-            if (tweetUsed) {
-                console.log(`❌ Tweet ${twitterData.id} was already used before - skipping token`);
-                return; // Skip this token completely
-            }
-        }
-
-        // Mark tweet as used immediately (save to both cache and append to local JSON)
-        await markTweetAsUsedInFirebase(twitterData.id, twitterData.handle, completeTokenData);
-
-        // Continue to normal admin filtering - don't return here
-        console.log(`✅ Tweet ${twitterData.id} is new - continuing with normal token processing`);
-    }
-
-    // ========== ADMIN FILTERING LOGIC STARTS HERE ==========
-
-    // Check if "snipe all tokens" mode is enabled
-    if (botState.settings.snipeAllTokens) {
-        console.log(`🎯 SNIPE ALL MODE: Token detected - ${tokenAddress}`);
-
-        const detectedTokenData = {
-            ...completeTokenData,
-            matchType: 'snipe_all',
-            matchedEntity: 'All tokens',
-            detectionReason: 'Snipe All Mode Enabled'
-        };
-
-        botState.addDetectedToken(tokenAddress, detectedTokenData);
-
-        broadcastToClients({
-            type: 'token_detected',
-            data: detectedTokenData
-        });
-
-        if (!botState.settings.detectionOnlyMode) {
-            await snipeToken(tokenAddress, botState.settings.globalSnipeSettings);
-        }
-        return;
-    }
-
-    // Check admin filtering
-    if (botState.settings.enableAdminFilter) {
-        console.log('🔍 Checking admin filters...');
-
-        // 1. Check Twitter Individual Admin matching
-        if (twitterData.admin && twitterData.type === 'individual') {
-            console.log(`👤 Found individual Twitter: @${twitterData.handle}`);
-
-            // Check primary admins list
-            const primaryAdminConfig = botState.checkAdminInPrimary(twitterData.handle);
-            if (primaryAdminConfig) {
-                console.log(`✅ Admin @${twitterData.handle} found in primary admin list!`);
-
-                const detectedTokenData = {
-                    ...completeTokenData,
-                    matchType: 'primary_admin',
-                    matchedEntity: twitterData.handle,
-                    detectionReason: `Primary Admin: @${twitterData.handle}`,
-                    config: primaryAdminConfig
-                };
-
-                botState.addDetectedToken(tokenAddress, detectedTokenData);
-                broadcastToClients({
-                    type: 'token_detected',
-                    data: detectedTokenData
-                });
-
-                if (!botState.settings.detectionOnlyMode) {
-                    await snipeToken(tokenAddress, botState.settings.globalSnipeSettings);
-                }
-                return;
-            }
-
-            // Check secondary admins list
-            const secondaryAdminConfig = botState.checkAdminInSecondary(twitterData.handle);
-            if (secondaryAdminConfig) {
-                const matchTime = Date.now() - tokenStartTime;
-                logSecondaryMatch(tokenAddress, twitterData.handle, matchTime);
-                logAdminMatchTiming(tokenAddress, twitterData.handle, 'secondary_admin_individual', matchTime); // ADD THIS LINE
-
-                console.log(`🔔 Admin @${twitterData.handle} found in secondary admin list!`);
-
-                const detectedTokenData = {
-                    ...completeTokenData,
-                    matchType: 'secondary_admin',
-                    matchedEntity: twitterData.handle,
-                    detectionReason: `Secondary Admin: @${twitterData.handle}`,
-                    config: secondaryAdminConfig
-                };
-
-                botState.addDetectedToken(tokenAddress, detectedTokenData);
-                broadcastToClients({
-                    type: 'token_detected',
-                    data: detectedTokenData
-                });
-
-                broadcastToClients({
-                    type: 'secondary_popup_trigger',
-                    data: {
-                        tokenData: detectedTokenData,
-                        globalSnipeSettings: botState.settings.globalSnipeSettings,
-                        timestamp: new Date().toISOString()
-                    }
-                });
-
-                return;
-            }
-        }
-
-        // 2. Check Twitter Community Admin Scraping
-        if (twitterData.type === 'community' && twitterData.id) {
-            console.log(`🏘️ TWITTER COMMUNITY DETECTED: ${twitterData.id}`);
-
-            // Check if community was already used
-            if (botState.settings.enableCommunityReuse) {
-                const communityUsed = await isCommunityUsedInFirebase(twitterData.id);
-                if (communityUsed) {
-                    console.log(`❌ Community ${twitterData.id} was already used before - skipping token`);
-                    return;
-                }
-            }
-
-            // Scrape community admins
-            const communityMatchResult = await scrapeCommunityAndMatchAdmins(twitterData.id, completeTokenData);
-
-            if (communityMatchResult) {
-                const detectedTokenData = {
-                    ...completeTokenData,
-                    matchType: communityMatchResult.matchType,
-                    matchedEntity: communityMatchResult.matchedEntity,
-                    detectionReason: communityMatchResult.detectionReason,
-                    config: communityMatchResult.config
-                };
-
-                botState.addDetectedToken(tokenAddress, detectedTokenData);
-
-                // Mark community as used
-                await markCommunityAsUsedInFirebase(twitterData.id, detectedTokenData);
-
-                broadcastToClients({
-                    type: 'token_detected',
-                    data: detectedTokenData
-                });
-
-                if (communityMatchResult.matchType === 'primary_admin' && !botState.settings.detectionOnlyMode) {
-                    await snipeToken(tokenAddress, botState.settings.globalSnipeSettings);
-                } else if (communityMatchResult.matchType === 'secondary_admin') {
-                    const matchTime = Date.now() - tokenStartTime;
-                    logSecondaryMatch(tokenAddress, communityMatchResult.matchedEntity, matchTime);
-
-                    broadcastToClients({
-                        type: 'secondary_popup_trigger',
-                        data: {
-                            tokenData: detectedTokenData,
-                            globalSnipeSettings: botState.settings.globalSnipeSettings,
-                            timestamp: new Date().toISOString()
-                        }
-                    });
-                }
-                return;
-            }
-        }
-
-        // 3. Check Wallet Address matching
-        if (creatorWallet) {
-            console.log(`💰 Checking creator wallet: ${creatorWallet}`);
-
-            // Check primary admins
-            const primaryAdminConfig = botState.checkAdminInPrimary(creatorWallet);
-            if (primaryAdminConfig) {
-                console.log(`✅ Wallet ${creatorWallet} found in primary admin list!`);
-
-                const detectedTokenData = {
-                    ...completeTokenData,
-                    matchType: 'primary_admin',
-                    matchedEntity: creatorWallet,
-                    detectionReason: `Primary Wallet: ${creatorWallet.substring(0, 8)}...`,
-                    config: primaryAdminConfig
-                };
-
-                botState.addDetectedToken(tokenAddress, detectedTokenData);
-                broadcastToClients({
-                    type: 'token_detected',
-                    data: detectedTokenData
-                });
-
-                if (!botState.settings.detectionOnlyMode) {
-                    await snipeToken(tokenAddress, botState.settings.globalSnipeSettings);
-                }
-                return;
-            }
-
-            // Check secondary admins
-            const secondaryAdminConfig = botState.checkAdminInSecondary(creatorWallet);
-            if (secondaryAdminConfig) {
-                const matchTime = Date.now() - tokenStartTime;
-                logSecondaryMatch(tokenAddress, creatorWallet, matchTime);
-                console.log(`🔔 Wallet ${creatorWallet} found in secondary admin list!`);
-
-                const detectedTokenData = {
-                    ...completeTokenData,
-                    matchType: 'secondary_admin',
-                    matchedEntity: creatorWallet,
-                    detectionReason: `Secondary Wallet: ${creatorWallet.substring(0, 8)}...`,
-                    config: secondaryAdminConfig
-                };
-
-                botState.addDetectedToken(tokenAddress, detectedTokenData);
-                broadcastToClients({
-                    type: 'token_detected',
-                    data: detectedTokenData
-                });
-
-                broadcastToClients({
-                    type: 'secondary_popup_trigger',
-                    data: {
-                        tokenData: detectedTokenData,
-                        globalSnipeSettings: botState.settings.globalSnipeSettings,
-                        timestamp: new Date().toISOString()
-                    }
-                });
-                return;
-            }
-        }
-
-        console.log(`❌ Token ${tokenAddress} doesn't match any admin criteria`);
-        return;
-    }
-
-    // If admin filtering is disabled, detect all tokens
-    if (!botState.settings.enableAdminFilter) {
-        console.log(`📢 Admin filtering disabled - detecting token: ${tokenAddress}`);
-
-        const detectedTokenData = {
-            ...completeTokenData,
-            matchType: 'no_filters',
-            matchedEntity: 'No filters active',
-            detectionReason: 'Admin filtering disabled'
-        };
-
-        botState.addDetectedToken(tokenAddress, detectedTokenData);
-        broadcastToClients({
-            type: 'token_detected',
-            data: detectedTokenData
-        });
-
-        if (!botState.settings.detectionOnlyMode) {
-            await snipeToken(tokenAddress, botState.settings.globalSnipeSettings);
-        }
-    }
-}
-
-// New helper function for enhanced Bonk metadata fetching
-async function fetchEnhancedBonkMetadata(tokenAddress, tokenData) {
-    try {
-        // Try multiple APIs with proper error handling
-
-        // 1. Try Token Metadata Extractor
-        try {
-            const completeMetadata = await tokenMetadataExtractor.getCompleteTokenMetadata(tokenAddress, true);
-            const bestMetadata = tokenMetadataExtractor.getBestMetadata(completeMetadata);
-
-            if (bestMetadata && bestMetadata.name !== 'Unknown') {
-                return {
-                    name: bestMetadata.name,
-                    symbol: bestMetadata.symbol,
-                    description: bestMetadata.description,
-                    imageUrl: bestMetadata.logoURI !== 'Not found' ? bestMetadata.logoURI : null,
-                    twitterUrl: bestMetadata.twitter !== 'Not available' ? bestMetadata.twitter : null,
-                    website: bestMetadata.website !== 'Not available' ? bestMetadata.website : null,
-                    hasEnhancedData: true
-                };
-            }
-        } catch (error) {
-            console.log(`[METADATA-FALLBACK] Token extractor failed: ${error.message}`);
-        }
-
-        // 2. Try direct Helius API
-        if (process.env.HELIUS_RPC) {
-            try {
-                const axios = require('axios');
-                const heliusUrl = `https://api.helius.xyz/v0/token-metadata?api-key=${process.env.HELIUS_RPC.split('api-key=')[1]}`;
-                const response = await axios.post(heliusUrl, {
-                    mintAccounts: [tokenAddress],
-                    includeOffChain: true,
-                    disableCache: false
-                }, { timeout: 3000 });
-
-                if (response.data && response.data[0]) {
-                    const data = response.data[0];
-                    return {
-                        name: data.onChainMetadata?.metadata?.data?.name || data.legacyMetadata?.name || 'Unknown',
-                        symbol: data.onChainMetadata?.metadata?.data?.symbol || data.legacyMetadata?.symbol || 'BONK',
-                        description: data.offChainMetadata?.metadata?.description || null,
-                        imageUrl: data.offChainMetadata?.metadata?.image || data.legacyMetadata?.logoURI || null,
-                        twitterUrl: data.offChainMetadata?.metadata?.twitter || null,
-                        website: data.offChainMetadata?.metadata?.website || null,
-                        hasEnhancedData: true
-                    };
-                }
-            } catch (error) {
-                console.log(`[METADATA-FALLBACK] Helius API failed: ${error.message}`);
-            }
-        }
-
-        // 3. Return basic data if all fails
-        return {
-            name: tokenData.name || 'Unknown',
-            symbol: tokenData.symbol || 'Unknown',
-            description: null,
-            imageUrl: tokenData.uri || null,
-            twitterUrl: null,
-            website: null,
-            hasEnhancedData: false
-        };
-
-    } catch (error) {
-        console.log(`[METADATA-ERROR] All metadata fetching failed: ${error.message}`);
-        return null;
-    }
-}
-
-// Enhanced Twitter data extraction function that handles all possible formats
-function extractTwitterDataRobust(input, sourceType = 'unknown') {
-    if (!input) return { type: null, id: null, handle: null, source: sourceType };
-
-    console.log(`🔍 Extracting Twitter data from: "${input}" (source: ${sourceType})`);
-
-    const cleanInput = input.trim();
-
-    // Pattern 1: Tweet/Status URLs - ADD THIS PATTERN FIRST
-    const tweetPatterns = [
-        /(?:https?:\/\/)?(?:www\.)?(?:twitter\.com\/|x\.com\/)([a-zA-Z0-9_]+)\/status\/(\d+)/i,
-    ];
-
-    for (const pattern of tweetPatterns) {
-        const match = cleanInput.match(pattern);
-        if (match) {
-            console.log(`📱 Found tweet: @${match[1]} - Tweet ID: ${match[2]}`);
-            return {
-                type: 'tweet',
-                id: match[2], // Tweet ID
-                handle: match[1].toLowerCase(), // Username
-                source: sourceType,
-                originalUrl: cleanInput
-            };
-        }
-    }
-
-    // Pattern 2: Community ID in various formats
-    const communityPatterns = [
-        /(?:https?:\/\/)?(?:www\.)?(?:twitter\.com\/|x\.com\/)i\/communities\/(\d+)/i,
-        /^i\/communities\/(\d+)$/i,
-        /communities\/(\d+)/i
-    ];
-
-    for (const pattern of communityPatterns) {
-        const match = cleanInput.match(pattern);
-        if (match) {
-            console.log(`🏘️ Found community ID: ${match[1]} (pattern: ${pattern})`);
-            return {
-                type: 'community',
-                id: match[1],
-                handle: null,
-                source: sourceType,
-                originalUrl: cleanInput
-            };
-        }
-    }
-
-    // Pattern 3: Individual Twitter accounts
-    const userPatterns = [
-        /(?:https?:\/\/)?(?:www\.)?(?:twitter\.com\/|x\.com\/)(?!i\/communities\/)(?!.*\/status\/)([a-zA-Z0-9_]+)/i,
-        /^@([a-zA-Z0-9_]+)$/,
-        /^([a-zA-Z0-9_]{1,15})$/
-    ];
-
-    for (const pattern of userPatterns) {
-        const match = cleanInput.match(pattern);
-        if (match) {
-            const handle = match[1].toLowerCase();
-            if (isValidTwitterHandle(handle)) {
-                console.log(`👤 Found individual handle: @${handle} (pattern: ${pattern})`);
-                return {
-                    type: 'individual',
-                    id: null,
-                    handle: handle,
-                    source: sourceType,
-                    originalUrl: cleanInput
-                };
-            }
-        }
-    }
-
-    console.log(`❌ No Twitter data found in: "${input}"`);
-    return { type: null, id: null, handle: null, source: sourceType };
-}
-
-// Enhanced validation for Twitter handles
-function isValidTwitterHandle(handle) {
-    if (!handle || handle.length < 1 || handle.length > 15) return false;
-
-    // Must only contain alphanumeric and underscore
-    if (!/^[a-zA-Z0-9_]+$/.test(handle)) return false;
-
-    // Block common non-username terms
-    const blockedTerms = [
-        'home', 'explore', 'messages', 'follow', 'click', 'search',
-        'notifications', 'profile', 'settings', 'logout', 'help',
-        'about', 'privacy', 'terms', 'status', 'intent', 'share'
-    ];
-
-    if (blockedTerms.includes(handle.toLowerCase())) return false;
-
-    return true;
-}
-
-// Helper function to get nested object values safely
-function getNestedValue(obj, path) {
-    try {
-        return path.split('.').reduce((current, key) => {
-            if (key.includes('?')) {
-                key = key.replace('?', '');
-                return current?.[key];
-            }
-            return current[key];
-        }, obj);
-    } catch (error) {
-        return undefined;
-    }
-}
-
-// ========== API ENDPOINTS ==========
-
-// Global snipe settings API endpoints
-app.post('/api/global-snipe-settings', (req, res) => {
-    const { amount, fees, mevProtection, soundNotification } = req.body;
-
-    if (amount) botState.settings.globalSnipeSettings.amount = amount;
-    if (fees) botState.settings.globalSnipeSettings.fees = fees;
-    if (typeof mevProtection !== 'undefined') botState.settings.globalSnipeSettings.mevProtection = mevProtection;
-    if (soundNotification) botState.settings.globalSnipeSettings.soundNotification = soundNotification;
-
-    console.log('Global snipe settings updated:', botState.settings.globalSnipeSettings);
-
-    res.json({
-        success: true,
-        globalSnipeSettings: botState.settings.globalSnipeSettings
-    });
-});
-
-app.post('/api/twitter-logout', async (req, res) => {
-    try {
-        if (!twitterScraper.isInitialized) {
-            return res.status(400).json({ error: 'Twitter scraper not initialized' });
-        }
-
-        // If browser crashed or closed, reinitialize it first
-        if (!twitterScraper.browser || !twitterScraper.page) {
-            console.log('🔄 Browser crashed, reinitializing...');
-            const initSuccess = await twitterScraper.init();
-            if (!initSuccess) {
-                return res.status(500).json({ error: 'Failed to reinitialize browser' });
-            }
-        }
-
-        let logoutSuccess = false;
-
-        // Navigate to logout page and perform logout
-        if (twitterScraper.page) {
-            try {
-                console.log('🚪 Starting Twitter logout process...');
-
-                // Step 1: Go to logout page
-                await twitterScraper.page.goto('https://twitter.com/logout', {
-                    waitUntil: 'networkidle',
-                    timeout: 30000
-                });
-
-                await twitterScraper.page.waitForTimeout(2000);
-
-                // Step 2: Try to auto-click logout confirmation
-                try {
-                    console.log('🔍 Looking for logout confirmation button...');
-                    const logoutButton = await twitterScraper.page.waitForSelector(
-                        '[data-testid="confirmationSheetConfirm"]',
-                        { timeout: 5000 }
-                    );
-
-                    if (logoutButton) {
-                        console.log('✅ Found logout button, clicking...');
-                        await logoutButton.click();
-                        await twitterScraper.page.waitForTimeout(3000);
-
-                        // Step 3: Check if we're actually logged out
-                        const currentUrl = twitterScraper.page.url();
-                        console.log('🔍 Current URL after logout:', currentUrl);
-
-                        // Look for login indicators
-                        try {
-                            await twitterScraper.page.waitForSelector('[data-testid="loginButton"]', { timeout: 5000 });
-                            console.log('✅ Login button found - logout successful');
-                            logoutSuccess = true;
-                        } catch (e) {
-                            // If login button not found, check URL
-                            if (currentUrl.includes('/login') || currentUrl.includes('/i/flow/login')) {
-                                console.log('✅ Redirected to login page - logout successful');
-                                logoutSuccess = true;
-                            }
-                        }
-                    }
-                } catch (e) {
-                    console.log('⚠️ No logout confirmation button found');
-
-                    // Check if we're already on login page
-                    const currentUrl = twitterScraper.page.url();
-                    if (currentUrl.includes('/login')) {
-                        console.log('✅ Already on login page - logout successful');
-                        logoutSuccess = true;
+            const response = await apiCall(`/pair-address/${tokenAddress}`);
+            console.log(`📊 Address check response:`, response);
+
+            if (response.success) {
+                if (response.isPumpFun && response.bondingCurveData) {
+                    // Pump.fun token - bonding curve found
+                    console.log(`✅ Bonding curve found for ${tokenAddress}:`, response.bondingCurveData.bondingCurveAddress);
+
+                    // Update status to found
+                    setPairDetectionStatus(prev => ({
+                        ...prev,
+                        [tokenAddress]: 'found',
+                        bondingCurveData: response.bondingCurveData
+                    }));
+
+                    // AUTO-OPEN WITH BONDING CURVE ADDRESS AFTER 3 SECONDS
+                    console.log(`🚀 Starting 3-second auto-open countdown for pump.fun token ${tokenAddress}...`);
+                    const autoOpenTimer = setTimeout(() => {
+                        console.log(`🚀 AUTO-OPENING TOKEN PAGE WITH BONDING CURVE ADDRESS`);
+                        autoOpenTokenPageWithAddress(tokenAddress, response.axiomUrl, 'bonding_curve');
+                    }, 3000);
+
+                    // Store timer reference
+                    setAutoRetryTimers(prev => ({
+                        ...prev,
+                        [tokenAddress]: autoOpenTimer
+                    }));
+
+                    addNotification('success', `✅ Bonding curve found! Auto-opening in 3 seconds...`);
+
+                } else if (!response.isPumpFun && response.pairData && response.pairData.pairAddress) {
+                    // Non-pump.fun token - pair address found
+                    console.log(`✅ Boding Curve found for ${tokenAddress}:`, response.pairData.pairAddress);
+
+                    // Update status to found
+                    setPairDetectionStatus(prev => ({
+                        ...prev,
+                        [tokenAddress]: 'found',
+                        pairData: response.pairData
+                    }));
+
+                    // AUTO-OPEN WITH PAIR ADDRESS AFTER 3 SECONDS
+                    console.log(`🚀 Starting 3-second auto-open countdown for ${tokenAddress}...`);
+                    const autoOpenTimer = setTimeout(() => {
+                        console.log(`🚀 AUTO-OPENING TOKEN PAGE WITH PAIR ADDRESS`);
+                        autoOpenTokenPageWithAddress(tokenAddress, response.axiomUrl, 'pair_address');
+                    }, 3000);
+
+                    // Store timer reference
+                    setAutoRetryTimers(prev => ({
+                        ...prev,
+                        [tokenAddress]: autoOpenTimer
+                    }));
+
+                    addNotification('success', `✅ Boding Curve found! Auto-opening in 3 seconds...`);
+
+                } else {
+                    console.log(`⚠️ No pair/bonding curve found for ${tokenAddress}`);
+
+                    // Update status to not found
+                    setPairDetectionStatus(prev => ({
+                        ...prev,
+                        [tokenAddress]: 'not_found'
+                    }));
+
+                    // Retry if we haven't exceeded max retries
+                    if (currentRetry < maxRetries - 1) {
+                        console.log(`🔄 Scheduling retry ${currentRetry + 2}/${maxRetries} in 5 seconds...`);
+
+                        const retryTimer = setTimeout(() => {
+                            checkPairAddressWithRetry(tokenAddress, maxRetries, currentRetry + 1);
+                        }, 5000);
+
+                        setAutoRetryTimers(prev => ({
+                            ...prev,
+                            [tokenAddress]: retryTimer
+                        }));
+                    } else {
+                        console.log(`❌ Max retries reached for ${tokenAddress}`);
+                        addNotification('warning', `⚠️ No pair/bonding curve found after ${maxRetries} attempts`);
                     }
                 }
+            } else {
+                console.log(`⚠️ API returned error for ${tokenAddress}:`, response.message || 'Unknown error');
 
-                // Step 4: If auto-logout failed, try direct navigation to login
-                if (!logoutSuccess) {
-                    console.log('🔄 Auto-logout failed, trying direct login navigation...');
-                    await twitterScraper.page.goto('https://twitter.com/i/flow/login', {
-                        waitUntil: 'networkidle',
-                        timeout: 30000
-                    });
+                // Update status to not found
+                setPairDetectionStatus(prev => ({
+                    ...prev,
+                    [tokenAddress]: 'not_found'
+                }));
 
-                    // Check if we reached login page
-                    const finalUrl = twitterScraper.page.url();
-                    if (finalUrl.includes('/login') || finalUrl.includes('/i/flow/login')) {
-                        console.log('✅ Successfully navigated to login page');
-                        logoutSuccess = true;
-                    }
+                // Retry if we haven't exceeded max retries
+                if (currentRetry < maxRetries - 1) {
+                    console.log(`🔄 Retrying due to API error in 5 seconds...`);
+
+                    const retryTimer = setTimeout(() => {
+                        checkPairAddressWithRetry(tokenAddress, maxRetries, currentRetry + 1);
+                    }, 5000);
+
+                    setAutoRetryTimers(prev => ({
+                        ...prev,
+                        [tokenAddress]: retryTimer
+                    }));
+                } else {
+                    console.log(`❌ Max retries reached for ${tokenAddress} due to API errors`);
+                    addNotification('warning', `⚠️ API errors after ${maxRetries} attempts`);
                 }
-
-            } catch (e) {
-                console.log('⚠️ Error during logout navigation:', e.message);
             }
-        }
 
-        // Reset session state regardless of logout success
-        twitterScraper.sessionActive = false;
-
-        const message = logoutSuccess ?
-            'Successfully logged out from Twitter' :
-            'Logout page opened - please complete logout manually in browser';
-
-        res.json({
-            success: true,
-            loggedOut: logoutSuccess,
-            message: message
-        });
-
-    } catch (error) {
-        console.error('❌ Logout error:', error);
-        res.status(500).json({ error: error.message });
-    }
-});
-
-app.post('/api/twitter-reopen-browser', async (req, res) => {
-    try {
-        console.log('🔄 Reopening Twitter browser...');
-
-        // Close existing browser if any
-        if (twitterScraper.browser) {
-            try {
-                await twitterScraper.browser.close();
-            } catch (e) {
-                console.log('Old browser already closed');
-            }
-        }
-
-        // Reinitialize
-        const initSuccess = await twitterScraper.init();
-        if (initSuccess) {
-            // Open Twitter login page
-            await twitterScraper.openLoginPage();
-            res.json({
-                success: true,
-                message: 'Browser reopened and Twitter login page loaded'
-            });
-        } else {
-            res.status(500).json({ error: 'Failed to reopen browser' });
-        }
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-});
-
-app.post('/api/snipe-with-global-settings/:tokenAddress', async (req, res) => {
-    const { tokenAddress } = req.params;
-    const globalSettings = botState.settings.globalSnipeSettings;
-
-    try {
-        const result = await snipeToken(tokenAddress, globalSettings);
-
-        if (result.success) {
-            // 🔥 BROADCAST AUTO-OPEN MESSAGE
-            broadcastToClients({
-                type: 'auto_open_token_page',
-                data: {
-                    tokenAddress,
-                    tokenPageUrl: result.tokenPageUrl,
-                    destination: botState.settings.tokenPageDestination,
-                    reason: 'manual_secondary_snipe'
-                }
-            });
-        }
-
-        res.json({ success: true, result });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-});
-
-// Firebase management endpoints
-app.get('/api/firebase/used-communities', async (req, res) => {
-    try {
-        const snapshot = await db.collection('usedCommunities').get();
-        const communities = [];
-        snapshot.forEach(doc => {
-            communities.push({
-                id: doc.id,
-                ...doc.data()
-            });
-        });
-        res.json({ communities });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-});
-
-// Tweet management endpoints
-app.get('/api/firebase/used-tweets', async (req, res) => {
-    try {
-        const snapshot = await db.collection('usedTweets').get();
-        const tweets = [];
-        snapshot.forEach(doc => {
-            tweets.push({
-                id: doc.id,
-                ...doc.data()
-            });
-        });
-        res.json({ tweets });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-});
-
-app.delete('/api/firebase/used-tweets/:tweetId', async (req, res) => {
-    try {
-        const { tweetId } = req.params;
-        await db.collection('usedTweets').doc(tweetId).delete();
-
-        // Remove from cache
-        tweetCache.tweets.delete(tweetId);
-        await saveTweetCacheToFile();
-
-        res.json({ success: true, message: `Tweet ${tweetId} removed from Firebase` });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-});
-
-app.delete('/api/firebase/used-tweets', async (req, res) => {
-    try {
-        const snapshot = await db.collection('usedTweets').get();
-        const batch = db.batch();
-        snapshot.docs.forEach(doc => {
-            batch.delete(doc.ref);
-        });
-        await batch.commit();
-
-        // Clear cache
-        tweetCache.tweets.clear();
-        await saveTweetCacheToFile();
-
-        res.json({ success: true, message: 'All used tweets cleared from Firebase' });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-});
-
-// Add these endpoints after the existing API routes
-
-// Get all uploaded sound files
-app.get('/api/sound-files', async (req, res) => {
-    try {
-        await ensureSoundsDir();
-
-        // ✅ LOAD METADATA FILE
-        const metadataPath = path.join(SOUNDS_DIR, 'metadata.json');
-        let metadata = {};
-
-        try {
-            const metadataContent = await fsPromises.readFile(metadataPath, 'utf8');
-            metadata = JSON.parse(metadataContent);
         } catch (error) {
-            console.log('No metadata file found, will use generated names');
-        }
+            console.error(`❌ Error checking address for ${tokenAddress}:`, error);
 
-        const files = await fsPromises.readdir(SOUNDS_DIR);
-        const soundFiles = [];
+            // Update status to error
+            setPairDetectionStatus(prev => ({
+                ...prev,
+                [tokenAddress]: 'error'
+            }));
 
-        for (const filename of files) {
-            // Skip metadata file
-            if (filename === 'metadata.json') continue;
+            // Retry on error too
+            if (currentRetry < maxRetries - 1) {
+                console.log(`🔄 Retrying due to error in 5 seconds...`);
 
-            try {
-                const filePath = path.join(SOUNDS_DIR, filename);
-                const stats = await fsPromises.stat(filePath);
+                const retryTimer = setTimeout(() => {
+                    checkPairAddressWithRetry(tokenAddress, maxRetries, currentRetry + 1);
+                }, 5000);
 
-                soundFiles.push({
-                    filename,
-                    originalName: metadata[filename]?.originalName || filename, // ✅ USE STORED ORIGINAL NAME
-                    size: stats.size,
-                    uploadedAt: metadata[filename]?.uploadedAt || stats.birthtime,
-                    mimetype: metadata[filename]?.mimetype || getMimeType(path.extname(filename))
-                });
-            } catch (error) {
-                console.error(`Error getting stats for ${filename}:`, error);
+                setAutoRetryTimers(prev => ({
+                    ...prev,
+                    [tokenAddress]: retryTimer
+                }));
+            } else {
+                console.log(`❌ Max retries reached for ${tokenAddress} due to errors`);
+                addNotification('error', `❌ Connection errors after ${maxRetries} attempts`);
             }
         }
+    };
 
-        res.json({
-            success: true,
-            files: soundFiles.sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt))
-        });
-    } catch (error) {
-        console.error('Error fetching sound files:', error);
-        res.status(500).json({ error: error.message });
-    }
-});
-
-// Upload a new sound file
-app.post('/api/upload-sound', uploadSound.single('soundFile'), async (req, res) => {
-    try {
-        if (!req.file) {
-            return res.status(400).json({ error: 'No sound file provided' });
-        }
-
-        const soundFile = {
-            filename: req.file.filename,
-            originalName: req.file.originalname, // ✅ This preserves the original name
-            size: req.file.size,
-            mimetype: req.file.mimetype,
-            uploadedAt: new Date(),
-            path: req.file.path
-        };
-
-        // ✅ SAVE ORIGINAL NAME TO A JSON FILE FOR RETRIEVAL
-        const metadataPath = path.join(SOUNDS_DIR, 'metadata.json');
-        let metadata = {};
-
+    const reopenTwitterBrowser = async () => {
         try {
-            const existingData = await fsPromises.readFile(metadataPath, 'utf8');
-            metadata = JSON.parse(existingData);
-        } catch (error) {
-            // File doesn't exist yet, start with empty object
-        }
+            setTwitterSessionStatus(prev => ({ ...prev, checking: true }));
 
-        metadata[req.file.filename] = {
-            originalName: req.file.originalname,
-            uploadedAt: new Date().toISOString(),
-            size: req.file.size,
-            mimetype: req.file.mimetype
-        };
+            const response = await apiCall('/twitter-reopen-browser', { method: 'POST' });
 
-        await fsPromises.writeFile(metadataPath, JSON.stringify(metadata, null, 2));
-
-        console.log('🔊 Sound file uploaded:', soundFile);
-
-        res.json({
-            success: true,
-            message: 'Sound file uploaded successfully',
-            filename: soundFile.filename,
-            originalName: soundFile.originalName,
-            size: soundFile.size
-        });
-    } catch (error) {
-        console.error('Error uploading sound file:', error);
-        res.status(500).json({ error: error.message });
-    }
-});
-
-// ADD THIS NEW ENDPOINT after line ~1850:
-app.post('/api/clean-admin-lists', async (req, res) => {
-    try {
-        console.log('🧹 Cleaning admin list entries...');
-
-        // Clean primary admins
-        for (const [id, config] of botState.primaryAdminList.entries()) {
-            if (config.address) {
-                const cleanAddress = config.address.trim();
-                if (cleanAddress !== config.address) {
-                    console.log(`Cleaning primary admin: "${config.address}" -> "${cleanAddress}"`);
-                    config.address = cleanAddress;
-
-                    // Update in Firebase
-                    await saveAdminListToFirebase('primary_admins', config);
-                }
-            }
-        }
-
-        // Clean secondary admins
-        for (const [id, config] of botState.secondaryAdminList.entries()) {
-            if (config.address) {
-                const cleanAddress = config.address.trim();
-                if (cleanAddress !== config.address) {
-                    console.log(`Cleaning secondary admin: "${config.address}" -> "${cleanAddress}"`);
-                    config.address = cleanAddress;
-
-                    // Update in Firebase
-                    await saveAdminListToFirebase('secondary_admins', config);
-                }
-            }
-        }
-
-        res.json({
-            success: true,
-            message: 'Admin lists cleaned successfully'
-        });
-
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-});
-
-// Delete a sound file
-app.delete('/api/sound-files/:filename', async (req, res) => {
-    try {
-        const { filename } = req.params;
-        const filePath = path.join(SOUNDS_DIR, filename);
-
-        try {
-            await fsPromises.access(filePath);
-            await fsPromises.unlink(filePath);
-
-            // ✅ CLEAN UP METADATA
-            const metadataPath = path.join(SOUNDS_DIR, 'metadata.json');
-            try {
-                const metadataContent = await fsPromises.readFile(metadataPath, 'utf8');
-                const metadata = JSON.parse(metadataContent);
-                delete metadata[filename];
-                await fsPromises.writeFile(metadataPath, JSON.stringify(metadata, null, 2));
-            } catch (error) {
-                console.log('No metadata to clean up');
-            }
-
-            console.log('🗑️ Sound file deleted:', filename);
-
-            res.json({
-                success: true,
-                message: 'Sound file deleted successfully'
-            });
-        } catch (error) {
-            if (error.code === 'ENOENT') {
-                return res.status(404).json({ error: 'Sound file not found' });
-            }
-            throw error;
-        }
-    } catch (error) {
-        console.error('Error deleting sound file:', error);
-        res.status(500).json({ error: error.message });
-    }
-});
-
-// Serve uploaded sound files
-app.get('/api/sounds/:filename', (req, res) => {
-    const { filename } = req.params;
-    const filePath = path.join(SOUNDS_DIR, filename);
-
-    res.sendFile(filePath, (error) => {
-        if (error) {
-            console.error('Error serving sound file:', error);
-            res.status(404).json({ error: 'Sound file not found' });
-        }
-    });
-});
-
-app.delete('/api/firebase/used-communities/:communityId', async (req, res) => {
-    try {
-        const { communityId } = req.params;
-        await db.collection('usedCommunities').doc(communityId).delete();
-        res.json({ success: true, message: `Community ${communityId} removed from Firebase` });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-});
-
-app.delete('/api/firebase/used-communities', async (req, res) => {
-    try {
-        const snapshot = await db.collection('usedCommunities').get();
-        const batch = db.batch();
-        snapshot.docs.forEach(doc => {
-            batch.delete(doc.ref);
-        });
-        await batch.commit();
-        res.json({ success: true, message: 'All used communities cleared from Firebase' });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-});
-
-// Enhanced Firebase admin list endpoints
-app.get('/api/firebase/admin-lists', async (req, res) => {
-    try {
-        const primaryAdmins = await loadAdminListFromFirebase('primary_admins');
-        const secondaryAdmins = await loadAdminListFromFirebase('secondary_admins');
-
-        res.json({
-            success: true,
-            data: {
-                primary_admins: primaryAdmins,
-                secondary_admins: secondaryAdmins
-            },
-            stats: {
-                primaryCount: primaryAdmins.length,
-                secondaryCount: secondaryAdmins.length
-            }
-        });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-});
-
-app.post('/api/firebase/sync-admin-lists', async (req, res) => {
-    try {
-        const success = await botState.loadAdminListsFromFirebase();
-
-        if (success) {
-            // Broadcast sync update to all clients
-            broadcastToClients({
-                type: 'admin_lists_synced',
-                data: {
-                    stats: botState.getStats(),
-                    timestamp: new Date().toISOString()
-                }
-            });
-
-            res.json({
-                success: true,
-                message: 'Admin lists synchronized from Firebase',
-                stats: botState.getStats()
-            });
-        } else {
-            res.status(500).json({
-                success: false,
-                error: 'Failed to sync admin lists from Firebase'
-            });
-        }
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-});
-
-app.delete('/api/firebase/admin-lists/:listType', async (req, res) => {
-    try {
-        const { listType } = req.params;
-
-        // Get all documents in the collection
-        const snapshot = await db.collection(listType).get();
-
-        // Delete all documents
-        const batch = db.batch();
-        snapshot.docs.forEach(doc => {
-            batch.delete(doc.ref);
-        });
-        await batch.commit();
-
-        // Clear local state
-        switch (listType) {
-            case 'primary_admins':
-                botState.primaryAdminList.clear();
-                break;
-            case 'secondary_admins':
-                botState.secondaryAdminList.clear();
-                break;
-        }
-
-        // Broadcast update
-        broadcastToClients({
-            type: 'admin_list_cleared',
-            data: {
-                listType,
-                stats: botState.getStats(),
-                timestamp: new Date().toISOString()
-            }
-        });
-
-        res.json({
-            success: true,
-            message: `All ${listType} cleared from Firebase and local state`,
-            clearedCount: snapshot.docs.length,
-            stats: botState.getStats()
-        });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-});
-
-// Test Firebase connection endpoint
-app.get('/api/test-firebase', async (req, res) => {
-    try {
-        const testDoc = await db.collection('test').add({
-            message: 'Firebase connected successfully!',
-            timestamp: admin.firestore.FieldValue.serverTimestamp()
-        });
-        res.json({
-            success: true,
-            message: 'Firebase connected!',
-            docId: testDoc.id
-        });
-    } catch (error) {
-        res.status(500).json({
-            success: false,
-            error: error.message
-        });
-    }
-});
-
-// WebSocket connections to platforms
-function connectToPumpPortal() {
-    if (botState.pumpPortalSocket) {
-        botState.pumpPortalSocket.close();
-    }
-
-    console.log('🔌 Connecting to Pump Portal...');
-    botState.pumpPortalSocket = new WebSocket('wss://pumpportal.fun/api/data');
-
-    botState.pumpPortalSocket.onopen = () => {
-        console.log('✅ Connected to Pump Portal WebSocket');
-        botState.pumpPortalSocket.send(JSON.stringify({ method: "subscribeNewToken" }));
-
-        broadcastToClients({
-            type: 'platform_status',
-            data: { platform: 'pumpfun', status: 'connected' }
-        });
-    };
-
-    // In your connectToPumpPortal() function
-    botState.pumpPortalSocket.onmessage = (event) => {
-        try {
-            const data = JSON.parse(event.data);
-            if (data.txType === 'create' && botState.isRunning) {
-
-                // 🔥 DEBUG: Log all available fields to see what we can extract
-                console.log('🔍 PUMP.FUN CREATE EVENT - Available fields:');
-                console.log('📊 Full data structure:', JSON.stringify(data, null, 2));
-
-                // Look for bonding curve related fields
-                const possibleBondingCurveFields = [
-                    'bondingCurveKey',
-                    'bondingCurve',
-                    'bonding_curve',
-                    'bondingCurveAddress',
-                    'bonding_curve_address'
-                ];
-
-                possibleBondingCurveFields.forEach(field => {
-                    if (data[field]) {
-                        console.log(`✅ Found bonding curve field '${field}': ${data[field]}`);
-                    }
-                });
-
-                processNewToken(data, 'pumpfun');
-            }
-        } catch (error) {
-            console.error('Error processing Pump Portal message:', error);
-        }
-    };
-
-    botState.pumpPortalSocket.onerror = (error) => {
-        console.error('Pump Portal WebSocket error:', error);
-        broadcastToClients({
-            type: 'platform_status',
-            data: { platform: 'pumpfun', status: 'error', error: error.message }
-        });
-    };
-
-    botState.pumpPortalSocket.onclose = () => {
-        console.log('Pump Portal WebSocket closed');
-        broadcastToClients({
-            type: 'platform_status',
-            data: { platform: 'pumpfun', status: 'disconnected' }
-        });
-
-        if (botState.isRunning) {
-            botState.reconnectTimeouts.set('pumpfun', setTimeout(() => {
-                connectToPumpPortal();
-            }, 5000));
-        }
-    };
-}
-
-function connectToLetsBonk() {
-    console.log('🔌 LetsBonk connection placeholder');
-    broadcastToClients({
-        type: 'platform_status',
-        data: { platform: 'letsbonk', status: 'not_implemented' }
-    });
-}
-
-// Main API Routes
-app.get('/api/status', (req, res) => {
-    res.json({
-        isRunning: botState.isRunning,
-        settings: botState.settings,
-        stats: botState.getStats()
-    });
-});
-
-app.post('/api/start', (req, res) => {
-    if (botState.isRunning) {
-        return res.status(400).json({ error: 'Bot is already running' });
-    }
-
-    if (!botState.settings.privateKey) {
-        return res.status(400).json({ error: 'Private key not set' });
-    }
-
-    botState.isRunning = true;
-    connectToPumpPortal();
-    connectToLetsBonk();
-
-    broadcastToClients({
-        type: 'bot_status',
-        data: { isRunning: true }
-    });
-
-    res.json({ success: true, message: 'Bot started' });
-});
-
-app.post('/api/stop', (req, res) => {
-    botState.isRunning = false;
-
-    if (botState.pumpPortalSocket) {
-        botState.pumpPortalSocket.close();
-    }
-    if (botState.letsBonkSocket) {
-        botState.letsBonkSocket.close();
-    }
-
-    botState.reconnectTimeouts.forEach(timeout => clearTimeout(timeout));
-    botState.reconnectTimeouts.clear();
-
-    broadcastToClients({
-        type: 'bot_status',
-        data: { isRunning: false }
-    });
-
-    res.json({ success: true, message: 'Bot stopped' });
-});
-
-app.post('/api/settings', (req, res) => {
-    const { privateKey, tokenPageDestination } = req.body;
-
-    if (privateKey) {
-        try {
-            Keypair.fromSecretKey(bs58.decode(privateKey));
-            botState.settings.privateKey = privateKey;
-        } catch (error) {
-            return res.status(400).json({ error: 'Invalid private key' });
-        }
-    }
-
-    if (tokenPageDestination) {
-        botState.settings.tokenPageDestination = tokenPageDestination;
-    }
-
-    res.json({ success: true, settings: botState.settings });
-});
-
-// Updated filter settings endpoint with consolidated admin filtering
-app.post('/api/filter-settings', (req, res) => {
-    const {
-        enableAdminFilter,
-        enableCommunityReuse,
-        snipeAllTokens,
-        detectionOnlyMode,
-        bonkTokensOnly  // Add new filter for bonk tokens only
-    } = req.body;
-
-    console.log('🔧 Received filter settings update:', {
-        enableAdminFilter,
-        enableCommunityReuse,
-        snipeAllTokens,
-        detectionOnlyMode,
-        bonkTokensOnly
-    });
-
-    // Update admin filtering (now handles both Twitter admins AND wallet addresses)
-    if (typeof enableAdminFilter !== 'undefined') {
-        botState.settings.enableAdminFilter = enableAdminFilter;
-        console.log(`📋 Admin filtering (Twitter + Wallets): ${enableAdminFilter ? 'ENABLED' : 'DISABLED'}`);
-    }
-
-    // Update community reuse prevention
-    if (typeof enableCommunityReuse !== 'undefined') {
-        botState.settings.enableCommunityReuse = enableCommunityReuse;
-        console.log(`😍 Community reuse prevention: ${enableCommunityReuse ? 'ENABLED' : 'DISABLED'}`);
-    }
-
-    // Update snipe all tokens mode
-    if (typeof snipeAllTokens !== 'undefined') {
-        botState.settings.snipeAllTokens = snipeAllTokens;
-        console.log(`⚡ Snipe all tokens: ${snipeAllTokens ? 'ENABLED' : 'DISABLED'}`);
-
-        if (snipeAllTokens) {
-            console.log('⚠️ WARNING: SNIPE ALL TOKENS MODE ENABLED - This will attempt to snipe EVERY new token!');
-        }
-    }
-
-    // Update detection only mode
-    if (typeof detectionOnlyMode !== 'undefined') {
-        botState.settings.detectionOnlyMode = detectionOnlyMode;
-        console.log(`🛡️ Detection only mode: ${detectionOnlyMode ? 'ENABLED' : 'DISABLED'}`);
-
-        if (!detectionOnlyMode && snipeAllTokens) {
-            console.log('🚨 CRITICAL WARNING: Detection only mode is OFF and Snipe all tokens is ON!');
-        }
-    }
-
-    // Update bonk tokens only filter
-    if (typeof bonkTokensOnly !== 'undefined') {
-        botState.settings.bonkTokensOnly = bonkTokensOnly;
-        console.log(`🦎 Bonk tokens only: ${bonkTokensOnly ? 'ENABLED' : 'DISABLED'}`);
-    }
-
-    // Log current filter configuration
-    console.log('📊 Current filter configuration:', {
-        enableAdminFilter: botState.settings.enableAdminFilter,
-        enableCommunityReuse: botState.settings.enableCommunityReuse,
-        snipeAllTokens: botState.settings.snipeAllTokens,
-        detectionOnlyMode: botState.settings.detectionOnlyMode,
-        bonkTokensOnly: botState.settings.bonkTokensOnly
-    });
-
-    // Update filter logic explanation based on current settings
-    let filterExplanation = '';
-    if (botState.settings.bonkTokensOnly) {
-        filterExplanation = 'Will only process Bonk tokens (all Pump.fun tokens filtered out)';
-    } else if (botState.settings.snipeAllTokens) {
-        filterExplanation = 'Will detect and snipe ALL new tokens (all other filters bypassed)';
-    } else if (botState.settings.enableAdminFilter) {
-        filterExplanation = 'Will detect tokens from wallet addresses or Twitter admins in your Primary/Secondary Admin lists';
-    } else {
-        filterExplanation = 'Will detect ALL tokens (no filtering applied)';
-    }
-
-    console.log(`🎯 Filter behavior: ${filterExplanation}`);
-
-    // Return updated settings
-    res.json({
-        success: true,
-        settings: {
-            enableAdminFilter: botState.settings.enableAdminFilter,
-            enableCommunityReuse: botState.settings.enableCommunityReuse,
-            snipeAllTokens: botState.settings.snipeAllTokens,
-            detectionOnlyMode: botState.settings.detectionOnlyMode,
-            bonkTokensOnly: botState.settings.bonkTokensOnly
-        },
-        message: 'Filter settings updated successfully',
-        explanation: filterExplanation,
-        warnings: [
-            ...(botState.settings.bonkTokensOnly ? ['🦎 Bonk Tokens Only mode is ACTIVE - all Pump.fun tokens will be filtered out'] : []),
-            ...(botState.settings.snipeAllTokens ? ['⚠️ Snipe All Tokens mode is ACTIVE'] : []),
-            ...(!botState.settings.detectionOnlyMode ? ['⚠️ Detection Only mode is OFF - real sniping enabled'] : []),
-            ...(botState.settings.snipeAllTokens && !botState.settings.detectionOnlyMode ? ['🚨 DANGER: Will snipe ALL tokens automatically!'] : [])
-        ]
-    });
-});
-
-// Enhanced list management routes with Firebase integration
-app.get('/api/lists/:listType', async (req, res) => {
-    try {
-        const { listType } = req.params;
-
-        // Ensure Firebase data is loaded
-        if (!botState.isFirebaseLoaded) {
-            await botState.loadAdminListsFromFirebase();
-        }
-
-        const list = botState.getList(listType);
-        res.json({
-            list,
-            firebaseLoaded: botState.isFirebaseLoaded,
-            count: list.length
-        });
-    } catch (error) {
-        console.error('Error fetching list:', error);
-        res.status(500).json({ error: error.message });
-    }
-});
-
-app.post('/api/lists/:listType', async (req, res) => {
-    try {
-        const { listType } = req.params;
-        const entry = req.body;
-
-        if (!entry.address && !entry.username) {
-            return res.status(400).json({ error: 'Address or username required' });
-        }
-        if (!entry.amount || !entry.fees) {
-            return res.status(400).json({ error: 'Amount and fees required' });
-        }
-
-        const config = await botState.addToList(listType, entry);
-
-        // Broadcast update to all connected clients
-        broadcastToClients({
-            type: 'admin_list_updated',
-            data: {
-                listType,
-                action: 'added',
-                entry: config,
-                stats: botState.getStats(),
-                timestamp: new Date().toISOString()
-            }
-        });
-
-        res.json({
-            success: true,
-            config,
-            message: `Entry added to ${listType} and saved to Firebase`,
-            stats: botState.getStats()
-        });
-    } catch (error) {
-        console.error('Error adding to list:', error);
-        res.status(500).json({ error: error.message });
-    }
-});
-
-app.delete('/api/lists/:listType/:id', async (req, res) => {
-    try {
-        const { listType, id } = req.params;
-        const success = await botState.removeFromList(listType, id);
-
-        if (success) {
-            // Broadcast update to all connected clients
-            broadcastToClients({
-                type: 'admin_list_updated',
-                data: {
-                    listType,
-                    action: 'removed',
-                    entryId: id,
-                    stats: botState.getStats(),
-                    timestamp: new Date().toISOString()
-                }
-            });
-
-            res.json({
-                success: true,
-                message: `Entry removed from ${listType} and Firebase`,
-                stats: botState.getStats()
-            });
-        } else {
-            res.status(404).json({ error: 'Entry not found' });
-        }
-    } catch (error) {
-        console.error('Error removing from list:', error);
-        res.status(500).json({ error: error.message });
-    }
-});
-
-// Detected tokens routes
-app.get('/api/detected-tokens', (req, res) => {
-    const tokens = botState.getDetectedTokens();
-    res.json({ tokens });
-});
-
-app.delete('/api/detected-tokens', (req, res) => {
-    botState.clearDetectedTokens();
-    res.json({ success: true, message: 'Detected tokens cleared' });
-});
-
-app.post('/api/detected-tokens/:tokenAddress/snipe', async (req, res) => {
-    const { tokenAddress } = req.params;
-
-    if (!botState.detectedTokens.has(tokenAddress)) {
-        return res.status(404).json({ error: 'Token not found in detected list' });
-    }
-
-    const tokenData = botState.detectedTokens.get(tokenAddress);
-
-    if (!tokenData.config) {
-        return res.status(400).json({ error: 'No snipe configuration available for this token' });
-    }
-
-    try {
-        const result = await snipeToken(tokenAddress, tokenData.config);
-        res.json({ success: true, result });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-});
-
-// ========== DEMO SYSTEM ==========
-
-// Helper functions for demo system
-function generateDemoTokenData(template, customWallet = null, customTwitter = null) {
-    const randomWallet = customWallet || DEMO_WALLETS[Math.floor(Math.random() * DEMO_WALLETS.length)];
-    //const randomTokenAddress = generateRandomTokenAddress();
-    const randomTokenAddress = "ALtLPhNGg1dytuto8rRW4xA1h853f8JJuNzXdtbLpump";
-    const randomSignature = generateRandomSignature();
-    const randomTwitter = customTwitter || template.twitterHandle;
-
-    const baseData = {
-        signature: randomSignature,
-        mint: randomTokenAddress,
-        traderPublicKey: randomWallet,
-        creator: randomWallet,
-        txType: "create",
-        name: template.name,
-        symbol: template.symbol,
-        uri: template.uri,
-        pool: template.pool,
-        solAmount: Math.random() * 5 + 0.01,
-        marketCapSol: Math.random() * 50 + 10,
-        initialBuy: Math.random() * 100000000,
-    };
-
-    if (template.platform === "pumpfun") {
-        return {
-            ...baseData,
-            bondingCurveKey: generateRandomTokenAddress(),
-            vTokensInBondingCurve: Math.random() * 1000000000 + 100000000,
-            vSolInBondingCurve: Math.random() * 30 + 5,
-            metadata: {
-                name: template.name,
-                symbol: template.symbol,
-                twitter: `https://twitter.com/${randomTwitter}`
-            }
-        };
-    } else {
-        return {
-            ...baseData,
-            solInPool: Math.random() * 10 + 1,
-            tokensInPool: Math.random() * 1000000000 + 100000000,
-            newTokenBalance: Math.random() * 100000000,
-            metadata: {
-                name: template.name,
-                symbol: template.symbol,
-                twitter: `https://twitter.com/${randomTwitter}`
-            }
-        };
-    }
-}
-
-
-function generateRandomTokenAddress() {
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz123456789';
-    let result = '';
-    for (let i = 0; i < 44; i++) {
-        result += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    return result;
-}
-
-function generateRandomSignature() {
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz123456789';
-    let result = '';
-    for (let i = 0; i < 88; i++) {
-        result += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    return result;
-}
-
-app.post('/api/demo/inject-token', (req, res) => {
-    const {
-        templateIndex = 0,
-        customWallet = null,
-        customTwitter = null,
-        customCommunity = null,
-        customTweet = null,
-        platform = null
-    } = req.body;
-
-    let template = DEMO_TOKEN_TEMPLATES[templateIndex];
-    if (!template) {
-        template = DEMO_TOKEN_TEMPLATES[0];
-    }
-
-    if (platform) {
-        template = { ...template, platform, pool: platform === 'pumpfun' ? 'pump' : 'bonk' };
-    }
-
-    // Generate the demo token data
-    const demoTokenData = generateDemoTokenData(template, customWallet, template.twitterHandle);
-
-    // Make sure metadata is properly set
-    if (!demoTokenData.metadata) {
-        demoTokenData.metadata = {};
-    }
-
-    // Override the twitter field in metadata
-    if (customCommunity) {
-        demoTokenData.metadata.twitter = `https://x.com/i/communities/${customCommunity}`;
-    } else if (customTwitter) {
-        demoTokenData.metadata.twitter = `https://twitter.com/${customTwitter}`;
-    } else if (template.twitterHandle) {
-        demoTokenData.metadata.twitter = `https://twitter.com/${template.twitterHandle}`;
-    }
-
-    if (customTweet) {
-        demoTokenData.metadata.twitter = customTweet;  // ADD THIS
-    } else if (customCommunity) {
-        demoTokenData.metadata.twitter = `https://x.com/i/communities/${customCommunity}`;
-    } else if (customTwitter) {
-        demoTokenData.metadata.twitter = `https://twitter.com/${customTwitter}`;
-    } else if (template.twitterHandle) {
-        demoTokenData.metadata.twitter = `https://twitter.com/${template.twitterHandle}`;
-    }
-
-    // Ensure name and symbol are in metadata
-    demoTokenData.metadata.name = demoTokenData.name || template.name;
-    demoTokenData.metadata.symbol = demoTokenData.symbol || template.symbol;
-
-    console.log(`🧪 DEMO: Injecting token data for ${template.platform}:`, demoTokenData);
-
-    processNewToken(demoTokenData, template.platform);
-
-    res.json({
-        success: true,
-        message: 'Demo token injected',
-        tokenData: demoTokenData
-    });
-});
-
-// Add this to your demo endpoints
-app.post('/api/demo/inject-bonk-token', (req, res) => {
-    const demoTokenData = {
-        signature: 'demo-signature',
-        mint: '2g32h8SRweRF4BJAKmBkUhu17QLxYhBo39DYNxgWbonk',
-        traderPublicKey: 'demo-wallet',
-        creator: 'demo-wallet',
-        txType: "create",
-        name: 'Demo Bonk Token',
-        symbol: 'DEMO',
-        pool: 'bonk', // This is key!
-        solAmount: 1.5,
-        marketCapSol: 25.0
-    };
-
-    console.log('🧪 DEMO: Injecting BONK token for testing GeckoTerminal integration');
-    processNewToken(demoTokenData, 'letsbonk');
-
-    res.json({
-        success: true,
-        message: 'Demo bonk token injected'
-    });
-});
-
-app.post('/api/demo/inject-batch', (req, res) => {
-    if (!botState.isRunning) {
-        return res.status(400).json({ error: 'Bot must be running to inject demo tokens' });
-    }
-
-    const { count = 5, delay = 2000 } = req.body;
-    let injected = 0;
-
-    const injectNext = () => {
-        if (injected >= count) {
-            return;
-        }
-
-        const templateIndex = Math.floor(Math.random() * DEMO_TOKEN_TEMPLATES.length);
-        const template = DEMO_TOKEN_TEMPLATES[templateIndex];
-        const demoTokenData = generateDemoTokenData(template);
-
-        console.log(`🧪 DEMO BATCH ${injected + 1}/${count}: Injecting ${template.name}`);
-        processNewToken(demoTokenData, template.platform);
-
-        injected++;
-
-        if (injected < count) {
-            setTimeout(injectNext, delay);
-        }
-    };
-
-    injectNext();
-
-    res.json({
-        success: true,
-        message: `Injecting ${count} demo tokens with ${delay}ms delay`
-    });
-});
-
-app.get('/api/demo/templates', (req, res) => {
-    res.json({
-        templates: DEMO_TOKEN_TEMPLATES.map((template, index) => ({
-            index,
-            name: template.name,
-            symbol: template.symbol,
-            platform: template.platform,
-            twitterHandle: template.twitterHandle
-        })),
-        wallets: DEMO_WALLETS
-    });
-});
-
-app.post('/api/demo/inject-from-list', (req, res) => {
-    if (!botState.isRunning) {
-        return res.status(400).json({ error: 'Bot must be running to inject demo tokens' });
-    }
-
-    const { listType, templateIndex = 0 } = req.body;
-
-    let targetWallet = null;
-    let targetTwitter = null;
-
-    const list = botState.getList(listType);
-    if (list.length === 0) {
-        return res.status(400).json({ error: `No entries in ${listType} list` });
-    }
-
-    const randomEntry = list[Math.floor(Math.random() * list.length)];
-
-    if (listType.includes('wallets')) {
-        targetWallet = randomEntry.address;
-    } else {
-        targetTwitter = randomEntry.address;
-    }
-
-    const template = DEMO_TOKEN_TEMPLATES[templateIndex] || DEMO_TOKEN_TEMPLATES[0];
-    const demoTokenData = generateDemoTokenData(template, targetWallet, targetTwitter);
-
-    console.log(`🧪 DEMO FROM LIST: Injecting token with ${listType} entry:`, {
-        wallet: targetWallet,
-        twitter: targetTwitter,
-        tokenName: template.name
-    });
-
-    processNewToken(demoTokenData, template.platform);
-
-    res.json({
-        success: true,
-        message: `Demo token injected using ${listType} entry`,
-        usedEntry: randomEntry,
-        tokenData: demoTokenData
-    });
-});
-
-// ADD THESE NEW API ENDPOINTS
-app.post('/api/scrape-community/:communityId', async (req, res) => {
-    try {
-        const { communityId } = req.params;
-
-        if (!twitterScraper.isInitialized) {
-            const initSuccess = await twitterScraper.init();
-            if (!initSuccess) {
-                return res.status(500).json({ error: 'Failed to initialize Twitter scraper' });
-            }
-        }
-
-        const loginSuccess = await twitterScraper.automaticLogin();
-        if (!loginSuccess) {
-            return res.status(500).json({ error: 'Failed to login to Twitter' });
-        }
-
-        const communityAdmins = await twitterScraper.scrapeCommunityAdmins(communityId);
-
-        res.json({
-            success: true,
-            communityId: communityId,
-            admins: communityAdmins,
-            totalAdmins: communityAdmins.length,
-            scrapedAt: new Date().toISOString()
-        });
-
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-});
-
-app.get('/api/twitter-scraper-status', (req, res) => {
-    res.json({
-        initialized: twitterScraper.isInitialized,
-        sessionActive: twitterScraper.sessionActive,
-        credentialsConfigured: !!(TWITTER_CONFIG.username && TWITTER_CONFIG.password)
-    });
-});
-
-app.get('/api/twitter-session-status', async (req, res) => {
-    try {
-        if (!twitterScraper.isInitialized) {
-            return res.json({
-                initialized: false,
+            setTwitterSessionStatus({
+                initialized: true,
                 loggedIn: false,
-                message: 'Twitter scraper not initialized'
+                url: 'https://twitter.com/login',
+                error: null,
+                checking: false
             });
+
+            addNotification('success', '🔄 Browser reopened - login page ready');
+        } catch (error) {
+            setTwitterSessionStatus(prev => ({ ...prev, checking: false, error: error.message }));
+            addNotification('error', '❌ Failed to reopen browser');
         }
-
-        // Force a fresh status check
-        const sessionStatus = await twitterScraper.checkSessionStatus();
-
-        // If URL shows we're on home page, override to logged in
-        if (sessionStatus.url && sessionStatus.url.includes('/home')) {
-            sessionStatus.loggedIn = true;
-            twitterScraper.sessionActive = true;
-        }
-
-        res.json({
-            initialized: twitterScraper.isInitialized,
-            loggedIn: sessionStatus.loggedIn,
-            url: sessionStatus.url,
-            error: sessionStatus.error,
-            message: sessionStatus.loggedIn ? 'Session active' : 'Please login manually'
-        });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-});
-
-app.get('/api/test-geckoterminal-enhanced/:tokenAddress', async (req, res) => {
-    try {
-        const { tokenAddress } = req.params;
-
-        console.log(`🧪 Testing enhanced GeckoTerminal API for: ${tokenAddress}`);
-
-        const geckoResponse = await geckoTerminalAPI.fetchTokenInfo(tokenAddress);
-        const enhancedData = geckoTerminalAPI.extractEnhancedTokenData(geckoResponse);
-
-        res.json({
-            success: true,
-            tokenAddress,
-            rawResponse: geckoResponse,
-            enhancedData,
-            hasData: !!enhancedData,
-            extractedFields: {
-                name: enhancedData?.name,
-                symbol: enhancedData?.symbol,
-                image_url: enhancedData?.image_url,
-                twitter_handle: enhancedData?.twitterHandle,
-                holders_count: enhancedData?.holdersCount,
-                gt_score: enhancedData?.gtScore,
-                is_honeypot: enhancedData?.isHoneypot
-            }
-        });
-    } catch (error) {
-        console.error('❌ GeckoTerminal test failed:', error);
-        res.status(500).json({
-            success: false,
-            error: error.message,
-            tokenAddress: req.params.tokenAddress
-        });
-    }
-});
-
-app.post('/api/twitter-open-login', async (req, res) => {
-    try {
-        if (!twitterScraper.isInitialized) {
-            const initSuccess = await twitterScraper.init();
-            if (!initSuccess) {
-                return res.status(500).json({ error: 'Failed to initialize Twitter scraper' });
-            }
-        }
-
-        // Use automatic login with credentials from environment
-        console.log('🔐 Attempting automatic Twitter login...');
-        const loginSuccess = await twitterScraper.automaticLogin();
-
-        if (loginSuccess) {
-            console.log('✅ Automatic Twitter login successful');
-            res.json({
-                success: true,
-                message: 'Successfully logged in to Twitter automatically'
-            });
-        } else {
-            console.log('❌ Automatic login failed');
-            res.status(500).json({ error: 'Failed to login automatically. Check credentials in .env file' });
-        }
-
-    } catch (error) {
-        console.error('❌ Login error:', error);
-        res.status(500).json({ error: error.message });
-    }
-});
-
-// ========== WEBSOCKET CONNECTION HANDLING ==========
-
-wss.on('connection', (ws) => {
-    console.log('Client connected to WebSocket');
-    wsClients.add(ws);
-
-    ws.send(JSON.stringify({
-        type: 'bot_status',
-        data: { isRunning: botState.isRunning }
-    }));
-
-    ws.on('close', () => {
-        console.log('Client disconnected from WebSocket');
-        wsClients.delete(ws);
-    });
-
-    ws.on('error', (error) => {
-        console.error('WebSocket error:', error);
-        wsClients.delete(ws);
-    });
-});
-
-// ========== FIREBASE INITIALIZATION ==========
-
-async function initializeFirebaseData() {
-    console.log('🔥 Initializing Firebase data...');
-
-    try {
-        await testFirebase();
-        await botState.loadAdminListsFromFirebase();
-
-        console.log('✅ Firebase initialization complete');
-        console.log(`📊 Loaded admin lists:`, botState.getStats());
-    } catch (error) {
-        console.error('❌ Firebase initialization failed:', error);
-    }
-}
-
-
-// ========== ERROR HANDLING ==========
-
-app.use((error, req, res, next) => {
-    console.error('Express error:', error);
-    res.status(500).json({ error: 'Internal server error' });
-});
-
-// ========== SERVER STARTUP ==========
-
-httpServer.listen(PORT, async () => {
-    console.log(`🚀 DevScope backend running on port ${PORT}`);
-    console.log(`WebSocket endpoint: wss://localhost:${PORT}`);
-    console.log(`HTTP API endpoint: http://localhost:${PORT}/api`);
-
-    // Initialize Firebase data
-    await initializeFirebaseData();
-    await initializeCommunityCache();
-    await initializeTweetCache();
-    await ensureSoundsDir();
-    initializeTimingLog();
-    initializeSecondaryMatchesLog();
-
-    console.log('🔥 Enhanced Firebase Admin Lists Integration Loaded');
-    console.log('🔊 Sound upload system initialized');
-    console.log('✅ Features:');
-    console.log('  - Firebase storage for Primary/Secondary admin lists');
-    console.log('  - Real-time sync between local state and Firebase');
-    console.log('  - Automatic data loading on server startup');
-    console.log('  - Enhanced statistics with Firebase status');
-    console.log('  - Individual Twitter account detection');
-    console.log('  - Twitter community detection and tracking');
-    console.log('  - Enhanced token page opening on snipe');
-    console.log('  - Improved speed optimizations');
-
-    console.log('🧪 Available Firebase endpoints:');
-    console.log('  GET /api/firebase/admin-lists - Get all admin lists from Firebase');
-    console.log('  POST /api/firebase/sync-admin-lists - Sync admin lists from Firebase');
-    console.log('  DELETE /api/firebase/admin-lists/:listType - Clear specific admin list');
-    console.log('  GET /api/firebase/used-communities - Fetch used communities');
-    console.log('  DELETE /api/firebase/used-communities - Clear all used communities');
-    console.log('  GET /api/test-firebase - Test Firebase connection');
-
-    console.log('🎯 Demo data injection system loaded');
-    console.log('Available demo endpoints:');
-    console.log('  POST /api/demo/inject-token - Inject single demo token');
-    console.log('  POST /api/demo/inject-batch - Inject multiple demo tokens');
-    console.log('  POST /api/demo/inject-from-list - Inject token matching your lists');
-    console.log('  GET /api/demo/templates - Get available demo templates');
-
-});
-
-// ADD GRACEFUL SHUTDOWN
-process.on('SIGINT', async () => {
-    console.log('\n⏹️ Shutting down gracefully...');
-
-    if (twitterScraper) {
-        await twitterScraper.close();
-    }
-
-    process.exit(0);
-});
-
-
-function cleanupScrapingCache() {
-    const now = Date.now();
-    const expiredCommunities = [];
-
-    for (const [communityId, cachedData] of scrapingResults.entries()) {
-        if (now - cachedData.timestamp > SCRAPING_RESULT_CACHE_TIME) {
-            expiredCommunities.push(communityId);
-        }
-    }
-
-    expiredCommunities.forEach(communityId => {
-        scrapingResults.delete(communityId);
-        console.log(`🧹 Cleaned up expired cache for community ${communityId}`);
-    });
-}
-
-// ✅ ADD AUTOMATIC CLEANUP EVERY 60 SECONDS
-setInterval(cleanupScrapingCache, 60000);
-
-// ========== DEBUGGING FUNCTIONS ==========
-function getScrapingStats() {
-    return {
-        activeSessions: activeScrapingSessions.size,
-        cachedResults: scrapingResults.size,
-        activeSessionCommunities: Array.from(activeScrapingSessions.keys()),
-        cachedCommunities: Array.from(scrapingResults.keys())
     };
+
+    // Replace the attemptPopupWithDetection function with this simplified version
+    const attemptPopupWithDetection = async (url, tokenAddress, openType) => {
+        console.log(`🚀 ATTEMPTING POPUP OPENING (${openType.toUpperCase()})`);
+
+        try {
+            // TRY ELECTRON FIRST
+            if (window.electronAPI && window.electronAPI.openExternalURL) {
+                console.log('🖥️ USING ELECTRON API METHOD');
+                window.electronAPI.openExternalURL(url);
+                return {
+                    success: true,
+                    method: 'electron',
+                    reason: 'Opened via Electron API'
+                };
+            }
+
+            // TRY BROWSER - SIMPLIFIED DETECTION
+            console.log('🌐 USING BROWSER WINDOW.OPEN() METHOD');
+            const newWindow = window.open(url, '_blank');
+
+            // SIMPLE CHECK - if window.open returns null, it's blocked
+            if (!newWindow) {
+                console.error('❌ POPUP BLOCKED - window.open returned null');
+                return {
+                    success: false,
+                    method: 'browser_blocked',
+                    reason: 'Popup blocked by browser'
+                };
+            }
+
+            // SUCCESS - popup opened
+            console.log('✅ POPUP OPENED SUCCESSFULLY');
+            return {
+                success: true,
+                method: 'browser_success',
+                reason: 'Opened successfully'
+            };
+
+        } catch (openError) {
+            console.error('❌ EXCEPTION DURING POPUP ATTEMPT:', openError);
+            return {
+                success: false,
+                method: 'exception',
+                reason: `Exception occurred: ${openError.message}`
+            };
+        }
+    };
+
+    const handlePopupBlockedScenario = (url, tokenAddress, reason, openType) => {
+        console.error('🚫 POPUP BLOCKED - HANDLING SCENARIO');
+        console.error('🔗 Blocked URL:', url);
+        console.error('💬 Block reason:', reason);
+        console.error('🎯 Open type:', openType);
+
+        // DETERMINE USER-FRIENDLY MESSAGE BASED ON REASON
+        let userMessage = '';
+        let technicalReason = '';
+
+        if (reason.includes('immediately')) {
+            userMessage = 'Chrome blocked the popup immediately';
+            technicalReason = 'Browser popup blocker is active';
+        } else if (reason.includes('closed immediately')) {
+            userMessage = 'Popup was closed right after opening';
+            technicalReason = 'Browser detected and closed popup automatically';
+        } else if (reason.includes('Exception')) {
+            userMessage = 'Browser security prevented opening';
+            technicalReason = reason;
+        } else {
+            userMessage = 'Browser blocked the popup';
+            technicalReason = reason;
+        }
+
+        // SHOW APPROPRIATE NOTIFICATIONS
+        if (openType === 'auto-open') {
+            addNotification('warning', '🚫 Auto-open blocked by Chrome - Click "View Token Page" in popup');
+            addNotification('info', '💡 Or allow popups for this site to enable auto-opening');
+        } else {
+            addNotification('error', '🚫 Chrome blocked the popup - Please allow popups for this site');
+        }
+
+        // SHOW POPUP BLOCKER GUIDANCE MODAL
+        setPopupBlockerModal({
+            show: true,
+            tokenUrl: url,
+            tokenAddress: tokenAddress,
+            reason: userMessage,
+            technicalReason: technicalReason,
+            openType: openType
+        });
+
+        console.log('📱 Popup blocker guidance modal triggered');
+    };
+
+    // 5. AUTO-OPEN WITH PAIR ADDRESS
+    const autoOpenTokenPageWithPairAddress = async (tokenAddress, url) => {
+        console.log(`🚀 AUTO-OPENING TOKEN PAGE WITH PAIR ADDRESS`);
+        console.log(`🔗 URL: ${url}`);
+        console.log(`🎯 Token: ${tokenAddress}`);
+
+        try {
+            const popupResult = await attemptPopupWithDetection(url, tokenAddress, 'auto-open-with-pair');
+
+            if (popupResult.success) {
+                console.log('✅ AUTO-OPEN WITH PAIR SUCCEEDED');
+                addNotification('success', '🚀 Token page auto-opened with pair address!');
+
+                // Close the popup since we successfully opened the page
+                setSecondaryPopup({ show: false, tokenData: null });
+
+            } else {
+                console.error('❌ AUTO-OPEN WITH PAIR FAILED:', popupResult.reason);
+                addNotification('warning', '🚫 Auto-open blocked - use "View Token Page" button');
+                handlePopupBlockedScenario(url, tokenAddress, popupResult.reason, 'auto-open-with-pair');
+            }
+        } catch (error) {
+            console.error('❌ Error in auto-open with pair:', error);
+            addNotification('error', `❌ Auto-open error: ${error.message}`);
+        }
+    };
+
+    // Render components
+    const renderStatusIndicator = () => (
+        <div className="flex items-center space-x-2">
+            <div className={`w-3 h-3 rounded-full ${connectionStatus === 'connected' ? 'bg-green-500' :
+                connectionStatus === 'error' ? 'bg-red-500' : 'bg-yellow-500'
+                }`} />
+            <span className="text-xs md:text-sm text-gray-400">
+                {connectionStatus === 'connected' ? 'Connected' :
+                    connectionStatus === 'error' ? 'Connection Error' : 'Connecting...'}
+            </span>
+        </div>
+    );
+
+    const renderPopupBlockerModal = () => {
+        if (!popupBlockerModal.show) return null;
+
+        return (
+            <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+                <div className="bg-gray-800 rounded-lg p-6 w-full max-w-2xl max-h-screen overflow-y-auto border-2 border-red-500">
+                    {/* Header */}
+                    <div className="flex items-center justify-between mb-6">
+                        <div className="flex items-center space-x-3">
+                            <div className="w-12 h-12 bg-red-600 rounded-full flex items-center justify-center">
+                                <span className="text-2xl">🚫</span>
+                            </div>
+                            <div>
+                                <h2 className="text-2xl font-bold text-white">Popup Blocked by Chrome</h2>
+                                <p className="text-red-400">Token page couldn't open automatically</p>
+                            </div>
+                        </div>
+                        <button
+                            onClick={() => setPopupBlockerModal({ show: false, tokenUrl: '', tokenAddress: '', reason: '' })}
+                            className="text-gray-400 hover:text-white text-2xl"
+                        >
+                            ✖️
+                        </button>
+                    </div>
+
+                    {/* Manual Link */}
+                    <div className="bg-blue-900/20 border border-blue-500/30 rounded-lg p-4 mb-6">
+                        <h3 className="text-lg font-semibold text-blue-400 mb-3">🔗 Manual Link (Click to Open)</h3>
+                        <div className="flex items-center space-x-2">
+                            <input
+                                type="text"
+                                value={popupBlockerModal.tokenUrl}
+                                readOnly
+                                className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white text-sm"
+                            />
+                            <button
+                                onClick={() => {
+                                    window.open(popupBlockerModal.tokenUrl, '_blank');
+                                    addNotification('info', '🔗 Manual link clicked - check for new tab');
+                                }}
+                                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors"
+                            >
+                                🌐 Open
+                            </button>
+                            <button
+                                onClick={() => {
+                                    copyToClipboard(popupBlockerModal.tokenUrl, 'Token page URL');
+                                }}
+                                className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded transition-colors"
+                            >
+                                📋 Copy
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Action Buttons */}
+                    <div className="flex flex-col space-y-3 md:flex-row md:space-y-0 md:space-x-4">
+                        <button
+                            onClick={() => {
+                                window.open(popupBlockerModal.tokenUrl, '_blank');
+                                setPopupBlockerModal({ show: false, tokenUrl: '', tokenAddress: '', reason: '' });
+                            }}
+                            className="flex-1 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-bold"
+                        >
+                            🌐 Try Opening Again
+                        </button>
+                        <button
+                            onClick={() => {
+                                copyToClipboard(popupBlockerModal.tokenUrl, 'Token page URL');
+                                setPopupBlockerModal({ show: false, tokenUrl: '', tokenAddress: '', reason: '' });
+                            }}
+                            className="flex-1 px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors font-bold"
+                        >
+                            📋 Copy Link & Close
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
+    const renderDashboard = () => (
+        <div className="space-y-4 md:space-y-6">
+            {/* Control Panel - keep existing */}
+            <div className="bg-gray-800 rounded-lg p-4 md:p-6">
+                <div className="flex flex-col space-y-4 md:flex-row md:items-center md:justify-between md:space-y-0 mb-4">
+                    <h2 className="text-lg md:text-xl font-semibold text-white">Bot Control</h2>
+                    {renderStatusIndicator()}
+                </div>
+
+                <div className="flex flex-col space-y-2 md:flex-row md:space-y-0 md:space-x-4">
+                    <button
+                        onClick={startBot}
+                        disabled={botStatus.isRunning}
+                        className="flex items-center justify-center space-x-2 px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white rounded-lg transition-colors"
+                    >
+                        <Play size={16} />
+                        <span>Start Bot</span>
+                    </button>
+
+                    <button
+                        onClick={stopBot}
+                        disabled={!botStatus.isRunning}
+                        className="flex items-center justify-center space-x-2 px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-gray-600 text-white rounded-lg transition-colors"
+                    >
+                        <Square size={16} />
+                        <span>Stop Bot</span>
+                    </button>
+                </div>
+
+                {/* Enhanced status with Firebase indicator */}
+                <div className="mt-4 flex items-center space-x-4">
+                    <div className={`flex items-center space-x-2 ${botStatus.isRunning ? 'text-green-400' : 'text-gray-400'}`}>
+                        <Activity size={16} />
+                        <span>{botStatus.isRunning ? 'Running' : 'Stopped'}</span>
+                    </div>
+                    <div className={`flex items-center space-x-2 ${botStatus.stats.isFirebaseLoaded ? 'text-green-400' : 'text-yellow-400'}`}>
+                        <span className="text-xs">🔥 Firebase:</span>
+                        <span className="text-xs">{botStatus.stats.isFirebaseLoaded ? 'Connected' : 'Loading...'}</span>
+                    </div>
+                </div>
+            </div>
+
+            {/* Enhanced Statistics with Secondary Admins */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="bg-gray-800 rounded-lg p-4">
+                    <div className="flex items-center space-x-2">
+                        <Users className="text-purple-400" size={20} />
+                        <div>
+                            <p className="text-sm text-gray-400">Primary Admins</p>
+                            <p className="text-xl font-semibold text-white">{botStatus.stats.primaryAdmins}</p>
+                        </div>
+                    </div>
+                </div>
+
+                {/* ADD THIS NEW CARD FOR SECONDARY ADMINS */}
+                <div className="bg-gray-800 rounded-lg p-4">
+                    <div className="flex items-center space-x-2">
+                        <Bell className="text-orange-400" size={20} />
+                        <div>
+                            <p className="text-sm text-gray-400">Secondary Admins</p>
+                            <p className="text-xl font-semibold text-white">{botStatus.stats.secondaryAdmins}</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="bg-gray-800 rounded-lg p-4">
+                    <div className="flex items-center space-x-2">
+                        <Target className="text-green-400" size={20} />
+                        <div>
+                            <p className="text-sm text-gray-400">Processed Tokens</p>
+                            <p className="text-xl font-semibold text-white">{botStatus.stats.processedTokens}</p>
+                        </div>
+                    </div>
+                </div>
+
+                {/* ADD FIREBASE STATUS CARD */}
+                <div className="bg-gray-800 rounded-lg p-4">
+                    <div className="flex items-center space-x-2">
+                        <div className={`w-5 h-5 rounded-full ${botStatus.stats.isFirebaseLoaded ? 'bg-green-500' : 'bg-yellow-500'}`}></div>
+                        <div>
+                            <p className="text-sm text-gray-400">Firebase Status</p>
+                            <p className={`text-sm font-semibold ${botStatus.stats.isFirebaseLoaded ? 'text-green-400' : 'text-yellow-400'}`}>
+                                {botStatus.stats.isFirebaseLoaded ? 'Connected' : 'Syncing...'}
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Recent Notifications - keep existing */}
+            <div className="bg-gray-800 rounded-lg p-4 md:p-6">
+                <h3 className="text-lg font-semibold text-white mb-4">Recent Activity</h3>
+                <div className="space-y-2 max-h-64 overflow-y-auto">
+                    {notifications.length === 0 ? (
+                        <p className="text-gray-400">No recent activity</p>
+                    ) : (
+                        notifications.map(notification => (
+                            <div key={notification.id} className="flex items-center space-x-3 p-2 bg-gray-700 rounded">
+                                {notification.type === 'success' && <CheckCircle className="text-green-400" size={16} />}
+                                {notification.type === 'error' && <XCircle className="text-red-400" size={16} />}
+                                {notification.type === 'info' && <AlertTriangle className="text-blue-400" size={16} />}
+                                <div className="flex-1">
+                                    <p className="text-white text-sm">{notification.message}</p>
+                                    <p className="text-gray-400 text-xs">{notification.timestamp}</p>
+                                </div>
+                            </div>
+                        ))
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+    // App.js - Part 6: Detected Tokens Render Function
+
+    const renderDetectedTokens = () => (
+        <div className="space-y-4 md:space-y-6">
+            {/* Header with enhanced filters */}
+            <div className="bg-gray-800 rounded-lg p-4 md:p-6">
+                <div className="flex flex-col space-y-4 md:flex-row md:items-center md:justify-between md:space-y-0 mb-4">
+                    <div>
+                        <h2 className="text-lg md:text-xl font-semibold text-white">Enhanced Detected Tokens</h2>
+                        <p className="text-sm text-gray-400">Tokens with advanced Twitter detection and community tracking</p>
+                    </div>
+                    <div className="flex flex-col space-y-2 md:flex-row md:space-y-0 md:space-x-4">
+                        <button
+                            onClick={fetchDetectedTokens}
+                            className="w-full md:w-auto px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm"
+                        >
+                            🔄 Refresh
+                        </button>
+                        <button
+                            onClick={clearDetectedTokens}
+                            className="w-full md:w-auto px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors text-sm"
+                        >
+                            🗑️ Clear All
+                        </button>
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                    <div className="text-center">
+                        <div className="text-white font-semibold">{detectedTokens.length}</div>
+                        <div className="text-gray-400">Total Detected</div>
+                    </div>
+                    <div className="text-center">
+                        <div className="text-green-400 font-semibold">
+                            {detectedTokens.filter(t => t.twitterType === 'community').length}
+                        </div>
+                        <div className="text-gray-400">Communities</div>
+                    </div>
+                    <div className="text-center">
+                        <div className="text-blue-400 font-semibold">
+                            {detectedTokens.filter(t => t.twitterType === 'individual').length}
+                        </div>
+                        <div className="text-gray-400">Individuals</div>
+                    </div>
+                    <div className="text-center">
+                        <div className="text-purple-400 font-semibold">
+                            {detectedTokens.filter(t => t.matchType.includes('primary')).length}
+                        </div>
+                        <div className="text-gray-400">Auto-Sniped</div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Enhanced token cards with professional details */}
+            <div className="space-y-3 md:space-y-4">
+                {detectedTokens.length === 0 ? (
+                    <div className="bg-gray-800 rounded-lg p-6 md:p-8 text-center">
+                        <Target className="mx-auto text-gray-400 mb-4" size={36} />
+                        <h3 className="text-base md:text-lg font-semibold text-white mb-2">No Enhanced Tokens Detected</h3>
+                        <p className="text-sm text-gray-400">Start the bot to detect tokens with advanced Twitter analysis</p>
+                    </div>
+                ) : (
+                    detectedTokens.map((token, index) => (
+                        <div key={`token_${index}`} className="bg-gray-800 rounded-lg overflow-hidden shadow-lg border border-gray-700">
+
+                            {/* Enhanced header with Twitter type indicator */}
+                            <div className="bg-gradient-to-r from-gray-750 to-gray-800 p-4 md:p-6">
+                                <div className="flex flex-col md:flex-row md:items-start space-y-4 md:space-y-0 md:space-x-4">
+                                    {/* Token Image */}
+                                    <div className="flex-shrink-0 self-center md:self-start">
+                                        <div className="w-16 h-16 md:w-20 md:h-20 rounded-full overflow-hidden bg-gray-600 border-2 border-gray-500 shadow-lg">
+                                            {token.uri ? (
+                                                <img
+                                                    src={token.uri}
+                                                    alt={token.name || 'Token'}
+                                                    className="w-full h-full object-cover"
+                                                    onError={(e) => {
+                                                        e.target.style.display = 'none';
+                                                    }}
+                                                />
+                                            ) : (
+                                                <div className="w-full h-full flex items-center justify-center bg-gray-600">
+                                                    <Coins className="text-gray-400" size={24} />
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Enhanced token info with Twitter data */}
+                                    <div className="flex-1 text-center md:text-left space-y-2">
+                                        <div className="flex flex-col md:flex-row md:items-center md:justify-between space-y-2 md:space-y-0">
+                                            <div>
+                                                <h3 className="text-xl md:text-2xl font-bold text-white">
+                                                    {token.name || 'Unknown Token'}
+                                                </h3>
+                                                <p className="text-lg text-gray-300 font-mono">
+                                                    ${token.symbol || 'UNKNOWN'}
+                                                </p>
+                                            </div>
+
+                                            {/* Enhanced badges with Twitter type */}
+                                            <div className="flex flex-wrap justify-center md:justify-end gap-2">
+                                                {/* Twitter Type Badge */}
+                                                {token.twitterType && (
+                                                    <div className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${token.twitterType === 'community'
+                                                        ? 'bg-green-600 text-white'
+                                                        : 'bg-blue-600 text-white'
+                                                        }`}>
+                                                        {token.twitterType === 'community' ? '🏘️ COMMUNITY' : '👤 INDIVIDUAL'}
+                                                    </div>
+                                                )}
+
+                                                {/* Match Type Badge */}
+                                                <div className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${token.matchType === 'primary_wallet' || token.matchType === 'primary_admin'
+                                                    ? 'bg-green-600 text-white'
+                                                    : token.matchType === 'secondary_wallet' || token.matchType === 'secondary_admin'
+                                                        ? 'bg-yellow-600 text-white'
+                                                        : 'bg-purple-600 text-white'
+                                                    }`}>
+                                                    {token.matchType.replace('_', ' ')}
+                                                </div>
+
+                                                {/* Platform Badge */}
+                                                <div className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${token.pool === 'pump' ? 'bg-purple-600 text-white' : 'bg-orange-600 text-white'
+                                                    }`}>
+                                                    {token.pool === 'pump' ? 'PUMP.FUN' : 'LETSBONK.FUN'}
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* PROFESSIONAL TOKEN DETAILS SECTION */}
+                                        <div className="bg-gray-700/50 rounded-lg p-4 mt-4">
+                                            <h4 className="text-white font-semibold mb-3 flex items-center">
+                                                <TrendingUp className="mr-2" size={16} />
+                                                Token Details
+                                            </h4>
+
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                {/* Market Cap */}
+                                                <div className="bg-gray-600/50 rounded-lg p-3">
+                                                    <div className="flex items-center justify-between">
+                                                        <span className="text-gray-400 text-sm">💰 Market Cap</span>
+                                                        <span className="text-green-400 font-bold">
+                                                            {formatNumber(token.marketCapSol)} SOL
+                                                        </span>
+                                                    </div>
+                                                    <div className="text-xs text-gray-500 mt-1">
+                                                        ~${(token.marketCapSol * 180).toFixed(2)} USD
+                                                    </div>
+                                                </div>
+
+                                                {/* Sol Amount */}
+                                                <div className="bg-gray-600/50 rounded-lg p-3">
+                                                    <div className="flex items-center justify-between">
+                                                        <span className="text-gray-400 text-sm">💎 Sol Amount</span>
+                                                        <span className="text-blue-400 font-bold">
+                                                            {formatSol(token.solAmount)} SOL
+                                                        </span>
+                                                    </div>
+                                                    <div className="text-xs text-gray-500 mt-1">
+                                                        Initial liquidity
+                                                    </div>
+                                                </div>
+
+                                                {/* Token Address - COPYABLE */}
+                                                <div className="bg-gray-600/50 rounded-lg p-3">
+                                                    <div className="flex items-center justify-between mb-2">
+                                                        <span className="text-gray-400 text-sm">🏷️ Token Address</span>
+                                                        <button
+                                                            onClick={() => copyToClipboard(token.tokenAddress, 'Token address', `token_${token.tokenAddress}`)}
+                                                            className="text-blue-400 hover:text-blue-300 px-2 py-1 rounded bg-blue-900/20 hover:bg-blue-900/40 transition-colors text-xs"
+                                                        >
+                                                            {copiedStates[`token_${token.tokenAddress}`] ? '✅ Copied!' : '📋 Copy'}
+                                                        </button>
+                                                    </div>
+                                                    <code className="text-xs text-white bg-gray-800 px-2 py-1 rounded block truncate">
+                                                        {token.tokenAddress}
+                                                    </code>
+                                                </div>
+
+                                                {/* Creator Address - COPYABLE */}
+                                                <div className="bg-gray-600/50 rounded-lg p-3">
+                                                    <div className="flex items-center justify-between mb-2">
+                                                        <span className="text-gray-400 text-sm">👤 Creator Address</span>
+                                                        <button
+                                                            onClick={() => copyToClipboard(token.creatorWallet, 'Creator address', `creator_${token.tokenAddress}`)}
+                                                            className="text-blue-400 hover:text-blue-300 px-2 py-1 rounded bg-blue-900/20 hover:bg-blue-900/40 transition-colors text-xs"
+                                                        >
+                                                            {copiedStates[`creator_${token.tokenAddress}`] ? '✅ Copied!' : '📋 Copy'}
+                                                        </button>
+                                                    </div>
+                                                    <code className="text-xs text-white bg-gray-800 px-2 py-1 rounded block truncate">
+                                                        {token.creatorWallet || 'Unknown'}
+                                                    </code>
+
+                                                    {/* CREATOR WALLET MATCH INDICATOR */}
+                                                    {token.creatorWallet && (
+                                                        <div className="mt-2 flex items-center space-x-2">
+                                                            {token.matchType === 'primary_admin' && token.matchedEntity === token.creatorWallet ? (
+                                                                <div className="bg-green-900/30 border border-green-500/30 rounded px-2 py-1">
+                                                                    <span className="text-green-400 text-xs">✅ Matched in Primary List</span>
+                                                                </div>
+                                                            ) : token.matchType === 'secondary_admin' && token.matchedEntity === token.creatorWallet ? (
+                                                                <div className="bg-yellow-900/30 border border-yellow-500/30 rounded px-2 py-1">
+                                                                    <span className="text-yellow-400 text-xs">🔔 Matched in Secondary List</span>
+                                                                </div>
+                                                            ) : (
+                                                                <div className="bg-gray-900/30 border border-gray-500/30 rounded px-2 py-1">
+                                                                    <span className="text-gray-400 text-xs">❌ Not in Admin Lists</span>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Enhanced Twitter information display */}
+                                        {(token.twitterHandle || token.twitterCommunityId) && (
+                                            <div className="bg-gray-700/50 rounded-lg p-3 mt-4">
+                                                <div className="flex items-center space-x-2 mb-2">
+                                                    <span className="text-blue-400 font-medium">🐦 Twitter Detection:</span>
+                                                </div>
+
+                                                {token.twitterType === 'community' && token.twitterCommunityId && (
+                                                    <div className="flex items-center justify-between">
+                                                        <div>
+                                                            <p className="text-sm text-white">Community ID: {token.twitterCommunityId}</p>
+                                                            <p className="text-xs text-gray-400">Tracked in Firebase for duplicate prevention</p>
+
+                                                            {/* TWITTER ADMIN MATCH INDICATOR */}
+                                                            <div className="mt-1">
+                                                                {token.matchType === 'primary_admin' && token.matchedEntity === `Community ${token.twitterCommunityId}` ? (
+                                                                    <span className="text-green-400 text-xs bg-green-900/20 px-2 py-1 rounded">✅ Community Detected</span>
+                                                                ) : token.matchType === 'secondary_admin' && token.matchedEntity === `Community ${token.twitterCommunityId}` ? (
+                                                                    <span className="text-yellow-400 text-xs bg-yellow-900/20 px-2 py-1 rounded">🔔 Community Detected</span>
+                                                                ) : (
+                                                                    <span className="text-gray-400 text-xs bg-gray-900/20 px-2 py-1 rounded">❌ Community ID is not in lists</span>
+                                                                )}
+                                                            </div>
+
+                                                        </div>
+                                                        <div className="flex space-x-2">
+                                                            <button
+                                                                onClick={() => copyToClipboard(token.twitterCommunityId, 'Community ID')}
+                                                                className="text-blue-400 hover:text-blue-300 px-2 py-1 text-xs"
+                                                            >
+                                                                📋
+                                                            </button>
+                                                            <button
+                                                                onClick={() => {
+                                                                    const communityUrl = `https://x.com/i/communities/${token.twitterCommunityId}`;
+                                                                    if (window.electronAPI && window.electronAPI.openExternalURL) {
+                                                                        window.electronAPI.openExternalURL(communityUrl);
+                                                                    } else {
+                                                                        window.open(communityUrl, '_blank');
+                                                                    }
+                                                                    addNotification('success', `🌐 Opening community ${token.twitterCommunityId}`);
+                                                                }}
+                                                                className="text-blue-400 hover:text-blue-300 px-2 py-1 text-xs"
+                                                            >
+                                                                🔗
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                )}
+
+                                                {token.twitterType === 'individual' && token.twitterHandle && (
+                                                    <div className="flex items-center justify-between">
+                                                        <div>
+                                                            <p className="text-sm text-white">@{token.twitterHandle}</p>
+                                                            <p className="text-xs text-gray-400">Individual Twitter account</p>
+
+                                                            {/* TWITTER ADMIN MATCH INDICATOR */}
+                                                            <div className="mt-1">
+                                                                {token.matchType === 'primary_admin' && token.matchedEntity === token.twitterHandle ? (
+                                                                    <span className="text-green-400 text-xs bg-green-900/20 px-2 py-1 rounded">✅ Primary Twitter Admin Match</span>
+                                                                ) : token.matchType === 'secondary_admin' && token.matchedEntity === token.twitterHandle ? (
+                                                                    <span className="text-yellow-400 text-xs bg-yellow-900/20 px-2 py-1 rounded">🔔 Secondary Twitter Admin Match</span>
+                                                                ) : (
+                                                                    <span className="text-gray-400 text-xs bg-gray-900/20 px-2 py-1 rounded">❌ Twitter Admin Not in Lists</span>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                        <div className="flex space-x-2">
+                                                            <button
+                                                                onClick={() => copyToClipboard(token.twitterHandle, 'Twitter handle')}
+                                                                className="text-blue-400 hover:text-blue-300 px-2 py-1 text-xs"
+                                                            >
+                                                                📋
+                                                            </button>
+                                                            <button
+                                                                onClick={() => {
+                                                                    const twitterUrl = `https://twitter.com/${token.twitterHandle}`;
+                                                                    if (window.electronAPI && window.electronAPI.openExternalURL) {
+                                                                        window.electronAPI.openExternalURL(twitterUrl);
+                                                                    } else {
+                                                                        window.open(twitterUrl, '_blank');
+                                                                    }
+                                                                    addNotification('success', `🌐 Opening Twitter: @${token.twitterHandle}`);
+                                                                }}
+                                                                className="text-blue-400 hover:text-blue-300 px-2 py-1 text-xs"
+                                                            >
+                                                                🔗
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+
+                                        {/* Action Buttons */}
+                                        {/* Action Buttons */}
+                                        <div className="flex flex-col md:flex-row gap-3 mt-4">
+                                            {/* Action Buttons */}
+                                            <div className="flex flex-col md:flex-row gap-3 mt-4">
+                                                <div className="flex-1">
+                                                    <button
+                                                        onClick={() => viewToken(token)}
+                                                        className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center justify-center space-x-2"
+                                                    >
+                                                        <ExternalLink size={16} />
+                                                        <span>{token.pool === 'bonk' ? 'View on LetsBonk.fun' : 'View on Axiom'}</span>
+                                                    </button>
+
+                                                    {/* Status message under button */}
+                                                    {tokenPairStatus[token.tokenAddress] === 'no-pair' && (
+                                                        <div className="mt-2 p-2 bg-yellow-900/20 border border-yellow-500/30 rounded text-xs text-yellow-400">
+                                                            🔍 No Boding Curve found yet, check again in few seconds
+                                                        </div>
+                                                    )}
+                                                    {tokenPairStatus[token.tokenAddress] === 'error' && (
+                                                        <div className="mt-2 p-2 bg-red-900/20 border border-red-500/30 rounded text-xs text-red-400">
+                                                            ❌ Error fetching pair data, using token address
+                                                        </div>
+                                                    )}
+                                                    {tokenPairStatus[token.tokenAddress] === 'success' && (
+                                                        <div className="mt-2 p-2 bg-green-900/20 border border-green-500/30 rounded text-xs text-green-400">
+                                                            ✅ Boding Curve found! Opening with liquidity pool
+                                                        </div>
+                                                    )}
+                                                </div>
+
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    ))
+                )}
+            </div>
+        </div>
+    );
+
+    // App.js - Part 7: Settings Render Function
+
+    const renderSettings = () => (
+        <div className="space-y-4 md:space-y-6">
+            {/* Bot Settings */}
+            <div className="bg-gray-800 rounded-lg p-4 md:p-6">
+                <h2 className="text-lg md:text-xl font-semibold text-white mb-4">Bot Settings</h2>
+
+                <div className="space-y-4">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-2">
+                            Private Key (Hidden)
+                        </label>
+                        <input
+                            type="password"
+                            value={settings.privateKey}
+                            onChange={(e) => setSettings(prev => ({ ...prev, privateKey: e.target.value }))}
+                            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            placeholder="Enter your base58 private key"
+                        />
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-2">
+                            Token Page Destination
+                        </label>
+                        <select
+                            value={settings.tokenPageDestination}
+                            onChange={(e) => setSettings(prev => ({ ...prev, tokenPageDestination: e.target.value }))}
+                            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        >
+                            <option value="neo_bullx">Neo BullX</option>
+                            <option value="axiom">Axiom</option>
+                        </select>
+                    </div>
+
+                    <div className="flex flex-col space-y-2">
+                        <button
+                            onClick={() => updateSettings({
+                                privateKey: settings.privateKey,
+                                tokenPageDestination: settings.tokenPageDestination
+                            })}
+                            disabled={!hasBasicSettingsChanged()}
+                            className="w-full md:w-auto px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
+                        >
+                            Save Basic Settings
+                        </button>
+                        {buttonMessages.basicSettings && (
+                            <div className={`text-sm px-3 py-2 rounded ${buttonMessages.basicSettings.includes('✅')
+                                ? 'bg-green-900/20 text-green-400 border border-green-500/30'
+                                : 'bg-red-900/20 text-red-400 border border-red-500/30'
+                                }`}>
+                                {buttonMessages.basicSettings}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </div>
+
+            {/* Filter Settings */}
+            <div className="bg-gray-800 rounded-lg p-4 md:p-6">
+                <h2 className="text-lg md:text-xl font-semibold text-white mb-4">Filter Settings</h2>
+
+                <div className="space-y-4">
+                    {/* Detection Only Mode Toggle */}
+                    <div className="bg-green-900/20 border border-green-500/30 rounded-lg p-4">
+                        <div className="flex flex-col space-y-3 md:flex-row md:items-center md:justify-between md:space-y-0">
+                            <div>
+                                <h3 className="text-base md:text-lg font-medium text-green-400">🛡️ Detection Only Mode</h3>
+                                <p className="text-sm text-green-300">SAFE: Only detect and list tokens, don't buy them</p>
+                            </div>
+                            <label className="relative inline-flex items-center cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={settings.detectionOnlyMode}
+                                    onChange={(e) => setSettings(prev => ({ ...prev, detectionOnlyMode: e.target.checked }))}
+                                    className="sr-only peer"
+                                />
+                                <div className="w-11 h-6 bg-gray-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-green-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-600"></div>
+                            </label>
+                        </div>
+                    </div>
+
+                    {/* Snipe All Tokens Toggle */}
+                    <div className="bg-red-900/20 border border-red-500/30 rounded-lg p-4">
+                        <div className="flex flex-col space-y-3 md:flex-row md:items-center md:justify-between md:space-y-0">
+                            <div>
+                                <h3 className="text-base md:text-lg font-medium text-red-400">⚠️ Snipe All New Tokens</h3>
+                                <p className="text-sm text-red-300">DANGER: This will snipe EVERY new token (bypasses all filters)</p>
+                            </div>
+                            <label className="relative inline-flex items-center cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={settings.snipeAllTokens}
+                                    onChange={(e) => setSettings(prev => ({ ...prev, snipeAllTokens: e.target.checked }))}
+                                    className="sr-only peer"
+                                />
+                                <div className="w-11 h-6 bg-gray-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-red-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-red-600"></div>
+                            </label>
+                        </div>
+                    </div>
+
+                    {/* Admin Filter Toggle */}
+                    <div className="flex flex-col space-y-3 md:flex-row md:items-center md:justify-between md:space-y-0 p-4 bg-gray-700 rounded-lg">
+                        <div>
+                            <h3 className="text-base md:text-lg font-medium text-white">Enable Admin Filtering</h3>
+                            <p className="text-sm text-gray-400">Only detect tokens from wallet addresses or Twitter admins in your lists</p>
+                        </div>
+                        <label className="relative inline-flex items-center cursor-pointer">
+                            <input
+                                type="checkbox"
+                                checked={settings.enableAdminFilter}
+                                onChange={(e) => setSettings(prev => ({ ...prev, enableAdminFilter: e.target.checked }))}
+                                className="sr-only peer"
+                                disabled={settings.snipeAllTokens}
+                            />
+                            <div className="w-11 h-6 bg-gray-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-purple-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600 peer-disabled:opacity-50"></div>
+                        </label>
+                    </div>
+
+                    {/* Community Reuse Toggle */}
+                    <div className="flex flex-col space-y-3 md:flex-row md:items-center md:justify-between md:space-y-0 p-4 bg-gray-700 rounded-lg">
+                        <div>
+                            <h3 className="text-base md:text-lg font-medium text-white">Prevent Community Reuse</h3>
+                            <p className="text-sm text-gray-400">Skip tokens if Twitter community was already used</p>
+                        </div>
+                        <label className="relative inline-flex items-center cursor-pointer">
+                            <input
+                                type="checkbox"
+                                checked={settings.enableCommunityReuse}
+                                onChange={(e) => setSettings(prev => ({ ...prev, enableCommunityReuse: e.target.checked }))}
+                                className="sr-only peer"
+                                disabled={settings.snipeAllTokens}
+                            />
+                            <div className="w-11 h-6 bg-gray-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-green-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-600 peer-disabled:opacity-50"></div>
+                        </label>
+                    </div>
+
+                    {/* Current Filter Status */}
+                    <div className="mt-6 p-4 bg-gray-700 rounded-lg">
+                        <h3 className="text-base md:text-lg font-medium text-white mb-2">Current Filter Status</h3>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                            <div className="flex items-center space-x-2">
+                                <div className={`w-3 h-3 rounded-full ${settings.detectionOnlyMode ? 'bg-green-500' : 'bg-gray-500'}`}></div>
+                                <span className="text-gray-300">Detection Only: {settings.detectionOnlyMode ? 'ON' : 'OFF'}</span>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                                <div className={`w-3 h-3 rounded-full ${settings.snipeAllTokens ? 'bg-red-500' : 'bg-gray-500'}`}></div>
+                                <span className="text-gray-300">Snipe All: {settings.snipeAllTokens ? 'ON' : 'OFF'}</span>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                                <div className={`w-3 h-3 rounded-full ${settings.enableAdminFilter ? 'bg-purple-500' : 'bg-gray-500'}`}></div>
+                                <span className="text-gray-300">Admin Filter: {settings.enableAdminFilter ? 'ON' : 'OFF'}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="flex flex-col space-y-2">
+                        <button
+                            onClick={() => updateFilterSettings({
+                                enableAdminFilter: settings.enableAdminFilter,
+                                enableCommunityReuse: settings.enableCommunityReuse,
+                                snipeAllTokens: settings.snipeAllTokens,
+                                detectionOnlyMode: settings.detectionOnlyMode
+                            })}
+                            disabled={!hasFilterSettingsChanged()}
+                            className="w-full px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
+                        >
+                            Save Filter Settings
+                        </button>
+                        {buttonMessages.filterSettings && (
+                            <div className={`text-sm px-3 py-2 rounded ${buttonMessages.filterSettings.includes('✅')
+                                ? 'bg-green-900/20 text-green-400 border border-green-500/30'
+                                : 'bg-red-900/20 text-red-400 border border-red-500/30'
+                                }`}>
+                                {buttonMessages.filterSettings}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+
+    const renderTwitterSession = () => (
+        <div className="space-y-4 md:space-y-6">
+            {/* Twitter Session Status */}
+            <div className="bg-gray-800 rounded-lg p-4 md:p-6">
+                <div className="flex flex-col space-y-4 md:flex-row md:items-center md:justify-between md:space-y-0 mb-4">
+                    <div>
+                        <h2 className="text-lg md:text-xl font-semibold text-white">🐦 Twitter Session Management</h2>
+                        <p className="text-sm text-gray-400">Manage Twitter login session for community admin scraping</p>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                        <div className={`w-3 h-3 rounded-full ${twitterSessionStatus.loggedIn ? 'bg-green-500' :
+                            twitterSessionStatus.checking ? 'bg-yellow-500' : 'bg-red-500'
+                            }`}></div>
+                        <span className="text-sm text-gray-300">
+                            {twitterSessionStatus.checking ? 'Checking...' :
+                                twitterSessionStatus.loggedIn ? 'Active' : 'Inactive'}
+                        </span>
+                    </div>
+                </div>
+
+                {/* Session Status Display */}
+                <div className="bg-gray-700 rounded-lg p-4 mb-4">
+                    <h3 className="text-lg font-semibold text-white mb-3">Current Status</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <span className="text-gray-400 text-sm">Scraper Initialized:</span>
+                            <div className="flex items-center space-x-2">
+                                <span className={`font-medium ${twitterSessionStatus.initialized ? 'text-green-400' : 'text-red-400'}`}>
+                                    {twitterSessionStatus.initialized ? '✅ Yes' : '❌ No'}
+                                </span>
+                            </div>
+                        </div>
+                        <div>
+                            <span className="text-gray-400 text-sm">Logged In:</span>
+                            <div className="flex items-center space-x-2">
+                                <span className={`font-medium ${twitterSessionStatus.loggedIn ? 'text-green-400' : 'text-red-400'}`}>
+                                    {twitterSessionStatus.loggedIn ? '✅ Yes' : '❌ No'}
+                                </span>
+                            </div>
+                        </div>
+                        {twitterSessionStatus.url && (
+                            <div className="md:col-span-2">
+                                <span className="text-gray-400 text-sm">Current URL:</span>
+                                <div className="mt-1">
+                                    <code className="text-xs bg-gray-600 px-2 py-1 rounded text-white">
+                                        {twitterSessionStatus.url}
+                                    </code>
+                                </div>
+                            </div>
+                        )}
+                        {twitterSessionStatus.error && (
+                            <div className="md:col-span-2">
+                                <span className="text-red-400 text-sm">Error:</span>
+                                <div className="mt-1">
+                                    <code className="text-xs bg-red-900/20 border border-red-500/30 px-2 py-1 rounded text-red-400">
+                                        {twitterSessionStatus.error}
+                                    </code>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                    <button
+                        onClick={checkTwitterSession}
+                        disabled={twitterSessionStatus.checking}
+                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white rounded-lg transition-colors"
+                    >
+                        {twitterSessionStatus.checking ? '🔄 Checking...' : '🔍 Check Status'}
+                    </button>
+
+                    <button
+                        onClick={openTwitterLogin}
+                        disabled={twitterSessionStatus.loggedIn}
+                        className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white rounded-lg transition-colors"
+                    >
+                        {twitterSessionStatus.loggedIn ? '✅ Logged In' : '🌐 Login'}
+                    </button>
+
+                    <button
+                        onClick={performTwitterLogout}
+                        disabled={!twitterSessionStatus.loggedIn || twitterSessionStatus.checking}
+                        className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-gray-600 text-white rounded-lg transition-colors"
+                    >
+                        {twitterSessionStatus.checking ? '🔄 Logging out...' : '🚪 Logout'}
+                    </button>
+
+                    <button
+                        onClick={reopenTwitterBrowser}
+                        disabled={twitterSessionStatus.checking}
+                        className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white rounded-lg transition-colors"
+                    >
+                        {twitterSessionStatus.checking ? '🔄 Opening...' : '🔄 Reopen Browser'}
+                    </button>
+                </div>
+            </div>
+
+            <div className="bg-gray-800 rounded-lg p-4 md:p-6">
+                <h3 className="text-lg font-semibold text-white mb-4">🎯 Twitter API Status</h3>
+
+                <div className="bg-gray-700 rounded-lg p-4 mb-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <span className="text-gray-400 text-sm">API Credits:</span>
+                            <div className="flex items-center space-x-2">
+                                <span className={`font-medium ${twitterSessionStatus.apiCreditsExhausted
+                                    ? 'text-red-400'
+                                    : twitterSessionStatus.apiError
+                                        ? 'text-yellow-400'
+                                        : 'text-green-400'
+                                    }`}>
+                                    {twitterSessionStatus.apiCreditsExhausted ? '❌ Exhausted' :
+                                        twitterSessionStatus.apiError ? '⚠️ Error' : '✅ Available'}
+                                </span>
+                            </div>
+                        </div>
+                        <div>
+                            <span className="text-gray-400 text-sm">API Status:</span>
+                            <div className="flex items-center space-x-2">
+                                <span className="text-white">
+                                    {twitterSessionStatus.apiCreditsExhausted ? 'Needs Recharge' :
+                                        twitterSessionStatus.apiError ? 'Has Issues' : 'Active'}
+                                </span>
+                            </div>
+                        </div>
+                        {twitterSessionStatus.lastApiError && (
+                            <div className="md:col-span-2">
+                                <span className="text-red-400 text-sm">Last API Error:</span>
+                                <div className="mt-1">
+                                    <code className="text-xs bg-red-900/20 border border-red-500/30 px-2 py-1 rounded text-red-400">
+                                        {twitterSessionStatus.lastApiError}
+                                    </code>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {twitterSessionStatus.apiCreditsExhausted && (
+                        <div className="mt-4 bg-red-900/20 border border-red-500/30 rounded-lg p-3">
+                            <h4 className="text-red-400 font-medium mb-2">💳 API Credits Exhausted</h4>
+                            <p className="text-red-300 text-sm mb-3">
+                                Your Twitter API credits are depleted. Community scraping will fail until you recharge your twitterapi.io account.
+                            </p>
+                            <button
+                                onClick={() => {
+                                    if (window.electronAPI && window.electronAPI.openExternalURL) {
+                                        window.electronAPI.openExternalURL('https://twitterapi.io/dashboard');
+                                    } else {
+                                        window.open('https://twitterapi.io/dashboard', '_blank');
+                                    }
+                                    addNotification('info', '🌐 Opening twitterapi.io dashboard for credit recharge');
+                                }}
+                                className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm"
+                            >
+                                💳 Recharge API Credits
+                            </button>
+                        </div>
+                    )}
+
+                    {twitterSessionStatus.apiError && !twitterSessionStatus.apiCreditsExhausted && (
+                        <div className="mt-4 bg-yellow-900/20 border border-yellow-500/30 rounded-lg p-3">
+                            <h4 className="text-yellow-400 font-medium mb-2">⚠️ API Error Detected</h4>
+                            <p className="text-yellow-300 text-sm mb-2">
+                                There was an issue with the Twitter API: {twitterSessionStatus.apiError}
+                            </p>
+                            <p className="text-yellow-300 text-sm">
+                                Community scraping may be affected. Check your API configuration or try again later.
+                            </p>
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            {/* Updated Instructions */}
+            <div className="bg-gray-800 rounded-lg p-4 md:p-6">
+                <h3 className="text-lg font-semibold text-white mb-4">📋 How to Setup Twitter Session</h3>
+                <div className="space-y-4">
+                    <div className="bg-gray-700 rounded-lg p-4">
+                        <h4 className="text-white font-medium mb-2">Step 1: Automatic Login</h4>
+                        <p className="text-sm text-gray-300 mb-2">
+                            Click the "🌐 Login" button. The system will automatically log you in using the credentials configured in the server environment variables.
+                        </p>
+                        <div className="text-xs text-yellow-400 bg-yellow-900/20 p-2 rounded mt-2">
+                            <strong>Note:</strong> Twitter credentials will be configured in the server's .env file (TWITTER_USERNAME and TWITTER_PASSWORD)
+                        </div>
+                    </div>
+
+                    <div className="bg-gray-700 rounded-lg p-4">
+                        <h4 className="text-white font-medium mb-2">Step 2: Verify Login Success</h4>
+                        <p className="text-sm text-gray-300 mb-2">
+                            After clicking login, the system will automatically attempt to log in. Check the status above - it should show "Logged In: ✅ Yes".
+                        </p>
+                        <p className="text-sm text-gray-400">
+                            If login fails, check that the correct credentials are set in the server environment.
+                        </p>
+                    </div>
+
+                    <div className="bg-gray-700 rounded-lg p-4">
+                        <h4 className="text-white font-medium mb-2">Step 3: Session Verification</h4>
+                        <p className="text-sm text-gray-300 mb-2">
+                            Use "🔍 Check Status" to verify your session is active at any time. The session persists automatically and is saved for future use.
+                        </p>
+                        <p className="text-sm text-gray-400">
+                            If session expires, simply click "🌐 Login" again for automatic re-authentication.
+                        </p>
+                    </div>
+
+                    <div className="bg-green-900/20 border border-green-500/30 rounded-lg p-4">
+                        <h4 className="text-green-400 font-medium mb-2">✅ When Session is Active</h4>
+                        <ul className="text-sm text-green-300 space-y-1">
+                            <li>• Community scraping will work automatically when tokens are detected</li>
+                            <li>• The system can access Twitter community moderator pages</li>
+                            <li>• Admin detection from communities will function properly</li>
+                            <li>• Session data is saved and persists across server restarts</li>
+                        </ul>
+                    </div>
+
+                    <div className="bg-blue-900/20 border border-blue-500/30 rounded-lg p-4">
+                        <h4 className="text-blue-400 font-medium mb-2">🔧 Troubleshooting</h4>
+                        <ul className="text-sm text-blue-300 space-y-1">
+                            <li>• If "🌐 Login" fails: Check server credentials in .env file</li>
+                            <li>• If session shows "Inactive": Click "🌐 Login" to re-authenticate</li>
+                            <li>• If browser crashes: Use "🔄 Reopen Browser" to restart</li>
+                            <li>• For manual logout: Use "🚪 Logout" button. Do not logout if it isn't needed (multiple logins logout might ban your account from twitter)</li>
+                        </ul>
+                    </div>
+
+                </div>
+            </div>
+
+
+        </div>
+    );
+
+    // App.js - Parts 8 & 9: Lists, Forms, and Main Component
+    const renderAddForm = (listType) => {
+        const isWalletList = true; // Always treat as wallet input now
+        // Remove the useState call from here - it should be in your main component
+
+        return (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                <div className="bg-gray-800 rounded-lg p-4 md:p-6 w-full max-w-md max-h-screen overflow-y-auto border border-gray-600">
+                    <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-base md:text-lg font-semibold text-white">
+                            Add to {listType.replace('_', ' ').toUpperCase()}
+                        </h3>
+                        <div className="flex items-center space-x-2">
+                            <div className={`w-2 h-2 rounded-full ${botStatus.stats.isFirebaseLoaded ? 'bg-green-500' : 'bg-yellow-500'}`}></div>
+                            <span className="text-xs text-gray-400">
+                                {botStatus.stats.isFirebaseLoaded ? 'Will sync to Firebase' : 'Firebase syncing...'}
+                            </span>
+                        </div>
+                    </div>
+
+                    <div className="space-y-4">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-300 mb-2">
+                                Wallet Address, Twitter Username, or Community ID
+                            </label>
+                            <input
+                                type="text"
+                                value={formData.address}
+                                onChange={(e) => setFormData(prev => ({
+                                    ...prev,
+                                    address: e.target.value
+                                }))}
+                                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                placeholder="e.g., HJdauMU7e8... or @username or 1234567890"
+                            />
+
+                            <div className="mt-2 text-xs text-gray-400">
+                                <p>• Wallet: Base58 address (HJdauMU7e8...)</p>
+                                <p>• Twitter: @username or username</p>
+                                <p>• Community: Numeric ID (1234567890)</p>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-300 mb-2">Amount (SOL)</label>
+                                <input
+                                    type="number"
+                                    step="0.001"
+                                    value={formData.amount}
+                                    onChange={(e) => setFormData(prev => ({ ...prev, amount: parseFloat(e.target.value) }))}
+                                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-gray-300 mb-2">Fees (%)</label>
+                                <input
+                                    type="number"
+                                    value={formData.fees}
+                                    onChange={(e) => setFormData(prev => ({ ...prev, fees: parseInt(e.target.value) }))}
+                                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                />
+                            </div>
+                        </div>
+
+                        <div className="flex items-center space-x-2">
+                            <input
+                                type="checkbox"
+                                checked={formData.mevProtection}
+                                onChange={(e) => setFormData(prev => ({ ...prev, mevProtection: e.target.checked }))}
+                                className="w-4 h-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500"
+                            />
+                            <label className="text-sm text-gray-300">🛡️ MEV Protection</label>
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-medium text-gray-300 mb-2">Sound Notification</label>
+                            <div className="flex space-x-2">
+                                <select
+                                    value={formData.soundNotification}
+                                    onChange={(e) => setFormData(prev => ({ ...prev, soundNotification: e.target.value }))}
+                                    className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
+                                >
+                                    {SOUND_OPTIONS.map(option => (
+                                        <option key={option.value} value={option.value}>
+                                            {option.label}
+                                        </option>
+                                    ))}
+                                </select>
+                                <button
+                                    type="button"
+                                    onClick={() => previewSound(formData.soundNotification)}
+                                    className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                                    title="Preview sound"
+                                >
+                                    🔊
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Firebase sync preview */}
+                        <div className="bg-blue-900/20 border border-blue-500/30 rounded-lg p-3">
+                            <div className="flex items-center space-x-2 mb-2">
+                                <div className="w-2 h-2 rounded-full bg-blue-500"></div>
+                                <span className="text-blue-400 text-sm font-medium">Firebase Integration</span>
+                            </div>
+                            <p className="text-blue-300 text-xs">
+                                This entry will be automatically saved to Firebase and synced across all instances.
+                                {!botStatus.stats.isFirebaseLoaded && ' (Firebase is currently syncing...)'}
+                            </p>
+                        </div>
+                    </div>
+
+                    <div className="flex flex-col space-y-2 md:flex-row md:space-y-0 md:space-x-4 mt-6">
+                        <button
+                            onClick={() => addListItem(listType, {
+                                [isWalletList ? 'address' : 'username']: isWalletList ? formData.address : formData.username,
+                                amount: formData.amount,
+                                fees: formData.fees,
+                                mevProtection: formData.mevProtection,
+                                soundNotification: formData.soundNotification,
+                                isCommunity: isCommunity // Add this field
+                            })}
+                            disabled={!formData.address || !formData.amount || !formData.fees}
+                            className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors flex items-center justify-center space-x-2"
+                        >
+                            <span>✅ Add & Save to Firebase</span>
+                        </button>
+                        <button
+                            onClick={() => setShowAddForm({ type: null, show: false })}
+                            className="flex-1 px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors"
+                        >
+                            ❌ Cancel
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
+    const renderEnhancedListSection = (listType, title, icon) => (
+        <div className="bg-gray-800 rounded-lg p-4 md:p-6">
+            <div className="flex flex-col space-y-3 md:flex-row md:items-center md:justify-between md:space-y-0 mb-4">
+                <div className="flex items-center space-x-2">
+                    {icon}
+                    <h3 className="text-base md:text-lg font-semibold text-white">{title}</h3>
+                    <span className="bg-gray-600 text-white text-xs px-2 py-1 rounded-full">
+                        {lists[listType].length}
+                    </span>
+                    {/* Firebase sync indicator */}
+                    <div className={`w-2 h-2 rounded-full ${botStatus.stats.isFirebaseLoaded ? 'bg-green-500' : 'bg-yellow-500'}`} title="Firebase Sync Status"></div>
+                </div>
+                <div className="flex flex-col space-y-2 md:flex-row md:space-y-0 md:space-x-2">
+                    <button
+                        onClick={() => setShowAddForm({ type: listType, show: true })}
+                        className="flex items-center space-x-1 px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors text-sm"
+                    >
+                        <Plus size={16} />
+                        <span>Add</span>
+                    </button>
+                    <button
+                        onClick={() => clearAdminListFromFirebase(listType)}
+                        className="flex items-center space-x-1 px-3 py-1 bg-red-600 hover:bg-red-700 text-white rounded transition-colors text-sm"
+                        disabled={lists[listType].length === 0}
+                    >
+                        <Trash2 size={16} />
+                        <span>Clear All</span>
+                    </button>
+                </div>
+            </div>
+
+            <div className="space-y-2 max-h-64 overflow-y-auto">
+                {lists[listType].length === 0 ? (
+                    <div className="text-center py-8">
+                        <div className="text-gray-400 mb-4">
+                            {icon}
+                            <p className="mt-2">No entries in {title.toLowerCase()}</p>
+                            <p className="text-sm">Add wallet addresses, Twitter usernames, or community IDs</p>
+                        </div>
+                    </div>
+                ) : (
+                    lists[listType].map(item => (
+                        <div key={item.id} className="flex flex-col space-y-2 md:flex-row md:items-center md:justify-between md:space-y-0 p-3 bg-gray-700 rounded border-l-4 border-purple-500">
+                            <div className="flex-1">
+                                <div className="flex items-center space-x-2 mb-1">
+                                    <p className="text-white font-medium text-sm md:text-base">
+                                        {item.address || item.username || 'Unknown'}
+                                    </p>
+                                    <button
+                                        onClick={() => copyToClipboard(item.address || item.username, 'Entry')}
+                                        className="text-blue-400 hover:text-blue-300 text-xs"
+                                    >
+                                        📋
+                                    </button>
+                                    {/* Firebase sync indicator for individual items */}
+                                    <div className="w-1.5 h-1.5 rounded-full bg-green-500" title="Synced to Firebase"></div>
+                                </div>
+                                <div className="flex flex-wrap gap-2 text-xs">
+                                    <span className="bg-green-600 text-white px-2 py-1 rounded">{item.amount} SOL</span>
+                                    <span className="bg-blue-600 text-white px-2 py-1 rounded">{item.fees}% fees</span>
+                                    <span className={`px-2 py-1 rounded ${item.mevProtection ? 'bg-purple-600 text-white' : 'bg-gray-600 text-gray-300'}`}>
+                                        {item.mevProtection ? '🛡️ MEV' : '❌ No MEV'}
+                                    </span>
+                                    {item.soundNotification && (
+                                        <span className="bg-yellow-600 text-white px-2 py-1 rounded">🔊 {item.soundNotification}</span>
+                                    )}
+                                </div>
+                                {item.createdAt && (
+                                    <p className="text-gray-400 text-xs mt-1">
+                                        Added: {new Date(item.createdAt).toLocaleString()}
+                                    </p>
+                                )}
+                            </div>
+                            <button
+                                onClick={() => removeListItem(listType, item.id)}
+                                className="ml-0 md:ml-2 p-2 text-red-400 hover:text-red-300 hover:bg-red-900/20 rounded transition-colors self-end md:self-center"
+                                title="Remove from Firebase and local storage"
+                            >
+                                <Trash2 size={16} />
+                            </button>
+                        </div>
+                    ))
+                )}
+            </div>
+
+            {/* Enhanced list footer with Firebase info */}
+            <div className="mt-4 pt-4 border-t border-gray-700">
+                <div className="flex items-center justify-between text-xs text-gray-400">
+                    <span>
+                        {lists[listType].length} entries •
+                        {botStatus.stats.isFirebaseLoaded ? ' Synced to Firebase' : ' Syncing to Firebase...'}
+                    </span>
+                    <span className="flex items-center space-x-1">
+                        <div className={`w-2 h-2 rounded-full ${botStatus.stats.isFirebaseLoaded ? 'bg-green-500' : 'bg-yellow-500'}`}></div>
+                        <span>{botStatus.stats.isFirebaseLoaded ? 'Firebase Ready' : 'Firebase Syncing'}</span>
+                    </span>
+                </div>
+            </div>
+        </div>
+    );
+
+
+    const renderLists = () => (
+        <div className="space-y-4 md:space-y-6">
+            {/* Enhanced Firebase Controls */}
+            <div className="bg-gray-800 rounded-lg p-4 md:p-6">
+                <div className="flex flex-col space-y-4 md:flex-row md:items-center md:justify-between md:space-y-0 mb-4">
+                    <div>
+                        <h2 className="text-lg md:text-xl font-semibold text-white">Admin Lists Management</h2>
+                        <p className="text-sm text-gray-400">Manage Primary (auto-snipe) and Secondary (notify) admin lists with Firebase sync</p>
+                    </div>
+                    <div className="flex flex-col space-y-2 md:flex-row md:space-y-0 md:space-x-4">
+                        <button
+                            onClick={syncAdminListsFromFirebase}
+                            className="w-full md:w-auto px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm"
+                        >
+                            🔄 Sync from Firebase
+                        </button>
+                        <button
+                            onClick={getFirebaseAdminLists}
+                            className="w-full md:w-auto px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors text-sm"
+                        >
+                            📥 Load Firebase Data
+                        </button>
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                    <div className="text-center">
+                        <div className="text-purple-400 font-semibold">{botStatus.stats.primaryAdmins}</div>
+                        <div className="text-gray-400">Primary Admins</div>
+                    </div>
+                    <div className="text-center">
+                        <div className="text-orange-400 font-semibold">{botStatus.stats.secondaryAdmins}</div>
+                        <div className="text-gray-400">Secondary Admins</div>
+                    </div>
+                    <div className="text-center">
+                        <div className={`font-semibold ${botStatus.stats.isFirebaseLoaded ? 'text-green-400' : 'text-yellow-400'}`}>
+                            {botStatus.stats.isFirebaseLoaded ? 'SYNCED' : 'SYNCING'}
+                        </div>
+                        <div className="text-gray-400">Firebase Status</div>
+                    </div>
+                    <div className="text-center">
+                        <div className="text-blue-400 font-semibold">{botStatus.stats.primaryAdmins + botStatus.stats.secondaryAdmins}</div>
+                        <div className="text-gray-400">Total Entries</div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Enhanced List Sections with Firebase controls */}
+            <div className="grid gap-4 md:gap-6">
+                {renderEnhancedListSection('primary_admins', 'Primary Admins (Auto-Snipe)', <Users className="text-purple-400" size={20} />)}
+                {renderEnhancedListSection('secondary_admins', 'Secondary Admins (Notify)', <Bell className="text-orange-400" size={20} />)}
+            </div>
+
+            {showAddForm.show && renderAddForm(showAddForm.type)}
+        </div>
+    );
+
+    // === END OF PART 8 === //
+    // === START OF PART 9: MAIN APP COMPONENT === //
+
+    return (
+        <div className="min-h-screen bg-gray-900 text-white">
+            {/* Mobile-responsive Header */}
+            <header className="bg-gray-800 border-b border-gray-700 px-4 md:px-6 py-3 md:py-4">
+                <div className="flex flex-col space-y-3 md:flex-row md:items-center md:justify-between md:space-y-0">
+                    <h1 className="text-xl md:text-2xl font-bold text-white">DevScope Enhanced</h1>
+                    <div className="flex flex-wrap items-center gap-2 md:space-x-4">
+                        {renderStatusIndicator()}
+                        <div className={`px-2 md:px-3 py-1 rounded-full text-xs md:text-sm ${botStatus.isRunning ? 'bg-green-600 text-white' : 'bg-gray-600 text-gray-300'
+                            }`}>
+                            {botStatus.isRunning ? 'RUNNING' : 'STOPPED'}
+                        </div>
+                        {settings.detectionOnlyMode && (
+                            <div className="px-2 md:px-3 py-1 rounded-full text-xs md:text-sm bg-green-600 text-white">
+                                DETECTION ONLY
+                            </div>
+                        )}
+                        {settings.enableCommunityReuse && (
+                            <div className="px-2 md:px-3 py-1 rounded-full text-xs md:text-sm bg-orange-600 text-white">
+                                COMMUNITY TRACKING
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </header>
+
+            {/* Enhanced Navigation */}
+            <nav className="bg-gray-800 border-b border-gray-700 overflow-x-auto">
+                <div className="px-4 md:px-6">
+                    <div className="flex space-x-4 md:space-x-8 min-w-max">
+                        <button
+                            onClick={() => setActiveTab('dashboard')}
+                            className={`py-3 md:py-4 px-2 border-b-2 transition-colors whitespace-nowrap text-sm md:text-base ${activeTab === 'dashboard'
+                                ? 'border-blue-500 text-blue-400'
+                                : 'border-transparent text-gray-400 hover:text-white'
+                                }`}
+                        >
+                            📊 Dashboard
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('detected')}
+                            className={`py-3 md:py-4 px-2 border-b-2 transition-colors whitespace-nowrap text-sm md:text-base ${activeTab === 'detected'
+                                ? 'border-blue-500 text-blue-400'
+                                : 'border-transparent text-gray-400 hover:text-white'
+                                }`}
+                        >
+                            🎯 Detected Tokens
+                            {detectedTokens.length > 0 && (
+                                <span className="ml-1 md:ml-2 bg-green-600 text-white text-xs px-1.5 md:px-2 py-0.5 md:py-1 rounded-full">
+                                    {detectedTokens.length}
+                                </span>
+                            )}
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('lists')}
+                            className={`py-3 md:py-4 px-2 border-b-2 transition-colors whitespace-nowrap text-sm md:text-base ${activeTab === 'lists'
+                                ? 'border-blue-500 text-blue-400'
+                                : 'border-transparent text-gray-400 hover:text-white'
+                                }`}
+                        >
+                            📋 Lists
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('communities')}
+                            className={`py-3 md:py-4 px-2 border-b-2 transition-colors whitespace-nowrap text-sm md:text-base ${activeTab === 'communities'
+                                ? 'border-blue-500 text-blue-400'
+                                : 'border-transparent text-gray-400 hover:text-white'
+                                }`}
+                        >
+                            🏘️ Communities
+                            {usedCommunities.length > 0 && (
+                                <span className="ml-1 md:ml-2 bg-yellow-600 text-white text-xs px-1.5 md:px-2 py-0.5 md:py-1 rounded-full">
+                                    {usedCommunities.length}
+                                </span>
+                            )}
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('tweets')}
+                            className={`py-3 md:py-4 px-2 border-b-2 transition-colors whitespace-nowrap text-sm md:text-base ${activeTab === 'tweets'
+                                ? 'border-blue-500 text-blue-400'
+                                : 'border-transparent text-gray-400 hover:text-white'
+                                }`}
+                        >
+                            📱 Tweets
+                            {usedTweets.length > 0 && (
+                                <span className="ml-1 md:ml-2 bg-blue-600 text-white text-xs px-1.5 md:px-2 py-0.5 md:py-1 rounded-full">
+                                    {usedTweets.length}
+                                </span>
+                            )}
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('settings')}
+                            className={`py-3 md:py-4 px-2 border-b-2 transition-colors whitespace-nowrap text-sm md:text-base ${activeTab === 'settings'
+                                ? 'border-blue-500 text-blue-400'
+                                : 'border-transparent text-gray-400 hover:text-white'
+                                }`}
+                        >
+                            ⚙️ Settings
+                        </button>
+
+                        <button
+                            onClick={() => setActiveTab('demo')}
+                            className={`py-3 md:py-4 px-2 border-b-2 transition-colors whitespace-nowrap text-sm md:text-base ${activeTab === 'demo'
+                                ? 'border-blue-500 text-blue-400'
+                                : 'border-transparent text-gray-400 hover:text-white'
+                                }`}
+                        >
+                            🧪 Demo
+                        </button>
+
+                        <button
+                            onClick={() => setActiveTab('twitter')}
+                            className={`py-3 md:py-4 px-2 border-b-2 transition-colors whitespace-nowrap text-sm md:text-base ${activeTab === 'twitter'
+                                ? 'border-blue-500 text-blue-400'
+                                : 'border-transparent text-gray-400 hover:text-white'
+                                }`}
+                        >
+                            🐦 Twitter Session
+                        </button>
+                    </div>
+                </div>
+            </nav>
+
+            {/* Main Content with mobile padding */}
+            <main className="p-4 md:p-6">
+                {activeTab === 'dashboard' && renderDashboard()}
+                {activeTab === 'detected' && renderDetectedTokens()}
+                {activeTab === 'lists' && renderLists()}
+                {activeTab === 'communities' && renderCommunityManagement()}
+                {activeTab === 'tweets' && renderTweetManagement()}
+                {activeTab === 'demo' && renderDemoTab()}
+                {activeTab === 'twitter' && renderTwitterSession()}
+                {activeTab === 'settings' && (
+                    <div className="space-y-6">
+                        {renderSettings()}
+                        {renderGlobalSnipeSettings()}
+                        {renderSoundManagement()}
+                    </div>
+                )}
+            </main>
+
+            {/* Enhanced Popups */}
+            {renderSecondaryPopup()}
+            {renderPopupBlockerModal()}
+
+            {/* Footer Info */}
+            <footer className="bg-gray-800 border-t border-gray-700 px-4 md:px-6 py-3">
+                <div className="flex flex-col md:flex-row md:items-center md:justify-between space-y-2 md:space-y-0">
+                    <div className="text-xs text-gray-400">
+                        DevScope Enhanced v2.1 - Firebase Admin Lists & Advanced Twitter Community Detection
+                    </div>
+                    <div className="flex items-center space-x-4 text-xs text-gray-400">
+                        <div className="flex items-center space-x-1">
+                            <span>🎯 Primary:</span>
+                            <span className="text-purple-400 font-medium">{botStatus.stats.primaryAdmins}</span>
+                        </div>
+                        <div className="flex items-center space-x-1">
+                            <span>🔔 Secondary:</span>
+                            <span className="text-orange-400 font-medium">{botStatus.stats.secondaryAdmins}</span>
+                        </div>
+                        <div className="flex items-center space-x-1">
+                            <span>🏘️ Communities:</span>
+                            <span className="text-white font-medium">{usedCommunities.length}</span>
+                        </div>
+                        <div className="flex items-center space-x-1">
+                            <span>📱 Tweets:</span>
+                            <span className="text-blue-400 font-medium">{usedTweets.length}</span>
+                        </div>
+                        <div className="flex items-center space-x-1">
+                            <span>🔥 Firebase:</span>
+                            <span className={`font-medium ${botStatus.stats.isFirebaseLoaded ? 'text-green-400' : 'text-yellow-400'}`}>
+                                {botStatus.stats.isFirebaseLoaded ? 'SYNCED' : 'SYNCING'}
+                            </span>
+                        </div>
+                        <div className="flex items-center space-x-1">
+                            <span>📊 Connection:</span>
+                            <span className={`font-medium ${connectionStatus === 'connected' ? 'text-green-400' : 'text-red-400'}`}>
+                                {connectionStatus.toUpperCase()}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            </footer>
+        </div>
+    );
 }
 
-// Log scraping stats every 30 seconds for debugging
-setInterval(() => {
-    const stats = getScrapingStats();
-    if (stats.activeSessions > 0 || stats.cachedResults > 0) {
-        console.log('📊 Scraping Stats:', stats);
-    }
-}, 30000);
-
-const HTTPS_PORT = process.env.HTTPS_PORT || 3002;
-
-httpsServer.listen(HTTPS_PORT, () => {
-    console.log(`🔒 HTTPS Server with WebSocket running on port ${HTTPS_PORT}`);
-    console.log(`🔌 WebSocket endpoint: wss://devscope.fun:${HTTPS_PORT}`);
-});
-
-module.exports = { app, httpServer, botState, TwitterAPI, twitterAPI, scrapeCommunityAndMatchAdmins };
+export default App;
