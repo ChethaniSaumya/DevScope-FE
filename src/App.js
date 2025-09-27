@@ -441,6 +441,44 @@ function App() {
         }
     };
 
+    const openTokenPageWithTiming = async (tokenAddress, url, source) => {
+        const browserOpenStart = performance.now();
+
+        // Get timing data from backend response
+        const response = await apiCall(`/pair-address/${tokenAddress}`);
+        const backendTiming = response.timing;
+
+        if (window.electronAPI && window.electronAPI.openExternalURL) {
+            window.electronAPI.openExternalURL(url);
+        } else {
+            window.open(url, '_blank');
+        }
+
+        const browserOpenEnd = performance.now();
+        const browserOpenTime = browserOpenEnd - browserOpenStart;
+
+        // Calculate total time from initial detection to browser open
+        const totalTime = backendTiming?.totalFromDetection + browserOpenTime;
+
+        console.log(`⏱️ COMPLETE END-TO-END TIMING:`);
+        console.log(`   - Token Detection to Processing: ${backendTiming?.detectionToProcessing}ms`);
+        console.log(`   - Token Processing Duration: ${backendTiming?.processingTime}ms`);
+        console.log(`   - API Request Duration: ${backendTiming?.requestDuration}ms`);
+        console.log(`   - Browser Open Duration: ${browserOpenTime.toFixed(2)}ms`);
+        console.log(`   - TOTAL: Token Detection to Axiom Open: ${totalTime?.toFixed(2)}ms`);
+
+        return {
+            totalTime,
+            breakdown: {
+                detectionToProcessing: backendTiming?.detectionToProcessing,
+                processingTime: backendTiming?.processingTime,
+                apiRequestTime: backendTiming?.requestDuration,
+                browserOpenTime,
+                source
+            }
+        };
+    };
+
     // WebSocket connection
     const connectWebSocket = useCallback(() => {
         try {
