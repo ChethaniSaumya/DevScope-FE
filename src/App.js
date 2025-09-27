@@ -689,202 +689,41 @@ function App() {
     const handleWebSocketMessage = (data) => {
         switch (data.type) {
             case 'bot_status':
+                // Fix: Use the correct state setter name
                 setBotStatus(prev => ({ ...prev, isRunning: data.data.isRunning }));
                 break;
 
-            case 'admin_list_updated':
-                // Refresh lists when admin lists are updated
-                fetchLists();
-                // Update stats
-                setBotStatus(prev => ({
-                    ...prev,
-                    stats: { ...prev.stats, ...data.data.stats }
-                }));
-                addNotification('success', `✅ ${data.data.listType.replace('_', ' ')} ${data.data.action} and synced to Firebase`);
-                break;
-
-            case 'admin_lists_synced':
-                // Refresh lists when synced from Firebase
-                fetchLists();
-                setBotStatus(prev => ({
-                    ...prev,
-                    stats: { ...prev.stats, ...data.data.stats }
-                }));
-                addNotification('success', '🔄 Admin lists synchronized from Firebase');
-                break;
-
-            case 'admin_list_cleared':
-                // Refresh lists when cleared
-                fetchLists();
-                setBotStatus(prev => ({
-                    ...prev,
-                    stats: { ...prev.stats, ...data.data.stats }
-                }));
-                addNotification('info', `🗑️ ${data.data.listType.replace('_', ' ')} cleared from Firebase`);
-                break;
-
-            case 'community_scraping_info':
-                console.log('ℹ️ COMMUNITY INFO:', data.data);
-                addNotification('info', `ℹ️ Community ${data.data.communityId}: ${data.data.reason}`);
-                break;
-
-            case 'twitter_api_error':
-                console.log('💳 TWITTER API ERROR:', data.data);
-
-                // Show specific error based on type
-                if (data.data.errorType === 'credits_exhausted') {
-                    addNotification('error', `💳 Twitter API Credits Exhausted!`);
-                    addNotification('error', `${data.data.message}`);
-                    addNotification('warning', `⚠️ Community ${data.data.communityId} scraping failed - API credits needed`);
-                } else if (data.data.errorType === 'unauthorized') {
-                    addNotification('error', `🔑 Twitter API Unauthorized!`);
-                    addNotification('error', `${data.data.message}`);
-                    addNotification('warning', `⚠️ Check your Twitter API key configuration`);
-                } else if (data.data.errorType === 'forbidden') {
-                    addNotification('error', `🚫 Twitter API Access Forbidden!`);
-                    addNotification('error', `${data.data.message}`);
-                } else if (data.data.errorType === 'rate_limited') {
-                    addNotification('warning', `⏰ Twitter API Rate Limited!`);
-                    addNotification('warning', `${data.data.message}`);
-                } else if (data.data.errorType === 'timeout') {
-                    addNotification('warning', `⏱️ Twitter API Timeout!`);
-                    addNotification('warning', `${data.data.message}`);
-                } else {
-                    addNotification('error', `❌ Twitter API Error!`);
-                    addNotification('error', `${data.data.message}`);
-                }
-
-                // Update Twitter session status to reflect API issues
-                setTwitterSessionStatus(prev => ({
-                    ...prev,
-                    error: `API Error: ${data.data.error}`,
-                    apiCreditsExhausted: data.data.errorType === 'credits_exhausted',
-                    apiError: data.data.errorType,
-                    lastApiError: data.data.message
-                }));
-                break;
-
-            case 'community_scraping_failed':
-                console.log('❌ COMMUNITY SCRAPING FAILED:', data.data);
-
-                // If it's a session issue, update Twitter session status
-                if (data.data.needsManualLogin) {
-                    setTwitterSessionStatus(prev => ({
-                        ...prev,
-                        loggedIn: false,
-                        error: 'Session expired - manual login required'
-                    }));
-                    addNotification('warning', '🔒 Twitter session expired - please login again');
-                } else {
-                    addNotification('warning', `❌ Community ${data.data.communityId} scraping failed: ${data.data.reason}`);
-                }
-                break;
-
-            case 'community_admins_scraped':
-                console.log('🏘️ COMMUNITY ADMINS SCRAPED:', data.data);
-                console.table(data.data.admins);
-                console.log('📋 Your Primary Admin List:', data.data.yourPrimaryList);
-                console.log('📋 Your Secondary Admin List:', data.data.yourSecondaryList);
-
-                // Show detailed comparison
-                console.log('🔍 DETAILED COMPARISON CHECK:');
-                data.data.admins.forEach(admin => {
-                    const adminLower = admin.username.toLowerCase().trim();
-                    const adminWithAt = `@${adminLower}`;
-
-                    const inPrimary = data.data.yourPrimaryList.some(item => {
-                        const itemLower = item.toLowerCase().trim();
-                        return itemLower === adminLower || itemLower === adminWithAt;
-                    });
-
-                    const inSecondary = data.data.yourSecondaryList.some(item => {
-                        const itemLower = item.toLowerCase().trim();
-                        return itemLower === adminLower || itemLower === adminWithAt;
-                    });
-
-                    console.log(`${inPrimary ? '🎯' : inSecondary ? '🔔' : '❌'} @${admin.username} - ${admin.badgeType} ${inPrimary ? '(PRIMARY MATCH!)' : inSecondary ? '(SECONDARY MATCH!)' : '(NO MATCH)'}`);
-                });
-
-                addNotification('info', `🏘️ Community ${data.data.communityId} scraped: ${data.data.totalAdmins} admins found - check console`);
-                break;
-
-            case 'secondary_popup_trigger':
-                console.log('🔔 SECONDARY ADMIN MATCH DETECTED');
-                console.log('📊 Token data:', data.data.tokenData);
-
-                const tokenData = data.data.tokenData;
-
-                // Show popup modal immediately
-                setSecondaryPopup({
-                    show: true,
-                    tokenData: tokenData,
-                    globalSettings: data.data.globalSnipeSettings
-                });
-
-                addNotification('info', `🔔 Secondary match found: ${tokenData.tokenAddress.substring(0, 8)}...`);
-
-                // 🚀 START PAIR ADDRESS DETECTION IMMEDIATELY
-                console.log('🔍 Starting pair address detection for secondary match...');
-                checkPairAddressWithRetry(tokenData.tokenAddress);
-
-                break;
-
-            case 'community_admin_match_found':
-                console.log('🎯 COMMUNITY ADMIN MATCH FOUND!', data.data);
-                console.log(`✅ Matched Admin: @${data.data.matchedAdmin.username} (${data.data.matchedAdmin.badgeType})`);
-                console.log(`📋 Match Type: ${data.data.matchType.toUpperCase()}`);
-                console.log(`🔍 Matched As: ${data.data.matchedAs}`);
-                if (data.data.matchedVariation) {
-                    console.log(`🔄 Matched Variation: ${data.data.matchedVariation}`);
-                }
-                console.log('👥 All Scraped Admins:', data.data.allScrapedAdmins);
-
-                addNotification('success', `🎯 Community admin match: @${data.data.matchedAdmin.username} (${data.data.matchType})`);
-                break;
-
-            case 'community_id_match_found':
-                console.log('🆔 COMMUNITY ID DIRECT MATCH!', data.data);
-                console.log(`✅ Community ID ${data.data.communityId} found directly in ${data.data.matchType} list`);
-                console.log('📋 Your Primary List:', data.data.yourPrimaryList);
-                console.log('📋 Your Secondary List:', data.data.yourSecondaryList);
-
-                addNotification('success', `🆔 Community ID ${data.data.communityId} matched directly (${data.data.matchType})`);
-                break;
-
-            case 'community_admins_no_match':
-                console.log('❌ COMMUNITY ADMINS - NO MATCHES FOUND:', data.data);
-                console.log(`📊 Community ${data.data.communityId} - Scraped ${data.data.totalScrapedAdmins} admins`);
-                console.table(data.data.scrapedAdmins);
-                console.log('📋 Your Primary List:', data.data.yourPrimaryList);
-                console.log('📋 Your Secondary List:', data.data.yourSecondaryList);
-
-                console.log('🔍 WHY NO MATCHES:');
-                data.data.scrapedAdmins.forEach(admin => {
-                    console.log(`❌ @${admin.username} not found in your lists`);
-                });
-
-                addNotification('info', `❌ Community ${data.data.communityId}: ${data.data.totalScrapedAdmins} admins scraped, no matches`);
-                break;
-
-            case 'community_scraping_error':
-                console.log('💥 COMMUNITY SCRAPING ERROR:', data.data);
-                addNotification('error', `💥 Community ${data.data.communityId} error: ${data.data.error}`);
+            case 'logs':
+                console.log('Server log:', data.data);
                 break;
 
             case 'snipe_success':
-                addNotification('success', `🎯 Token sniped successfully: ${data.data.tokenAddress.substring(0, 8)}...`);
+                console.log('🎯 SNIPE SUCCESS:', data.data);
 
-                // ✅ AUTOMATICALLY OPEN TOKEN PAGE AFTER SUCCESSFUL SNIPE
-                if (data.data.openTokenPage && data.data.tokenPageUrl) {
-                    console.log('🌐 Auto-opening token page:', data.data.tokenPageUrl);
+                // ⏱️ START BROWSER TIMING FOR SNIPE SUCCESS
+                const snipeSuccessBrowserStart = performance.now();
 
-                    // Use a small delay to ensure the snipe notification shows first
+                if (data.data.openTokenPage) {
+                    // Enhanced notification that shows first
+                    addNotification('success', `🎯 Sniped ${data.data.tokenAddress.substring(0, 8)}... successfully!`);
+
+                    // Small delay to ensure notification shows first
                     setTimeout(() => {
                         if (window.electronAPI && window.electronAPI.openExternalURL) {
                             window.electronAPI.openExternalURL(data.data.tokenPageUrl);
+
+                            // ⏱️ LOG SNIPE SUCCESS BROWSER TIMING (Electron)
+                            const browserOpenTime = performance.now() - snipeSuccessBrowserStart;
+                            console.log(`⏱️ SNIPE SUCCESS BROWSER TIMING (Electron): ${browserOpenTime.toFixed(2)}ms`);
+
                             addNotification('info', '🌐 Token page opened automatically');
                         } else {
                             window.open(data.data.tokenPageUrl, '_blank');
+
+                            // ⏱️ LOG SNIPE SUCCESS BROWSER TIMING (Browser)
+                            const browserOpenTime = performance.now() - snipeSuccessBrowserStart;
+                            console.log(`⏱️ SNIPE SUCCESS BROWSER TIMING (Browser): ${browserOpenTime.toFixed(2)}ms`);
+
                             addNotification('info', '🌐 Token page opened automatically in new tab');
                         }
                     }, 500); // 500ms delay
@@ -894,11 +733,30 @@ function App() {
             case 'auto_open_token_page':
                 console.log('🌐 Auto-opening token page:', data.data);
 
+                // ⏱️ START BROWSER TIMING FOR AUTO OPEN
+                const autoOpenBrowserStart = performance.now();
+
                 if (window.electronAPI && window.electronAPI.openExternalURL) {
                     window.electronAPI.openExternalURL(data.data.tokenPageUrl);
+
+                    // ⏱️ LOG AUTO OPEN BROWSER TIMING (Electron)
+                    const browserOpenTime = performance.now() - autoOpenBrowserStart;
+                    console.log(`⏱️ AUTO OPEN BROWSER TIMING (Electron): ${browserOpenTime.toFixed(2)}ms`);
+                    console.log(`   Token: ${data.data.tokenAddress}`);
+                    console.log(`   Destination: ${data.data.destination}`);
+                    console.log(`   URL: ${data.data.tokenPageUrl}`);
+
                     addNotification('info', `🌐 ${data.data.destination === 'axiom' ? 'Axiom' : 'Neo BullX'} opened automatically`);
                 } else {
                     window.open(data.data.tokenPageUrl, '_blank');
+
+                    // ⏱️ LOG AUTO OPEN BROWSER TIMING (Browser)
+                    const browserOpenTime = performance.now() - autoOpenBrowserStart;
+                    console.log(`⏱️ AUTO OPEN BROWSER TIMING (Browser): ${browserOpenTime.toFixed(2)}ms`);
+                    console.log(`   Token: ${data.data.tokenAddress}`);
+                    console.log(`   Destination: ${data.data.destination}`);
+                    console.log(`   URL: ${data.data.tokenPageUrl}`);
+
                     addNotification('info', `🌐 ${data.data.destination === 'axiom' ? 'Axiom' : 'Neo BullX'} opened automatically`);
                 }
                 break;
@@ -951,17 +809,115 @@ function App() {
                         ? `(@${data.data.twitterHandle})`
                         : '';
 
-                addNotification('success',
-                    `${matchTypeText[data.data.matchType] || '📊'} Token detected: ${data.data.tokenAddress.substring(0, 8)}... ${twitterInfo} from ${data.data.platform}`
-                );
+                addNotification('info', `${matchTypeText[data.data.matchType] || '🔍 Match'} ${data.data.name || data.data.symbol} ${twitterInfo}`);
+
+                // Sound notification
+                if (data.data.config && data.data.config.soundNotification && window.electronAPI) {
+                    window.electronAPI.playSound(data.data.config.soundNotification);
+                }
                 break;
 
-            case 'platform_status':
-                console.log('Platform status:', data.data);
+            case 'secondary_popup_trigger':
+                console.log('🔔 SECONDARY ADMIN MATCH DETECTED');
+                console.log('📊 Token data:', data.data.tokenData);
+
+                const tokenData = data.data.tokenData;
+
+                // Show popup modal immediately
+                setSecondaryPopup({
+                    show: true,
+                    tokenData: tokenData,
+                    globalSettings: data.data.globalSnipeSettings
+                });
+
+                addNotification('info', `🔔 Secondary match found: ${tokenData.tokenAddress.substring(0, 8)}...`);
+
+                // 🚀 START PAIR ADDRESS DETECTION IMMEDIATELY
+                console.log('🔍 Starting pair address detection for secondary match...');
+                checkPairAddressWithRetry(tokenData.tokenAddress);
+
+                break;
+
+            case 'community_admin_match_found':
+                console.log('🎯 COMMUNITY ADMIN MATCH FOUND!', data.data);
+
+                // Show enhanced notification
+                const matchTypeIcon = data.data.matchType === 'primary' ? '🎯' : '🔔';
+                addNotification('info', `${matchTypeIcon} Community admin match: ${data.data.matchedAdmin.username} in ${data.data.communityId}`);
+
+                break;
+
+            case 'community_scraping_error':
+                console.log('❌ COMMUNITY SCRAPING ERROR:', data.data);
+
+                if (data.data.reason === 'session_expired') {
+                    addNotification('warning', '🔑 Twitter session expired - please login again');
+                } else {
+                    addNotification('warning', `❌ Community ${data.data.communityId} scraping failed: ${data.data.reason}`);
+                }
+                break;
+
+            case 'community_admins_scraped':
+                console.log('👑 COMMUNITY ADMINS SCRAPED:', data.data);
+                console.table(data.data.admins);
+                console.log('📋 Your Primary Admin List:', data.data.yourPrimaryList);
+                console.log('📋 Your Secondary Admin List:', data.data.yourSecondaryList);
+
+                // Show detailed comparison
+                console.log('🔍 DETAILED COMPARISON CHECK:');
+                data.data.admins.forEach(admin => {
+                    const adminLower = admin.username.toLowerCase().trim();
+                    const adminWithAt = `@${adminLower}`;
+
+                    const inPrimary = data.data.yourPrimaryList.some(item => {
+                        const itemLower = item.toLowerCase().trim();
+                        return itemLower === adminLower || itemLower === adminWithAt;
+                    });
+
+                    const inSecondary = data.data.yourSecondaryList.some(item => {
+                        const itemLower = item.toLowerCase().trim();
+                        return itemLower === adminLower || itemLower === adminWithAt;
+                    });
+
+                    console.log(`${inPrimary ? '🎯' : inSecondary ? '🔔' : '❌'} @${admin.username} - ${admin.badgeType} ${inPrimary ? '(PRIMARY MATCH!)' : inSecondary ? '(SECONDARY MATCH!)' : '(NO MATCH)'}`);
+                });
+
+                addNotification('info', `👑 Community ${data.data.communityId} scraped: ${data.data.totalAdmins} admins found - check console`);
+                break;
+
+            case 'twitter_session_check':
+                console.log('🔍 Twitter session status:', data.data);
+                setTwitterSessionStatus(prev => ({
+                    ...prev,
+                    ...data.data,
+                    checking: false
+                }));
+                break;
+
+            case 'twitter_login_attempt':
+                console.log('🔑 Twitter login attempt:', data.data);
+                if (data.data.success) {
+                    addNotification('success', `✅ Twitter login successful: ${data.data.url}`);
+                    setTwitterSessionStatus(prev => ({
+                        ...prev,
+                        loggedIn: true,
+                        url: data.data.url,
+                        error: null,
+                        checking: false
+                    }));
+                } else {
+                    addNotification('error', `❌ Twitter login failed: ${data.data.error}`);
+                    setTwitterSessionStatus(prev => ({
+                        ...prev,
+                        loggedIn: false,
+                        error: data.data.error,
+                        checking: false
+                    }));
+                }
                 break;
 
             default:
-                console.log('Unknown message type:', data.type);
+                console.log('Unknown WebSocket message type:', data.type);
         }
     };
 
@@ -1054,9 +1010,11 @@ function App() {
         }
     };
 
-    // Fixed viewToken function in App.js
     const viewToken = async (token) => {
         console.log('🌐 Opening token page for:', token.tokenAddress);
+
+        // ⏱️ START TIMING
+        const viewTokenStart = performance.now();
 
         // Clear previous status for this token
         setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: null }));
@@ -1072,16 +1030,35 @@ function App() {
                 addNotification('success', `🎯 Opening Axiom with bonding curve: ${token.bondingCurveAddress.substring(0, 8)}...`);
                 setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: 'success' }));
 
+                // ⏱️ LOG URL GENERATION TIME
+                const urlGenerationTime = performance.now() - viewTokenStart;
+                console.log(`⏱️ URL GENERATION TIME (stored bonding curve): ${urlGenerationTime.toFixed(2)}ms`);
+
+                // ⏱️ START BROWSER TIMING
+                const browserOpenStart = performance.now();
+
                 // Open the URL directly
                 if (window.electronAPI && window.electronAPI.openExternalURL) {
                     window.electronAPI.openExternalURL(url);
                 } else {
                     window.open(url, '_blank');
                 }
+
+                // ⏱️ LOG BROWSER TIMING
+                const browserOpenTime = performance.now() - browserOpenStart;
+                const totalTime = performance.now() - viewTokenStart;
+                console.log(`⏱️ MANUAL TOKEN OPEN TIMING (stored bonding curve):`);
+                console.log(`   URL Generation: ${urlGenerationTime.toFixed(2)}ms`);
+                console.log(`   Browser Open: ${browserOpenTime.toFixed(2)}ms`);
+                console.log(`   Total: ${totalTime.toFixed(2)}ms`);
+
             } else {
                 // Original logic for tokens without stored bonding curve
                 try {
+                    const apiCallStart = performance.now();
                     const response = await apiCall(`/pair-address/${token.tokenAddress}`);
+                    const apiCallTime = performance.now() - apiCallStart;
+                    console.log(`⏱️ API CALL TIME: ${apiCallTime.toFixed(2)}ms`);
                     console.log('🔍 Backend response:', response);
 
                     if (response.success) {
@@ -1091,22 +1068,56 @@ function App() {
                             addNotification('success', `🎯 Opening Axiom with bonding curve: ${response.bondingCurveData.bondingCurveAddress.substring(0, 8)}...`);
                             setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: 'success' }));
 
-                            if (window.electronAPI && window.electronAPI.openExternalURL) {
-                                window.electronAPI.openExternalURL(url);
-                            } else {
-                                window.open(url, '_blank');
-                            }
-                        } else if (!response.isPumpFun && response.pairData && response.pairData.pairAddress) {
-                            console.log(`✅ Backend found pair for Axiom: ${response.pairData.pairAddress}`);
-                            url = response.axiomUrl;
-                            addNotification('success', `🎯 Opening Axiom with pair: ${response.pairData.pairAddress.substring(0, 8)}...`);
-                            setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: 'success' }));
+                            // ⏱️ LOG URL GENERATION TIME
+                            const urlGenerationTime = performance.now() - viewTokenStart;
+                            console.log(`⏱️ URL GENERATION TIME (API bonding curve): ${urlGenerationTime.toFixed(2)}ms`);
+
+                            // ⏱️ START BROWSER TIMING
+                            const browserOpenStart = performance.now();
 
                             if (window.electronAPI && window.electronAPI.openExternalURL) {
                                 window.electronAPI.openExternalURL(url);
                             } else {
                                 window.open(url, '_blank');
                             }
+
+                            // ⏱️ LOG BROWSER TIMING
+                            const browserOpenTime = performance.now() - browserOpenStart;
+                            const totalTime = performance.now() - viewTokenStart;
+                            console.log(`⏱️ MANUAL TOKEN OPEN TIMING (API bonding curve):`);
+                            console.log(`   API Call: ${apiCallTime.toFixed(2)}ms`);
+                            console.log(`   URL Generation: ${urlGenerationTime.toFixed(2)}ms`);
+                            console.log(`   Browser Open: ${browserOpenTime.toFixed(2)}ms`);
+                            console.log(`   Total: ${totalTime.toFixed(2)}ms`);
+
+                        } else if (!response.isPumpFun && response.pairData && response.pairData.pairAddress) {
+                            console.log(`✅ Backend found pair for Axiom: ${response.pairData.pairAddress}`);
+                            url = response.axiomUrl;
+                            addNotification('success', `🎯 Opening Axiom with pair: ${response.pairData.pairAddress.substring(0, 8)}...`);
+                            setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: 'success' }));
+
+                            // ⏱️ LOG URL GENERATION TIME
+                            const urlGenerationTime = performance.now() - viewTokenStart;
+                            console.log(`⏱️ URL GENERATION TIME (API pair): ${urlGenerationTime.toFixed(2)}ms`);
+
+                            // ⏱️ START BROWSER TIMING
+                            const browserOpenStart = performance.now();
+
+                            if (window.electronAPI && window.electronAPI.openExternalURL) {
+                                window.electronAPI.openExternalURL(url);
+                            } else {
+                                window.open(url, '_blank');
+                            }
+
+                            // ⏱️ LOG BROWSER TIMING
+                            const browserOpenTime = performance.now() - browserOpenStart;
+                            const totalTime = performance.now() - viewTokenStart;
+                            console.log(`⏱️ MANUAL TOKEN OPEN TIMING (API pair):`);
+                            console.log(`   API Call: ${apiCallTime.toFixed(2)}ms`);
+                            console.log(`   URL Generation: ${urlGenerationTime.toFixed(2)}ms`);
+                            console.log(`   Browser Open: ${browserOpenTime.toFixed(2)}ms`);
+                            console.log(`   Total: ${totalTime.toFixed(2)}ms`);
+
                         } else {
                             console.log('⚠️ Backend found no pair/bonding curve, using token address for Axiom');
                             url = response.fallbackAxiomUrl || `https://axiom.trade/meme/${token.tokenAddress}`;
@@ -1123,6 +1134,10 @@ function App() {
                     console.error('❌ Error fetching from backend for Axiom:', error);
                     url = `https://axiom.trade/meme/${token.tokenAddress}`;
                     setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: 'error' }));
+
+                    // ⏱️ LOG ERROR TIMING
+                    const errorTime = performance.now() - viewTokenStart;
+                    console.log(`⏱️ ERROR IN TOKEN OPEN: ${errorTime.toFixed(2)}ms`);
                 }
             }
         } else {
@@ -1145,13 +1160,29 @@ function App() {
             finalURL: url
         });
 
-        // Open the URL (only if we haven't returned earlier and haven't opened already)
-        if (!token.bondingCurveAddress || settings.tokenPageDestination !== 'axiom') {
-            if (window.electronAPI && window.electronAPI.openExternalURL) {
-                window.electronAPI.openExternalURL(url);
-            } else {
-                window.open(url, '_blank');
+        // ⏱️ FINAL URL GENERATION AND BROWSER OPEN (for non-Axiom or fallback cases)
+        if (!url.includes('axiom.trade') || settings.tokenPageDestination !== 'axiom') {
+            const urlGenerationTime = performance.now() - viewTokenStart;
+            console.log(`⏱️ URL GENERATION TIME (non-Axiom): ${urlGenerationTime.toFixed(2)}ms`);
+
+            const browserOpenStart = performance.now();
+
+            // Open the URL (only if we haven't returned earlier and haven't opened already)
+            if (!token.bondingCurveAddress || settings.tokenPageDestination !== 'axiom') {
+                if (window.electronAPI && window.electronAPI.openExternalURL) {
+                    window.electronAPI.openExternalURL(url);
+                } else {
+                    window.open(url, '_blank');
+                }
             }
+
+            // ⏱️ LOG FINAL BROWSER TIMING
+            const browserOpenTime = performance.now() - browserOpenStart;
+            const totalTime = performance.now() - viewTokenStart;
+            console.log(`⏱️ MANUAL TOKEN OPEN TIMING (final):`);
+            console.log(`   URL Generation: ${urlGenerationTime.toFixed(2)}ms`);
+            console.log(`   Browser Open: ${browserOpenTime.toFixed(2)}ms`);
+            console.log(`   Total: ${totalTime.toFixed(2)}ms`);
         }
 
         addNotification('success', `🌐 Opening token page: ${url}`);
@@ -1512,8 +1543,16 @@ function App() {
     };
 
     const snipeWithGlobalSettings = async (tokenAddress) => {
+        // ⏱️ START SNIPE TIMING - DECLARE OUTSIDE TRY BLOCK
+        const snipeStart = performance.now();
+
         try {
             await apiCall(`/snipe-with-global-settings/${tokenAddress}`, { method: 'POST' });
+
+            // ⏱️ LOG SNIPE API TIMING
+            const snipeApiTime = performance.now() - snipeStart;
+            console.log(`⏱️ SECONDARY SNIPE API TIME: ${snipeApiTime.toFixed(2)}ms`);
+
             addNotification('success', `🎯 Token sniped using global settings: ${tokenAddress.substring(0, 8)}...`);
 
             // Close popup
@@ -1524,6 +1563,9 @@ function App() {
 
             // Use a small delay
             setTimeout(async () => {
+                // ⏱️ START BROWSER TIMING FOR SECONDARY SNIPE
+                const secondaryBrowserStart = performance.now();
+
                 if (settings.tokenPageDestination === 'axiom') {
                     try {
                         const response = await apiCall(`/pair-address/${tokenAddress}`);
@@ -1537,6 +1579,11 @@ function App() {
                                 window.open(axiomUrl, '_blank');
                             }
 
+                            // ⏱️ LOG SECONDARY SNIPE BROWSER TIMING
+                            const browserOpenTime = performance.now() - secondaryBrowserStart;
+                            console.log(`⏱️ SECONDARY SNIPE BROWSER TIMING: ${browserOpenTime.toFixed(2)}ms`);
+                            console.log(`   Total Snipe Time: ${(performance.now() - snipeStart).toFixed(2)}ms`);
+
                             addNotification('success', `🌐 Axiom opened automatically with pair: ${response.pairData.pairAddress.substring(0, 8)}...`);
                         } else {
                             const fallbackUrl = `https://axiom.trade/meme/${tokenAddress}`;
@@ -1545,7 +1592,12 @@ function App() {
                             } else {
                                 window.open(fallbackUrl, '_blank');
                             }
-                            addNotification('warning', '🔍 No Boding Curve found yet, opening Axiom with token address');
+
+                            // ⏱️ LOG FALLBACK BROWSER TIMING
+                            const browserOpenTime = performance.now() - secondaryBrowserStart;
+                            console.log(`⏱️ SECONDARY SNIPE FALLBACK BROWSER TIMING: ${browserOpenTime.toFixed(2)}ms`);
+
+                            addNotification('warning', '🔍 No Bonding Curve found yet, opening Axiom with token address');
                         }
                     } catch (error) {
                         console.error('Error opening Axiom with pair:', error);
@@ -1559,11 +1611,20 @@ function App() {
                     } else {
                         window.open(neoBullxUrl, '_blank');
                     }
+
+                    // ⏱️ LOG NEO BULLX BROWSER TIMING
+                    const browserOpenTime = performance.now() - secondaryBrowserStart;
+                    console.log(`⏱️ SECONDARY SNIPE NEO BULLX BROWSER TIMING: ${browserOpenTime.toFixed(2)}ms`);
+
                     addNotification('success', `🌐 Neo BullX opened automatically`);
                 }
             }, 1000); // 1 second delay for secondary snipes
 
         } catch (error) {
+            // ⏱️ LOG ERROR TIMING - NOW snipeStart IS ACCESSIBLE
+            const errorTime = performance.now() - snipeStart;
+            console.log(`⏱️ SECONDARY SNIPE ERROR TIME: ${errorTime.toFixed(2)}ms`);
+
             addNotification('error', `❌ Failed to snipe token: ${error.message}`);
         }
     };
