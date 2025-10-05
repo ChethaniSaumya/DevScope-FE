@@ -1050,271 +1050,66 @@ function App() {
 
     const viewToken = async (token) => {
         console.log('🌐 Opening token page for:', token.tokenAddress);
-
-        // ⏱️ START TIMING
         const viewTokenStart = performance.now();
 
-        // Clear previous status for this token
-        setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: null }));
-
         let url;
 
-        // Check user's preference for token page destination
         if (settings.tokenPageDestination === 'axiom') {
-            // 🔥 NEW: Check if token already has bonding curve stored
+            // 🔥 USE STORED BONDING CURVE DIRECTLY - NO API CALL NEEDED
             if (token.bondingCurveAddress) {
-                console.log(`✅ Using stored bonding curve for Axiom: ${token.bondingCurveAddress}`);
+                console.log(`✅ Using stored bonding curve: ${token.bondingCurveAddress}`);
                 url = `https://axiom.trade/meme/${token.bondingCurveAddress}`;
-                addNotification('success', `🎯 Opening Axiom with bonding curve: ${token.bondingCurveAddress.substring(0, 8)}...`);
-                setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: 'success' }));
 
-                // ⏱️ LOG URL GENERATION TIME
-                const urlGenerationTime = performance.now() - viewTokenStart;
-                console.log(`⏱️ URL GENERATION TIME (stored bonding curve): ${urlGenerationTime.toFixed(2)}ms`);
-
-                // ⏱️ START BROWSER TIMING
-                const browserOpenStart = performance.now();
-
-                // Open the URL directly
-                if (window.electronAPI && window.electronAPI.openExternalURL) {
-                    window.electronAPI.openExternalURL(url);
-                } else {
-                    window.open(url, '_blank');
-                }
-
-                // ⏱️ LOG BROWSER TIMING
-                const browserOpenTime = performance.now() - browserOpenStart;
                 const totalTime = performance.now() - viewTokenStart;
-                console.log(`⏱️ MANUAL TOKEN OPEN TIMING (stored bonding curve):`);
-                console.log(`   URL Generation: ${urlGenerationTime.toFixed(2)}ms`);
-                console.log(`   Browser Open: ${browserOpenTime.toFixed(2)}ms`);
-                console.log(`   Total: ${totalTime.toFixed(2)}ms`);
+                console.log(`⚡ INSTANT URL (stored): ${totalTime.toFixed(2)}ms`);
 
             } else {
-                // Original logic for tokens without stored bonding curve
-                try {
-                    const apiCallStart = performance.now();
-                    const response = await apiCall(`/pair-address/${token.tokenAddress}`);
-                    const apiCallTime = performance.now() - apiCallStart;
-                    console.log(`⏱️ API CALL TIME: ${apiCallTime.toFixed(2)}ms`);
-                    console.log('🔍 Backend response:', response);
-
-                    if (response.success) {
-                        if (response.isPumpFun && response.bondingCurveData) {
-                            console.log(`✅ Backend found bonding curve for Axiom: ${response.bondingCurveData.bondingCurveAddress}`);
-                            url = response.axiomUrl;
-                            addNotification('success', `🎯 Opening Axiom with bonding curve: ${response.bondingCurveData.bondingCurveAddress.substring(0, 8)}...`);
-                            setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: 'success' }));
-
-                            // ⏱️ LOG URL GENERATION TIME
-                            const urlGenerationTime = performance.now() - viewTokenStart;
-                            console.log(`⏱️ URL GENERATION TIME (API bonding curve): ${urlGenerationTime.toFixed(2)}ms`);
-
-                            // ⏱️ START BROWSER TIMING
-                            const browserOpenStart = performance.now();
-
-                            if (window.electronAPI && window.electronAPI.openExternalURL) {
-                                window.electronAPI.openExternalURL(url);
-                            } else {
-                                window.open(url, '_blank');
-                            }
-
-                            // ⏱️ LOG BROWSER TIMING
-                            const browserOpenTime = performance.now() - browserOpenStart;
-                            const totalTime = performance.now() - viewTokenStart;
-                            console.log(`⏱️ MANUAL TOKEN OPEN TIMING (API bonding curve):`);
-                            console.log(`   API Call: ${apiCallTime.toFixed(2)}ms`);
-                            console.log(`   URL Generation: ${urlGenerationTime.toFixed(2)}ms`);
-                            console.log(`   Browser Open: ${browserOpenTime.toFixed(2)}ms`);
-                            console.log(`   Total: ${totalTime.toFixed(2)}ms`);
-
-                        } else if (!response.isPumpFun && response.pairData && response.pairData.pairAddress) {
-                            console.log(`✅ Backend found pair for Axiom: ${response.pairData.pairAddress}`);
-                            url = response.axiomUrl;
-                            addNotification('success', `🎯 Opening Axiom with pair: ${response.pairData.pairAddress.substring(0, 8)}...`);
-                            setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: 'success' }));
-
-                            // ⏱️ LOG URL GENERATION TIME
-                            const urlGenerationTime = performance.now() - viewTokenStart;
-                            console.log(`⏱️ URL GENERATION TIME (API pair): ${urlGenerationTime.toFixed(2)}ms`);
-
-                            // ⏱️ START BROWSER TIMING
-                            const browserOpenStart = performance.now();
-
-                            if (window.electronAPI && window.electronAPI.openExternalURL) {
-                                window.electronAPI.openExternalURL(url);
-                            } else {
-                                window.open(url, '_blank');
-                            }
-
-                            // ⏱️ LOG BROWSER TIMING
-                            const browserOpenTime = performance.now() - browserOpenStart;
-                            const totalTime = performance.now() - viewTokenStart;
-                            console.log(`⏱️ MANUAL TOKEN OPEN TIMING (API pair):`);
-                            console.log(`   API Call: ${apiCallTime.toFixed(2)}ms`);
-                            console.log(`   URL Generation: ${urlGenerationTime.toFixed(2)}ms`);
-                            console.log(`   Browser Open: ${browserOpenTime.toFixed(2)}ms`);
-                            console.log(`   Total: ${totalTime.toFixed(2)}ms`);
-
-                        } else {
-                            console.log('⚠️ Backend found no pair/bonding curve, using token address for Axiom');
-                            url = response.fallbackAxiomUrl || `https://axiom.trade/meme/${token.tokenAddress}`;
-                            setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: 'no-pair' }));
-                            addNotification('warning', '🔍 No pair/bonding curve found yet, check again in few seconds');
-                            return;
-                        }
-                    } else {
-                        console.log('⚠️ Backend error, using fallback URL');
-                        url = response.fallbackAxiomUrl || `https://axiom.trade/meme/${token.tokenAddress}`;
-                        setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: 'error' }));
-                    }
-                } catch (error) {
-                    console.error('❌ Error fetching from backend for Axiom:', error);
-                    url = `https://axiom.trade/meme/${token.tokenAddress}`;
-                    setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: 'error' }));
-
-                    // ⏱️ LOG ERROR TIMING
-                    const errorTime = performance.now() - viewTokenStart;
-                    console.log(`⏱️ ERROR IN TOKEN OPEN: ${errorTime.toFixed(2)}ms`);
-                }
+                // Fallback: use token address if no bonding curve stored
+                console.log(`⚠️ No stored bonding curve, using token address`);
+                url = `https://axiom.trade/meme/${token.tokenAddress}`;
             }
         } else {
-            // Neo BullX or other destinations
+            // Neo BullX
             url = `https://neo.bullx.io/terminal?chainId=1399811149&address=${token.tokenAddress}`;
         }
 
-        // Simple check for platform-specific URLs (keep existing logic for pump.fun/letsbonk.fun)
-        if (token.pool === 'bonk' && settings.tokenPageDestination !== 'axiom') {
-            url = `https://letsbonk.fun/token/${token.tokenAddress}`;
-        } else if (token.pool === 'pump' && settings.tokenPageDestination !== 'axiom') {
-            url = `https://pump.fun/${token.tokenAddress}`;
-        }
-
-        console.log('TOKEN DEBUG:', {
-            pool: token.pool,
-            tokenAddress: token.tokenAddress,
-            destination: settings.tokenPageDestination,
-            bondingCurveAddress: token.bondingCurveAddress,
-            finalURL: url
-        });
-
-        // ⏱️ FINAL URL GENERATION AND BROWSER OPEN (for non-Axiom or fallback cases)
-        if (!url.includes('axiom.trade') || settings.tokenPageDestination !== 'axiom') {
-            const urlGenerationTime = performance.now() - viewTokenStart;
-            console.log(`⏱️ URL GENERATION TIME (non-Axiom): ${urlGenerationTime.toFixed(2)}ms`);
-
-            const browserOpenStart = performance.now();
-
-            // Open the URL (only if we haven't returned earlier and haven't opened already)
-            if (!token.bondingCurveAddress || settings.tokenPageDestination !== 'axiom') {
-                if (window.electronAPI && window.electronAPI.openExternalURL) {
-                    window.electronAPI.openExternalURL(url);
-                } else {
-                    window.open(url, '_blank');
-                }
-            }
-
-            // ⏱️ LOG FINAL BROWSER TIMING
-            const browserOpenTime = performance.now() - browserOpenStart;
-            const totalTime = performance.now() - viewTokenStart;
-            console.log(`⏱️ MANUAL TOKEN OPEN TIMING (final):`);
-            console.log(`   URL Generation: ${urlGenerationTime.toFixed(2)}ms`);
-            console.log(`   Browser Open: ${browserOpenTime.toFixed(2)}ms`);
-            console.log(`   Total: ${totalTime.toFixed(2)}ms`);
-        }
-
-        addNotification('success', `🌐 Opening token page: ${url}`);
-
-        // Clear status after 5 seconds
-        setTimeout(() => {
-            setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: null }));
-        }, 10000);
-    };
-
-    const viewTokenPageFromPopup = async (token) => {
-        console.log('🌐 Opening token page from popup for:', token.tokenAddress);
-
-        // Clear previous status for this token
-        setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: null }));
-
-        let url;
-
-        // Check user's preference for token page destination
-        if (settings.tokenPageDestination === 'axiom') {
-            // 🔥 NEW: Check if token already has bonding curve stored
-            if (token.bondingCurveAddress) {
-                console.log(`✅ Using stored bonding curve for Axiom: ${token.bondingCurveAddress}`);
-                url = `https://axiom.trade/meme/${token.bondingCurveAddress}`;
-                addNotification('success', `🎯 Opening Axiom with bonding curve: ${token.bondingCurveAddress.substring(0, 8)}...`);
-                setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: 'success' }));
-            } else {
-                // Original logic for tokens without stored bonding curve
-                try {
-                    const response = await apiCall(`/pair-address/${token.tokenAddress}`);
-                    console.log('🔍 Backend response:', response);
-
-                    if (response.success) {
-                        if (response.isPumpFun && response.bondingCurveData) {
-                            console.log(`✅ Backend found bonding curve for Axiom: ${response.bondingCurveData.bondingCurveAddress}`);
-                            url = response.axiomUrl;
-                            addNotification('success', `🎯 Opening Axiom with bonding curve: ${response.bondingCurveData.bondingCurveAddress.substring(0, 8)}...`);
-                            setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: 'success' }));
-                        } else if (!response.isPumpFun && response.pairData && response.pairData.pairAddress) {
-                            console.log(`✅ Backend found pair for Axiom: ${response.pairData.pairAddress}`);
-                            url = response.axiomUrl;
-                            addNotification('success', `🎯 Opening Axiom with pair: ${response.pairData.pairAddress.substring(0, 8)}...`);
-                            setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: 'success' }));
-                        } else {
-                            console.log('⚠️ Backend found no pair/bonding curve, using token address for Axiom');
-                            url = response.fallbackAxiomUrl || `https://axiom.trade/meme/${token.tokenAddress}`;
-                            setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: 'no-pair' }));
-                            addNotification('warning', '🔍 No pair/bonding curve found yet, check again in few seconds');
-                            return;
-                        }
-                    } else {
-                        console.log('⚠️ Backend error, using fallback URL');
-                        url = response.fallbackAxiomUrl || `https://axiom.trade/meme/${token.tokenAddress}`;
-                        setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: 'error' }));
-                    }
-                } catch (error) {
-                    console.error('❌ Error fetching from backend for Axiom:', error);
-                    url = `https://axiom.trade/meme/${token.tokenAddress}`;
-                    setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: 'error' }));
-                }
-            }
-        } else {
-            // Neo BullX or other destinations
-            url = `https://neo.bullx.io/terminal?chainId=1399811149&address=${token.tokenAddress}`;
-        }
-
-        // Simple check for platform-specific URLs
-        if (token.pool === 'bonk' && settings.tokenPageDestination !== 'axiom') {
-            url = `https://letsbonk.fun/token/${token.tokenAddress}`;
-        } else if (token.pool === 'pump' && settings.tokenPageDestination !== 'axiom') {
-            url = `https://pump.fun/${token.tokenAddress}`;
-        }
-
-        console.log('POPUP TOKEN DEBUG:', {
-            pool: token.pool,
-            tokenAddress: token.tokenAddress,
-            destination: settings.tokenPageDestination,
-            bondingCurveAddress: token.bondingCurveAddress,
-            finalURL: url
-        });
-
-        // Open the URL
+        // Open URL
         if (window.electronAPI && window.electronAPI.openExternalURL) {
             window.electronAPI.openExternalURL(url);
         } else {
             window.open(url, '_blank');
         }
 
-        addNotification('success', `🌐 Opening token page: ${url}`);
+        const browserOpenTime = performance.now() - viewTokenStart;
+        console.log(`⏱️ Total time (view token): ${browserOpenTime.toFixed(2)}ms`);
 
-        // Clear status after 5 seconds
-        setTimeout(() => {
-            setTokenPairStatus(prev => ({ ...prev, [token.tokenAddress]: null }));
-        }, 10000);
+        addNotification('success', `🌐 Opening token page`);
+    };
+
+    const viewTokenPageFromPopup = async (token) => {
+        console.log('🌐 Opening token page from popup:', token.tokenAddress);
+
+        let url;
+
+        if (settings.tokenPageDestination === 'axiom') {
+            // 🔥 USE STORED BONDING CURVE DIRECTLY
+            if (token.bondingCurveAddress) {
+                url = `https://axiom.trade/meme/${token.bondingCurveAddress}`;
+            } else {
+                url = `https://axiom.trade/meme/${token.tokenAddress}`;
+            }
+        } else {
+            url = `https://neo.bullx.io/terminal?chainId=1399811149&address=${token.tokenAddress}`;
+        }
+
+        // Open URL
+        if (window.electronAPI && window.electronAPI.openExternalURL) {
+            window.electronAPI.openExternalURL(url);
+        } else {
+            window.open(url, '_blank');
+        }
+
+        addNotification('success', `🌐 Opening token page`);
     };
 
     // Format numbers for display
