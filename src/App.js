@@ -870,9 +870,35 @@ function App() {
 
                 addNotification('info', `🔔 Secondary match found: ${tokenData.tokenAddress.substring(0, 8)}...`);
 
-                // 🚀 START PAIR ADDRESS DETECTION IMMEDIATELY
-                console.log('🔍 Starting pair address detection for secondary match...');
-                checkPairAddressWithRetry(tokenData.tokenAddress);
+                // 🚀 PARALLEL ACTION: Open token page immediately (don't wait for user)
+                console.log('🚀 PARALLEL AUTO-OPEN: Opening token page immediately...');
+
+                setTimeout(() => {
+                    let autoOpenUrl;
+
+                    if (settings.tokenPageDestination === 'axiom') {
+                        // Use stored bonding curve if available
+                        if (tokenData.bondingCurveAddress) {
+                            autoOpenUrl = `https://axiom.trade/meme/${tokenData.bondingCurveAddress}`;
+                            console.log(`✅ Auto-opening Axiom with bonding curve: ${tokenData.bondingCurveAddress}`);
+                        } else {
+                            autoOpenUrl = `https://axiom.trade/meme/${tokenData.tokenAddress}`;
+                            console.log(`⚠️ Auto-opening Axiom with token address (no bonding curve)`);
+                        }
+                    } else {
+                        autoOpenUrl = `https://neo.bullx.io/terminal?chainId=1399811149&address=${tokenData.tokenAddress}`;
+                        console.log(`✅ Auto-opening Neo BullX`);
+                    }
+
+                    // Open immediately
+                    if (window.electronAPI && window.electronAPI.openExternalURL) {
+                        window.electronAPI.openExternalURL(autoOpenUrl);
+                    } else {
+                        window.open(autoOpenUrl, '_blank');
+                    }
+
+                    addNotification('success', '🚀 Token page opened automatically!');
+                }, 500); // Small 500ms delay to let popup render first
 
                 break;
 
@@ -1054,17 +1080,17 @@ function App() {
 
         let url;
 
+        // Check user's preference for token page destination
         if (settings.tokenPageDestination === 'axiom') {
-            // 🔥 USE STORED BONDING CURVE DIRECTLY - NO API CALL NEEDED
+            // 🔥 OPTIMIZED: Use stored bonding curve directly (no backend call)
             if (token.bondingCurveAddress) {
                 console.log(`✅ Using stored bonding curve: ${token.bondingCurveAddress}`);
                 url = `https://axiom.trade/meme/${token.bondingCurveAddress}`;
 
-                const totalTime = performance.now() - viewTokenStart;
-                console.log(`⚡ INSTANT URL (stored): ${totalTime.toFixed(2)}ms`);
-
+                const urlGenerationTime = performance.now() - viewTokenStart;
+                console.log(`⚡ INSTANT URL GENERATION: ${urlGenerationTime.toFixed(2)}ms (from stored bonding curve)`);
             } else {
-                // Fallback: use token address if no bonding curve stored
+                // Fallback: use token address directly
                 console.log(`⚠️ No stored bonding curve, using token address`);
                 url = `https://axiom.trade/meme/${token.tokenAddress}`;
             }
@@ -1073,35 +1099,58 @@ function App() {
             url = `https://neo.bullx.io/terminal?chainId=1399811149&address=${token.tokenAddress}`;
         }
 
-        // Open URL
+        // Platform-specific overrides
+        if (token.pool === 'bonk' && settings.tokenPageDestination !== 'axiom') {
+            url = `https://letsbonk.fun/token/${token.tokenAddress}`;
+        } else if (token.pool === 'pump' && settings.tokenPageDestination !== 'axiom') {
+            url = `https://pump.fun/${token.tokenAddress}`;
+        }
+
+        const browserOpenStart = performance.now();
+
+        // Open the URL
         if (window.electronAPI && window.electronAPI.openExternalURL) {
             window.electronAPI.openExternalURL(url);
         } else {
             window.open(url, '_blank');
         }
 
-        const browserOpenTime = performance.now() - viewTokenStart;
-        console.log(`⏱️ Total time (view token): ${browserOpenTime.toFixed(2)}ms`);
+        const browserOpenTime = performance.now() - browserOpenStart;
+        const totalTime = performance.now() - viewTokenStart;
 
-        addNotification('success', `🌐 Opening token page`);
+        console.log(`⏱️ COMPLETE MANUAL TOKEN OPEN TIMING:`);
+        console.log(`   URL Generation: ${(browserOpenStart - viewTokenStart).toFixed(2)}ms`);
+        console.log(`   Browser Open: ${browserOpenTime.toFixed(2)}ms`);
+        console.log(`   TOTAL: ${totalTime.toFixed(2)}ms`);
+
+        addNotification('success', `🌐 Opening token page: ${url}`);
     };
 
     const viewTokenPageFromPopup = async (token) => {
-        console.log('🌐 Opening token page from popup:', token.tokenAddress);
+        console.log('🌐 Opening token page from popup for:', token.tokenAddress);
 
         let url;
 
         if (settings.tokenPageDestination === 'axiom') {
-            // 🔥 USE STORED BONDING CURVE DIRECTLY
+            // Use stored bonding curve directly
             if (token.bondingCurveAddress) {
                 url = `https://axiom.trade/meme/${token.bondingCurveAddress}`;
+                console.log(`✅ Using bonding curve: ${token.bondingCurveAddress}`);
             } else {
                 url = `https://axiom.trade/meme/${token.tokenAddress}`;
+                console.log(`⚠️ Using token address (no bonding curve)`);
             }
         } else {
             url = `https://neo.bullx.io/terminal?chainId=1399811149&address=${token.tokenAddress}`;
         }
 
+        // Platform-specific overrides
+        if (token.pool === 'bonk' && settings.tokenPageDestination !== 'axiom') {
+            url = `https://letsbonk.fun/token/${token.tokenAddress}`;
+        } else if (token.pool === 'pump' && settings.tokenPageDestination !== 'axiom') {
+            url = `https://pump.fun/${token.tokenAddress}`;
+        }
+
         // Open URL
         if (window.electronAPI && window.electronAPI.openExternalURL) {
             window.electronAPI.openExternalURL(url);
@@ -1109,7 +1158,7 @@ function App() {
             window.open(url, '_blank');
         }
 
-        addNotification('success', `🌐 Opening token page`);
+        addNotification('success', `🌐 Token page opened: ${url}`);
     };
 
     // Format numbers for display
