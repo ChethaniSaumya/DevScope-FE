@@ -766,34 +766,8 @@ function App() {
                 break;
 
             case 'auto_open_token_page':
-                console.log('🌐 Auto-opening token page:', data.data);
-
-                // ⏱️ START BROWSER TIMING FOR AUTO OPEN
-                const autoOpenBrowserStart = performance.now();
-
-                if (window.electronAPI && window.electronAPI.openExternalURL) {
-                    window.electronAPI.openExternalURL(data.data.tokenPageUrl);
-
-                    // ⏱️ LOG AUTO OPEN BROWSER TIMING (Electron)
-                    const browserOpenTime = performance.now() - autoOpenBrowserStart;
-                    console.log(`⏱️ AUTO OPEN BROWSER TIMING (Electron): ${browserOpenTime.toFixed(2)}ms`);
-                    console.log(`   Token: ${data.data.tokenAddress}`);
-                    console.log(`   Destination: ${data.data.destination}`);
-                    console.log(`   URL: ${data.data.tokenPageUrl}`);
-
-                    addNotification('info', `🌐 ${data.data.destination === 'axiom' ? 'Axiom' : 'Neo BullX'} opened automatically`);
-                } else {
-                    window.open(data.data.tokenPageUrl, '_blank');
-
-                    // ⏱️ LOG AUTO OPEN BROWSER TIMING (Browser)
-                    const browserOpenTime = performance.now() - autoOpenBrowserStart;
-                    console.log(`⏱️ AUTO OPEN BROWSER TIMING (Browser): ${browserOpenTime.toFixed(2)}ms`);
-                    console.log(`   Token: ${data.data.tokenAddress}`);
-                    console.log(`   Destination: ${data.data.destination}`);
-                    console.log(`   URL: ${data.data.tokenPageUrl}`);
-
-                    addNotification('info', `🌐 ${data.data.destination === 'axiom' ? 'Axiom' : 'Neo BullX'} opened automatically`);
-                }
+                // REMOVED: Duplicate auto-open - now handled in secondary_popup_trigger
+                console.log('⚠️ Ignoring auto_open_token_page - using bonding curve from secondary_popup_trigger instead');
                 break;
 
             case 'snipe_error':
