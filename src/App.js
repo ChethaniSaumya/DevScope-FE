@@ -2630,13 +2630,15 @@ function App() {
 
                     {/* Action Buttons */}
                     <div className="flex flex-col space-y-3 md:flex-row md:space-y-0 md:space-x-4">
+                        {/* COMMENTED OUT - Auto-open handles this
                         <button
                             onClick={() => viewTokenPageFromPopup(token)}
                             className="flex-1 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center justify-center space-x-2"
                         >
                             <span>🌐 View Token Page</span>
+                        
                         </button>
-
+*/}
                         {/*
                         <button
                             onClick={() => snipeWithGlobalSettings(token.tokenAddress)}
