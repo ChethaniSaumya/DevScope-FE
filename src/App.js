@@ -1306,7 +1306,7 @@ function App() {
         fetchStatus();
         fetchLists();
         fetchDetectedTokens();
-        connectWebSocket();
+       // connectWebSocket();
 
         return () => {
             if (websocket) {
