@@ -533,7 +533,7 @@ function App() {
                 websocket.close();
             }
         };
-    }, [connectWebSocket]);
+    }, []);
 
     // Add these functions to your App component
     const fetchDemoTemplates = async () => {
