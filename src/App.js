@@ -730,39 +730,39 @@ function App() {
                 console.log('Server log:', data.data);
                 break;
 
-           /* case 'snipe_success':
-                console.log('🎯 SNIPE SUCCESS:', data.data);
-
-                // ⏱️ START BROWSER TIMING FOR SNIPE SUCCESS
-                const snipeSuccessBrowserStart = performance.now();
-
-                if (data.data.openTokenPage) {
-                    // Enhanced notification that shows first
-                    addNotification('success', `🎯 Sniped ${data.data.tokenAddress.substring(0, 8)}... successfully!`);
-
-                    // Small delay to ensure notification shows first
-                    setTimeout(() => {
-                        if (window.electronAPI && window.electronAPI.openExternalURL) {
-                            window.electronAPI.openExternalURL(data.data.tokenPageUrl);
-
-                            // ⏱️ LOG SNIPE SUCCESS BROWSER TIMING (Electron)
-                            const browserOpenTime = performance.now() - snipeSuccessBrowserStart;
-                            console.log(`⏱️ SNIPE SUCCESS BROWSER TIMING (Electron): ${browserOpenTime.toFixed(2)}ms`);
-
-                            addNotification('info', '🌐 Token page opened automatically');
-                        } else {
-                            window.open(data.data.tokenPageUrl, '_blank');
-
-                            // ⏱️ LOG SNIPE SUCCESS BROWSER TIMING (Browser)
-                            const browserOpenTime = performance.now() - snipeSuccessBrowserStart;
-                            console.log(`⏱️ SNIPE SUCCESS BROWSER TIMING (Browser): ${browserOpenTime.toFixed(2)}ms`);
-
-                            addNotification('info', '🌐 Token page opened automatically in new tab');
-                        }
-                    }, 500); // 500ms delay
-                }
-                break;
-*/
+            /* case 'snipe_success':
+                 console.log('🎯 SNIPE SUCCESS:', data.data);
+ 
+                 // ⏱️ START BROWSER TIMING FOR SNIPE SUCCESS
+                 const snipeSuccessBrowserStart = performance.now();
+ 
+                 if (data.data.openTokenPage) {
+                     // Enhanced notification that shows first
+                     addNotification('success', `🎯 Sniped ${data.data.tokenAddress.substring(0, 8)}... successfully!`);
+ 
+                     // Small delay to ensure notification shows first
+                     setTimeout(() => {
+                         if (window.electronAPI && window.electronAPI.openExternalURL) {
+                             window.electronAPI.openExternalURL(data.data.tokenPageUrl);
+ 
+                             // ⏱️ LOG SNIPE SUCCESS BROWSER TIMING (Electron)
+                             const browserOpenTime = performance.now() - snipeSuccessBrowserStart;
+                             console.log(`⏱️ SNIPE SUCCESS BROWSER TIMING (Electron): ${browserOpenTime.toFixed(2)}ms`);
+ 
+                             addNotification('info', '🌐 Token page opened automatically');
+                         } else {
+                             window.open(data.data.tokenPageUrl, '_blank');
+ 
+                             // ⏱️ LOG SNIPE SUCCESS BROWSER TIMING (Browser)
+                             const browserOpenTime = performance.now() - snipeSuccessBrowserStart;
+                             console.log(`⏱️ SNIPE SUCCESS BROWSER TIMING (Browser): ${browserOpenTime.toFixed(2)}ms`);
+ 
+                             addNotification('info', '🌐 Token page opened automatically in new tab');
+                         }
+                     }, 500); // 500ms delay
+                 }
+                 break;
+ */
             case 'auto_open_token_page':
                 // REMOVED: Duplicate auto-open - now handled in secondary_popup_trigger
                 console.log('⚠️ Ignoring auto_open_token_page - using bonding curve from secondary_popup_trigger instead');
@@ -2683,6 +2683,7 @@ function App() {
                             <span>🌐 View Token Page</span>
                         </button>
 
+                        {/*
                         <button
                             onClick={() => snipeWithGlobalSettings(token.tokenAddress)}
                             className="flex-1 px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors font-bold flex items-center justify-center space-x-2"
@@ -2690,6 +2691,7 @@ function App() {
                             <Target size={20} />
                             <span>SNIPE ({settings.globalSnipeSettings.amount} SOL)</span>
                         </button>
+                        */}
                     </div>
                 </div>
             </div>
