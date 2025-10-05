@@ -720,172 +720,210 @@ function App() {
     };
 
     const handleWebSocketMessage = (data) => {
-    switch (data.type) {
-        case 'bot_status':
-            setBotStatus(prev => ({ ...prev, isRunning: data.data.isRunning }));
-            break;
+        switch (data.type) {
+            case 'bot_status':
+                setBotStatus(prev => ({ ...prev, isRunning: data.data.isRunning }));
+                break;
 
-        case 'logs':
-            console.log('Server log:', data.data);
-            break;
+            case 'logs':
+                console.log('Server log:', data.data);
+                break;
 
-        case 'auto_open_token_page':
-            console.log('⚠️ Ignoring auto_open_token_page - using bonding curve from secondary_popup_trigger instead');
-            break;
+            case 'auto_open_token_page':
+                console.log('⚠️ Ignoring auto_open_token_page - using bonding curve from secondary_popup_trigger instead');
+                break;
 
-        case 'snipe_error':
-            addNotification('error', `❌ Snipe failed: ${data.data.error}`);
-            break;
+            case 'snipe_error':
+                addNotification('error', `❌ Snipe failed: ${data.data.error}`);
+                break;
 
-        case 'secondary_notification':
-            addNotification('info', `🔔 Token found in secondary list: ${data.data.tokenAddress.substring(0, 8)}...`);
-            if (data.data.soundNotification && window.electronAPI) {
-                window.electronAPI.playSound(data.data.soundNotification);
-            }
-            break;
-
-        case 'token_detected':
-            console.log('📱 FRONTEND RECEIVED TOKEN DATA:');
-            console.log('Platform:', data.data.platform);
-            console.log('Has GeckoTerminal Data:', data.data.hasGeckoTerminalData);
-            console.log('Full token object received by frontend:', data.data);
-            console.log('Name displayed:', data.data.name);
-            console.log('Symbol displayed:', data.data.symbol);
-            console.log('Image URI:', data.data.uri);
-            console.log('Description:', data.data.description);
-            console.log('================================================');
-
-            setDetectedTokens(prev => {
-                const exists = prev.some(token => token.tokenAddress === data.data.tokenAddress);
-                if (exists) {
-                    console.log(`Token ${data.data.tokenAddress} already exists, skipping duplicate`);
-                    return prev;
+            case 'secondary_notification':
+                addNotification('info', `🔔 Token found in secondary list: ${data.data.tokenAddress.substring(0, 8)}...`);
+                if (data.data.soundNotification && window.electronAPI) {
+                    window.electronAPI.playSound(data.data.soundNotification);
                 }
-                return [data.data, ...prev.slice(0, 99)];
-            });
+                break;
 
-            const matchTypeText = {
-                'primary_wallet': '🎯 Primary Wallet',
-                'primary_admin': '🎯 Primary Admin',
-                'secondary_wallet': '🔔 Secondary Wallet',
-                'secondary_admin': '🔔 Secondary Admin',
-                'snipe_all': '⚡ Snipe All',
-                'no_filters': '📢 No Filters'
-            };
+            case 'token_detected':
+                console.log('📱 FRONTEND RECEIVED TOKEN DATA:');
+                console.log('Platform:', data.data.platform);
+                console.log('Has GeckoTerminal Data:', data.data.hasGeckoTerminalData);
+                console.log('Full token object received by frontend:', data.data);
+                console.log('Name displayed:', data.data.name);
+                console.log('Symbol displayed:', data.data.symbol);
+                console.log('Image URI:', data.data.uri);
+                console.log('Description:', data.data.description);
+                console.log('================================================');
 
-            const twitterInfo = data.data.twitterType === 'community'
-                ? `(Community ${data.data.twitterCommunityId})`
-                : data.data.twitterHandle
-                    ? `(@${data.data.twitterHandle})`
-                    : '';
-
-            addNotification('info', `${matchTypeText[data.data.matchType] || '🔍 Match'} ${data.data.name || data.data.symbol} ${twitterInfo}`);
-
-            if (data.data.config && data.data.config.soundNotification && window.electronAPI) {
-                window.electronAPI.playSound(data.data.config.soundNotification);
-            }
-            break;
-
-        case 'secondary_popup_trigger':
-            console.log('🔔 SECONDARY ADMIN MATCH DETECTED');
-            console.log('📊 Token data:', data.data.tokenData);
-
-            const tokenData = data.data.tokenData;
-
-            // Show popup modal immediately
-            setSecondaryPopup({
-                show: true,
-                tokenData: tokenData,
-                globalSettings: data.data.globalSnipeSettings
-            });
-
-            addNotification('info', `🔔 Secondary match found: ${tokenData.tokenAddress.substring(0, 8)}...`);
-
-            // REMOVED: The auto-open setTimeout block that was causing duplicate tabs
-            // Users must now click "View Token Page" button in the popup
-            
-            break;
-
-        case 'community_admin_match_found':
-            console.log('🎯 COMMUNITY ADMIN MATCH FOUND!', data.data);
-
-            const matchTypeIcon = data.data.matchType === 'primary' ? '🎯' : '🔔';
-            addNotification('info', `${matchTypeIcon} Community admin match: ${data.data.matchedAdmin.username} in ${data.data.communityId}`);
-
-            break;
-
-        case 'community_scraping_error':
-            console.log('❌ COMMUNITY SCRAPING ERROR:', data.data);
-
-            if (data.data.reason === 'session_expired') {
-                addNotification('warning', '🔑 Twitter session expired - please login again');
-            } else {
-                addNotification('warning', `❌ Community ${data.data.communityId} scraping failed: ${data.data.reason}`);
-            }
-            break;
-
-        case 'community_admins_scraped':
-            console.log('👑 COMMUNITY ADMINS SCRAPED:', data.data);
-            console.table(data.data.admins);
-            console.log('📋 Your Primary Admin List:', data.data.yourPrimaryList);
-            console.log('📋 Your Secondary Admin List:', data.data.yourSecondaryList);
-
-            console.log('🔍 DETAILED COMPARISON CHECK:');
-            data.data.admins.forEach(admin => {
-                const adminLower = admin.username.toLowerCase().trim();
-                const adminWithAt = `@${adminLower}`;
-
-                const inPrimary = data.data.yourPrimaryList.some(item => {
-                    const itemLower = item.toLowerCase().trim();
-                    return itemLower === adminLower || itemLower === adminWithAt;
+                setDetectedTokens(prev => {
+                    const exists = prev.some(token => token.tokenAddress === data.data.tokenAddress);
+                    if (exists) {
+                        console.log(`Token ${data.data.tokenAddress} already exists, skipping duplicate`);
+                        return prev;
+                    }
+                    return [data.data, ...prev.slice(0, 99)];
                 });
 
-                const inSecondary = data.data.yourSecondaryList.some(item => {
-                    const itemLower = item.toLowerCase().trim();
-                    return itemLower === adminLower || itemLower === adminWithAt;
+                const matchTypeText = {
+                    'primary_wallet': '🎯 Primary Wallet',
+                    'primary_admin': '🎯 Primary Admin',
+                    'secondary_wallet': '🔔 Secondary Wallet',
+                    'secondary_admin': '🔔 Secondary Admin',
+                    'snipe_all': '⚡ Snipe All',
+                    'no_filters': '📢 No Filters'
+                };
+
+                const twitterInfo = data.data.twitterType === 'community'
+                    ? `(Community ${data.data.twitterCommunityId})`
+                    : data.data.twitterHandle
+                        ? `(@${data.data.twitterHandle})`
+                        : '';
+
+                addNotification('info', `${matchTypeText[data.data.matchType] || '🔍 Match'} ${data.data.name || data.data.symbol} ${twitterInfo}`);
+
+                if (data.data.config && data.data.config.soundNotification && window.electronAPI) {
+                    window.electronAPI.playSound(data.data.config.soundNotification);
+                }
+                break;
+
+            case 'secondary_popup_trigger':
+                console.log('🔔 SECONDARY ADMIN MATCH DETECTED');
+                console.log('📊 Token data:', data.data.tokenData);
+
+                const tokenData = data.data.tokenData;
+
+                // Show popup modal immediately
+                setSecondaryPopup({
+                    show: true,
+                    tokenData: tokenData,
+                    globalSettings: data.data.globalSnipeSettings
                 });
 
-                console.log(`${inPrimary ? '🎯' : inSecondary ? '🔔' : '❌'} @${admin.username} - ${admin.badgeType} ${inPrimary ? '(PRIMARY MATCH!)' : inSecondary ? '(SECONDARY MATCH!)' : '(NO MATCH)'}`);
-            });
+                addNotification('info', `🔔 Secondary match found: ${tokenData.tokenAddress.substring(0, 8)}...`);
 
-            addNotification('info', `👑 Community ${data.data.communityId} scraped: ${data.data.totalAdmins} admins found - check console`);
-            break;
+                // Keep the auto-open
+                setTimeout(() => {
+                    let autoOpenUrl;
 
-        case 'twitter_session_check':
-            console.log('🔍 Twitter session status:', data.data);
-            setTwitterSessionStatus(prev => ({
-                ...prev,
-                ...data.data,
-                checking: false
-            }));
-            break;
+                    if (settings.tokenPageDestination === 'axiom') {
+                        if (tokenData.bondingCurveAddress) {
+                            autoOpenUrl = `https://axiom.trade/meme/${tokenData.bondingCurveAddress}`;
+                            console.log(`✅ Auto-opening Axiom with bonding curve: ${tokenData.bondingCurveAddress}`);
+                        } else {
+                            autoOpenUrl = `https://axiom.trade/meme/${tokenData.tokenAddress}`;
+                            console.log(`⚠️ Auto-opening Axiom with token address (no bonding curve)`);
+                        }
+                    } else {
+                        autoOpenUrl = `https://neo.bullx.io/terminal?chainId=1399811149&address=${tokenData.tokenAddress}`;
+                        console.log(`✅ Auto-opening Neo BullX`);
+                    }
 
-        case 'twitter_login_attempt':
-            console.log('🔑 Twitter login attempt:', data.data);
-            if (data.data.success) {
-                addNotification('success', `✅ Twitter login successful: ${data.data.url}`);
+                    if (tokenData.pool === 'bonk' && settings.tokenPageDestination !== 'axiom') {
+                        autoOpenUrl = `https://letsbonk.fun/token/${tokenData.tokenAddress}`;
+                    } else if (tokenData.pool === 'pump' && settings.tokenPageDestination !== 'axiom') {
+                        autoOpenUrl = `https://pump.fun/${tokenData.tokenAddress}`;
+                    }
+
+                    console.log(`🔗 Auto-opening URL: ${autoOpenUrl}`);
+
+                    if (window.electronAPI && window.electronAPI.openExternalURL) {
+                        window.electronAPI.openExternalURL(autoOpenUrl);
+                        console.log('🖥️ Opened via Electron API');
+                    } else {
+                        const newWindow = window.open(autoOpenUrl, '_blank');
+                        if (newWindow) {
+                            console.log('✅ Browser window opened successfully');
+                        } else {
+                            console.error('❌ Popup blocked by browser');
+                            addNotification('warning', '🚫 Auto-open blocked by browser');
+                        }
+                    }
+
+                    addNotification('success', '🚀 Token page opened automatically!');
+                }, 500);
+
+                break;
+
+            case 'community_admin_match_found':
+                console.log('🎯 COMMUNITY ADMIN MATCH FOUND!', data.data);
+
+                const matchTypeIcon = data.data.matchType === 'primary' ? '🎯' : '🔔';
+                addNotification('info', `${matchTypeIcon} Community admin match: ${data.data.matchedAdmin.username} in ${data.data.communityId}`);
+
+                break;
+
+            case 'community_scraping_error':
+                console.log('❌ COMMUNITY SCRAPING ERROR:', data.data);
+
+                if (data.data.reason === 'session_expired') {
+                    addNotification('warning', '🔑 Twitter session expired - please login again');
+                } else {
+                    addNotification('warning', `❌ Community ${data.data.communityId} scraping failed: ${data.data.reason}`);
+                }
+                break;
+
+            case 'community_admins_scraped':
+                console.log('👑 COMMUNITY ADMINS SCRAPED:', data.data);
+                console.table(data.data.admins);
+                console.log('📋 Your Primary Admin List:', data.data.yourPrimaryList);
+                console.log('📋 Your Secondary Admin List:', data.data.yourSecondaryList);
+
+                console.log('🔍 DETAILED COMPARISON CHECK:');
+                data.data.admins.forEach(admin => {
+                    const adminLower = admin.username.toLowerCase().trim();
+                    const adminWithAt = `@${adminLower}`;
+
+                    const inPrimary = data.data.yourPrimaryList.some(item => {
+                        const itemLower = item.toLowerCase().trim();
+                        return itemLower === adminLower || itemLower === adminWithAt;
+                    });
+
+                    const inSecondary = data.data.yourSecondaryList.some(item => {
+                        const itemLower = item.toLowerCase().trim();
+                        return itemLower === adminLower || itemLower === adminWithAt;
+                    });
+
+                    console.log(`${inPrimary ? '🎯' : inSecondary ? '🔔' : '❌'} @${admin.username} - ${admin.badgeType} ${inPrimary ? '(PRIMARY MATCH!)' : inSecondary ? '(SECONDARY MATCH!)' : '(NO MATCH)'}`);
+                });
+
+                addNotification('info', `👑 Community ${data.data.communityId} scraped: ${data.data.totalAdmins} admins found - check console`);
+                break;
+
+            case 'twitter_session_check':
+                console.log('🔍 Twitter session status:', data.data);
                 setTwitterSessionStatus(prev => ({
                     ...prev,
-                    loggedIn: true,
-                    url: data.data.url,
-                    error: null,
+                    ...data.data,
                     checking: false
                 }));
-            } else {
-                addNotification('error', `❌ Twitter login failed: ${data.data.error}`);
-                setTwitterSessionStatus(prev => ({
-                    ...prev,
-                    loggedIn: false,
-                    error: data.data.error,
-                    checking: false
-                }));
-            }
-            break;
+                break;
 
-        default:
-            console.log('Unknown WebSocket message type:', data.type);
-    }
-};
+            case 'twitter_login_attempt':
+                console.log('🔑 Twitter login attempt:', data.data);
+                if (data.data.success) {
+                    addNotification('success', `✅ Twitter login successful: ${data.data.url}`);
+                    setTwitterSessionStatus(prev => ({
+                        ...prev,
+                        loggedIn: true,
+                        url: data.data.url,
+                        error: null,
+                        checking: false
+                    }));
+                } else {
+                    addNotification('error', `❌ Twitter login failed: ${data.data.error}`);
+                    setTwitterSessionStatus(prev => ({
+                        ...prev,
+                        loggedIn: false,
+                        error: data.data.error,
+                        checking: false
+                    }));
+                }
+                break;
+
+            default:
+                console.log('Unknown WebSocket message type:', data.type);
+        }
+    };
 
     const clearGlobalSettingsMessage = (delay = 3000) => {
         setTimeout(() => {
