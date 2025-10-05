@@ -1,5 +1,3 @@
-// App.js - Part 1: Imports and State Management
-
 import React, { useState, useEffect, useCallback } from 'react';
 import {
     Play,
@@ -732,18 +730,39 @@ function App() {
                 console.log('Server log:', data.data);
                 break;
 
-            // In App.js - WebSocket message handler
-            case 'snipe_success':
+           /* case 'snipe_success':
                 console.log('🎯 SNIPE SUCCESS:', data.data);
 
-                // Simply show notification without auto-opening
-                addNotification('success', `🎯 Sniped ${data.data.tokenAddress.substring(0, 8)}... successfully!`);
+                // ⏱️ START BROWSER TIMING FOR SNIPE SUCCESS
+                const snipeSuccessBrowserStart = performance.now();
 
-                // Optionally, you can log that the token page is available but don't auto-open
-                console.log('🌐 Token page available at:', data.data.tokenPageUrl);
+                if (data.data.openTokenPage) {
+                    // Enhanced notification that shows first
+                    addNotification('success', `🎯 Sniped ${data.data.tokenAddress.substring(0, 8)}... successfully!`);
 
+                    // Small delay to ensure notification shows first
+                    setTimeout(() => {
+                        if (window.electronAPI && window.electronAPI.openExternalURL) {
+                            window.electronAPI.openExternalURL(data.data.tokenPageUrl);
+
+                            // ⏱️ LOG SNIPE SUCCESS BROWSER TIMING (Electron)
+                            const browserOpenTime = performance.now() - snipeSuccessBrowserStart;
+                            console.log(`⏱️ SNIPE SUCCESS BROWSER TIMING (Electron): ${browserOpenTime.toFixed(2)}ms`);
+
+                            addNotification('info', '🌐 Token page opened automatically');
+                        } else {
+                            window.open(data.data.tokenPageUrl, '_blank');
+
+                            // ⏱️ LOG SNIPE SUCCESS BROWSER TIMING (Browser)
+                            const browserOpenTime = performance.now() - snipeSuccessBrowserStart;
+                            console.log(`⏱️ SNIPE SUCCESS BROWSER TIMING (Browser): ${browserOpenTime.toFixed(2)}ms`);
+
+                            addNotification('info', '🌐 Token page opened automatically in new tab');
+                        }
+                    }, 500); // 500ms delay
+                }
                 break;
-
+*/
             case 'auto_open_token_page':
                 // REMOVED: Duplicate auto-open - now handled in secondary_popup_trigger
                 console.log('⚠️ Ignoring auto_open_token_page - using bonding curve from secondary_popup_trigger instead');
@@ -1371,21 +1390,82 @@ function App() {
     };
 
     const snipeWithGlobalSettings = async (tokenAddress) => {
+        // ⏱️ START SNIPE TIMING - DECLARE OUTSIDE TRY BLOCK
         const snipeStart = performance.now();
 
         try {
             await apiCall(`/snipe-with-global-settings/${tokenAddress}`, { method: 'POST' });
 
+            // ⏱️ LOG SNIPE API TIMING
             const snipeApiTime = performance.now() - snipeStart;
             console.log(`⏱️ SECONDARY SNIPE API TIME: ${snipeApiTime.toFixed(2)}ms`);
 
             addNotification('success', `🎯 Token sniped using global settings: ${tokenAddress.substring(0, 8)}...`);
 
-            // Close popup - DON'T auto-open another tab here
+            // Close popup
             setSecondaryPopup({ show: false, tokenData: null });
 
-            // Remove the setTimeout auto-open logic entirely
-            console.log('✅ Snipe completed - tab already opened by popup trigger');
+            // ✅ AUTOMATICALLY OPEN TOKEN PAGE AFTER SECONDARY SNIPE
+            console.log('🌐 Auto-opening token page after secondary snipe...');
+
+            // Use a small delay
+            setTimeout(async () => {
+                // ⏱️ START BROWSER TIMING FOR SECONDARY SNIPE
+                const secondaryBrowserStart = performance.now();
+
+                if (settings.tokenPageDestination === 'axiom') {
+                    try {
+                        const response = await apiCall(`/pair-address/${tokenAddress}`);
+
+                        if (response.success && response.pairData && response.pairData.pairAddress) {
+                            const axiomUrl = `https://axiom.trade/meme/${response.pairData.pairAddress}`;
+
+                            if (window.electronAPI && window.electronAPI.openExternalURL) {
+                                window.electronAPI.openExternalURL(axiomUrl);
+                            } else {
+                                window.open(axiomUrl, '_blank');
+                            }
+
+                            // ⏱️ LOG SECONDARY SNIPE BROWSER TIMING
+                            const browserOpenTime = performance.now() - secondaryBrowserStart;
+                            console.log(`⏱️ SECONDARY SNIPE BROWSER TIMING: ${browserOpenTime.toFixed(2)}ms`);
+                            console.log(`   Total Snipe Time: ${(performance.now() - snipeStart).toFixed(2)}ms`);
+
+                            addNotification('success', `🌐 Axiom opened automatically with pair: ${response.pairData.pairAddress.substring(0, 8)}...`);
+                        } else {
+                            const fallbackUrl = `https://axiom.trade/meme/${tokenAddress}`;
+                            if (window.electronAPI && window.electronAPI.openExternalURL) {
+                                window.electronAPI.openExternalURL(fallbackUrl);
+                            } else {
+                                window.open(fallbackUrl, '_blank');
+                            }
+
+                            // ⏱️ LOG FALLBACK BROWSER TIMING
+                            const browserOpenTime = performance.now() - secondaryBrowserStart;
+                            console.log(`⏱️ SECONDARY SNIPE FALLBACK BROWSER TIMING: ${browserOpenTime.toFixed(2)}ms`);
+
+                            addNotification('warning', '🔍 No Bonding Curve found yet, opening Axiom with token address');
+                        }
+                    } catch (error) {
+                        console.error('Error opening Axiom with pair:', error);
+                        addNotification('error', '❌ Error opening token page');
+                    }
+                } else {
+                    // Neo BullX
+                    const neoBullxUrl = `https://neo.bullx.io/terminal?chainId=1399811149&address=${tokenAddress}`;
+                    if (window.electronAPI && window.electronAPI.openExternalURL) {
+                        window.electronAPI.openExternalURL(neoBullxUrl);
+                    } else {
+                        window.open(neoBullxUrl, '_blank');
+                    }
+
+                    // ⏱️ LOG NEO BULLX BROWSER TIMING
+                    const browserOpenTime = performance.now() - secondaryBrowserStart;
+                    console.log(`⏱️ SECONDARY SNIPE NEO BULLX BROWSER TIMING: ${browserOpenTime.toFixed(2)}ms`);
+
+                    addNotification('success', `🌐 Neo BullX opened automatically`);
+                }
+            }, 1000); // 1 second delay for secondary snipes
 
         } catch (error) {
             // ⏱️ LOG ERROR TIMING - NOW snipeStart IS ACCESSIBLE
@@ -4286,5 +4366,3 @@ function App() {
         </div>
     );
 }
-
-export default App;
