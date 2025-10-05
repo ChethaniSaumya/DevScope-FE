@@ -867,8 +867,52 @@ function App() {
 
                 addNotification('info', `🔔 Secondary match found: ${tokenData.tokenAddress.substring(0, 8)}...`);
 
-                // ✅ REMOVED AUTO-OPEN - Let user decide when to open
-                // Token page will open when user clicks "View Token Page" button
+                // ✅ PARALLEL AUTO-OPEN: Open browser at the same time as popup
+                console.log('🚀 AUTO-OPENING browser in parallel with popup...');
+
+                // Small delay to let popup render first
+                setTimeout(() => {
+                    let autoOpenUrl;
+
+                    // Determine URL based on settings
+                    if (settings.tokenPageDestination === 'axiom') {
+                        if (tokenData.bondingCurveAddress) {
+                            autoOpenUrl = `https://axiom.trade/meme/${tokenData.bondingCurveAddress}`;
+                            console.log(`✅ Auto-opening Axiom with bonding curve: ${tokenData.bondingCurveAddress}`);
+                        } else {
+                            autoOpenUrl = `https://axiom.trade/meme/${tokenData.tokenAddress}`;
+                            console.log(`⚠️ Auto-opening Axiom with token address (no bonding curve)`);
+                        }
+                    } else {
+                        autoOpenUrl = `https://neo.bullx.io/terminal?chainId=1399811149&address=${tokenData.tokenAddress}`;
+                        console.log(`✅ Auto-opening Neo BullX`);
+                    }
+
+                    // Platform-specific overrides
+                    if (tokenData.pool === 'bonk' && settings.tokenPageDestination !== 'axiom') {
+                        autoOpenUrl = `https://letsbonk.fun/token/${tokenData.tokenAddress}`;
+                    } else if (tokenData.pool === 'pump' && settings.tokenPageDestination !== 'axiom') {
+                        autoOpenUrl = `https://pump.fun/${tokenData.tokenAddress}`;
+                    }
+
+                    console.log(`🔗 Auto-opening URL: ${autoOpenUrl}`);
+
+                    // Open the browser
+                    if (window.electronAPI && window.electronAPI.openExternalURL) {
+                        window.electronAPI.openExternalURL(autoOpenUrl);
+                        console.log('🖥️ Opened via Electron API');
+                    } else {
+                        const newWindow = window.open(autoOpenUrl, '_blank');
+                        if (newWindow) {
+                            console.log('✅ Browser window opened successfully');
+                        } else {
+                            console.error('❌ Popup blocked by browser');
+                            addNotification('warning', '🚫 Auto-open blocked - click "View Token Page" button');
+                        }
+                    }
+
+                    addNotification('success', '🚀 Token page opened automatically!');
+                }, 500); // 500ms delay to let popup render first
 
                 break;
 
@@ -954,7 +998,7 @@ function App() {
                 console.log('Unknown WebSocket message type:', data.type);
         }
     };
- 
+
     const clearGlobalSettingsMessage = (delay = 3000) => {
         setTimeout(() => {
             setGlobalSettingsMessage('');
