@@ -730,7 +730,15 @@ function App() {
                 break;
 
             case 'auto_open_token_page':
-                console.log('⚠️ Ignoring auto_open_token_page - using bonding curve from secondary_popup_trigger instead');
+                console.log('🚀 Auto-opening token page:', data.data);
+
+                // Open the Axiom link in a new tab
+                if (data.data.tokenPageUrl) {
+                    window.open(data.data.tokenPageUrl, '_blank');
+
+                    // Optional: Show notification in UI
+                    console.log(`Opened ${data.data.reason}: ${data.data.tokenData.name} (${data.data.tokenData.symbol})`);
+                }
                 break;
 
             case 'snipe_error':
