@@ -998,16 +998,27 @@ function App() {
 
         // Check user's preference for token page destination
         if (settings.tokenPageDestination === 'axiom') {
-            // 🔥 OPTIMIZED: Use stored bonding curve directly (no backend call)
-            if (token.bondingCurveAddress) {
-                console.log(`✅ Using stored bonding curve: ${token.bondingCurveAddress}`);
+            // 🔥 UPDATED: Handle Bonk pair address, Pump bonding curve, and fallback
+
+            // Priority 1: Bonk tokens with pair address
+            if (token.isBonkToken && token.pairAddress) {
+                console.log(`✅ Bonk token - Using pair address: ${token.pairAddress}`);
+                url = `https://axiom.trade/meme/${token.pairAddress}`;
+
+                const urlGenerationTime = performance.now() - viewTokenStart;
+                console.log(`⚡ INSTANT URL GENERATION: ${urlGenerationTime.toFixed(2)}ms (from stored pair address)`);
+            }
+            // Priority 2: Pump.fun tokens with bonding curve
+            else if (token.bondingCurveAddress) {
+                console.log(`✅ Pump token - Using bonding curve: ${token.bondingCurveAddress}`);
                 url = `https://axiom.trade/meme/${token.bondingCurveAddress}`;
 
                 const urlGenerationTime = performance.now() - viewTokenStart;
                 console.log(`⚡ INSTANT URL GENERATION: ${urlGenerationTime.toFixed(2)}ms (from stored bonding curve)`);
-            } else {
-                // Fallback: use token address directly
-                console.log(`⚠️ No stored bonding curve, using token address`);
+            }
+            // Priority 3: Fallback to token address
+            else {
+                console.log(`⚠️ No stored pair/bonding curve, using token address`);
                 url = `https://axiom.trade/meme/${token.tokenAddress}`;
             }
         } else {
