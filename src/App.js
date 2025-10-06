@@ -730,15 +730,7 @@ function App() {
                 break;
 
             case 'auto_open_token_page':
-                console.log('🚀 Auto-opening token page:', data.data);
-
-                // Open the Axiom link in a new tab
-                if (data.data.tokenPageUrl) {
-                    window.open(data.data.tokenPageUrl, '_blank');
-
-                    // Optional: Show notification in UI
-                    console.log(`Opened ${data.data.reason}: ${data.data.tokenData.name} (${data.data.tokenData.symbol})`);
-                }
+                console.log('⚠️ Ignoring auto_open_token_page - using bonding curve from secondary_popup_trigger instead');
                 break;
 
             case 'snipe_error':
@@ -3399,17 +3391,69 @@ function App() {
                                         {/* Action Buttons */}
                                         {/* Action Buttons */}
                                         <div className="flex flex-col md:flex-row gap-3 mt-4">
-                                            {/* Action Buttons */}
-                                            {/* Action Buttons */}
-                                            <div className="flex flex-col md:flex-row gap-3 mt-4">
-                                                <button
-                                                    onClick={() => viewToken(token)}
-                                                    className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center justify-center space-x-2"
-                                                >
-                                                    <ExternalLink size={16} />
-                                                    <span>{token.pool === 'bonk' ? 'View on LetsBonk.fun' : 'View on Axiom'}</span>
-                                                </button>
-                                            </div>
+                                            {/* View Token Page Button */}
+                                            <button
+                                                onClick={() => viewToken(token)}
+                                                className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center justify-center space-x-2"
+                                            >
+                                                <ExternalLink size={16} />
+                                                <span>
+                                                    {settings.tokenPageDestination === 'axiom'
+                                                        ? 'View on Axiom'
+                                                        : token.pool === 'bonk'
+                                                            ? 'View on LetsBonk.fun'
+                                                            : 'View on Neo BullX'}
+                                                </span>
+                                            </button>
+
+                                            {/* Axiom Direct Link Button */}
+                                            <button
+                                                onClick={() => {
+                                                    let axiomUrl;
+
+                                                    // Use bonding curve if available (for pump.fun tokens)
+                                                    if (token.bondingCurveAddress) {
+                                                        axiomUrl = `https://axiom.trade/meme/${token.bondingCurveAddress}`;
+                                                        console.log(`Opening Axiom with bonding curve: ${token.bondingCurveAddress}`);
+                                                    } else {
+                                                        // Fallback to token address
+                                                        axiomUrl = `https://axiom.trade/meme/${token.tokenAddress}`;
+                                                        console.log(`Opening Axiom with token address (no bonding curve)`);
+                                                    }
+
+                                                    // Open the URL
+                                                    if (window.electronAPI && window.electronAPI.openExternalURL) {
+                                                        window.electronAPI.openExternalURL(axiomUrl);
+                                                    } else {
+                                                        window.open(axiomUrl, '_blank');
+                                                    }
+
+                                                    addNotification('success', `🌐 Opening Axiom: ${axiomUrl}`);
+                                                }}
+                                                className="flex-1 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors flex items-center justify-center space-x-2"
+                                                title={token.bondingCurveAddress ? `Axiom (Bonding Curve)` : `Axiom (Token Address)`}
+                                            >
+                                                <ExternalLink size={16} />
+                                                <span>📊 Axiom</span>
+                                            </button>
+
+                                            {/* Copy Token Address Button */}
+                                            <button
+                                                onClick={() => copyToClipboard(token.tokenAddress, 'Token address', `copy_${token.tokenAddress}`)}
+                                                className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors flex items-center justify-center space-x-2"
+                                            >
+                                                {copiedStates[`copy_${token.tokenAddress}`] ? (
+                                                    <>
+                                                        <span>✅</span>
+                                                        <span className="hidden md:inline">Copied</span>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <Copy size={16} />
+                                                        <span className="hidden md:inline">Copy Address</span>
+                                                    </>
+                                                )}
+                                            </button>
                                         </div>
                                     </div>
                                 </div>
