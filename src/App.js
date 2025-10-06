@@ -64,7 +64,6 @@ function App() {
     const [selectedTemplate, setSelectedTemplate] = useState(0);
     const [customWallet, setCustomWallet] = useState('');
     const [customTwitter, setCustomTwitter] = useState('');
-    const [recentlyOpenedTokens, setRecentlyOpenedTokens] = useState(new Set());
 
     const [usedCommunities, setUsedCommunities] = useState([]);
     const [usedTweets, setUsedTweets] = useState([]);
@@ -804,23 +803,6 @@ function App() {
 
                 // Keep the auto-open
                 setTimeout(() => {
-                    if (recentlyOpenedTokens.has(tokenData.tokenAddress)) {
-                        console.log('⚠️ Token page already opened recently, skipping duplicate');
-                        return;
-                    }
-
-                    // Mark as opened
-                    setRecentlyOpenedTokens(prev => new Set(prev).add(tokenData.tokenAddress));
-
-                    // Clear after 5 seconds
-                    setTimeout(() => {
-                        setRecentlyOpenedTokens(prev => {
-                            const newSet = new Set(prev);
-                            newSet.delete(tokenData.tokenAddress);
-                            return newSet;
-                        });
-                    }, 5000);
-
                     let autoOpenUrl;
 
                     if (settings.tokenPageDestination === 'axiom') {
@@ -1324,7 +1306,7 @@ function App() {
         fetchStatus();
         fetchLists();
         fetchDetectedTokens();
-        // connectWebSocket();
+       // connectWebSocket();
 
         return () => {
             if (websocket) {
