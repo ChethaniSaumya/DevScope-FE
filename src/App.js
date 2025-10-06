@@ -3408,17 +3408,42 @@ function App() {
 
                                             {/* Axiom Direct Link Button */}
                                             <button
-                                                onClick={() => {
+                                                onClick={async () => {
                                                     let axiomUrl;
 
-                                                    // Use bonding curve if available (for pump.fun tokens)
+                                                    // Check if bonding curve is already stored
                                                     if (token.bondingCurveAddress) {
                                                         axiomUrl = `https://axiom.trade/meme/${token.bondingCurveAddress}`;
-                                                        console.log(`Opening Axiom with bonding curve: ${token.bondingCurveAddress}`);
+                                                        console.log(`✅ Using stored bonding curve: ${token.bondingCurveAddress}`);
                                                     } else {
-                                                        // Fallback to token address
-                                                        axiomUrl = `https://axiom.trade/meme/${token.tokenAddress}`;
-                                                        console.log(`Opening Axiom with token address (no bonding curve)`);
+                                                        // Fetch from backend (will get bonding curve for pump.fun or pair address for bonk)
+                                                        console.log(`🔍 No stored bonding curve, fetching from backend...`);
+                                                        try {
+                                                            const response = await fetch(`${API_BASE}/pair-address/${token.tokenAddress}`);
+                                                            const data = await response.json();
+
+                                                            if (data.success) {
+                                                                if (data.bondingCurveData?.bondingCurveAddress) {
+                                                                    // Pump.fun bonding curve
+                                                                    axiomUrl = `https://axiom.trade/meme/${data.bondingCurveData.bondingCurveAddress}`;
+                                                                    console.log(`✅ Got bonding curve from backend: ${data.bondingCurveData.bondingCurveAddress}`);
+                                                                } else if (data.pairData?.pairAddress) {
+                                                                    // Let's Bonk pair address from DexScreener
+                                                                    axiomUrl = `https://axiom.trade/meme/${data.pairData.pairAddress}`;
+                                                                    console.log(`✅ Got pair address from DexScreener: ${data.pairData.pairAddress}`);
+                                                                } else {
+                                                                    // Fallback to token address
+                                                                    axiomUrl = `https://axiom.trade/meme/${token.tokenAddress}`;
+                                                                    console.log(`⚠️ No bonding curve or pair found, using token address`);
+                                                                }
+                                                            } else {
+                                                                axiomUrl = `https://axiom.trade/meme/${token.tokenAddress}`;
+                                                                console.log(`⚠️ Backend fetch failed, using token address`);
+                                                            }
+                                                        } catch (error) {
+                                                            console.error(`❌ Error fetching address:`, error);
+                                                            axiomUrl = `https://axiom.trade/meme/${token.tokenAddress}`;
+                                                        }
                                                     }
 
                                                     // Open the URL
@@ -3428,10 +3453,10 @@ function App() {
                                                         window.open(axiomUrl, '_blank');
                                                     }
 
-                                                    addNotification('success', `🌐 Opening Axiom: ${axiomUrl}`);
+                                                    addNotification('success', `📊 Opening Axiom: ${axiomUrl}`);
                                                 }}
                                                 className="flex-1 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors flex items-center justify-center space-x-2"
-                                                title={token.bondingCurveAddress ? `Axiom (Bonding Curve)` : `Axiom (Token Address)`}
+                                                title="Open in Axiom (uses bonding curve or pair address)"
                                             >
                                                 <ExternalLink size={16} />
                                                 <span>📊 Axiom</span>
