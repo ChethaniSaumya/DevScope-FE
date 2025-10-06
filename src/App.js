@@ -792,7 +792,6 @@ function App() {
 
                 const tokenData = data.data.tokenData;
 
-                // Show popup modal immediately
                 setSecondaryPopup({
                     show: true,
                     tokenData: tokenData,
@@ -801,10 +800,10 @@ function App() {
 
                 addNotification('info', `🔔 Secondary match found: ${tokenData.tokenAddress.substring(0, 8)}...`);
 
-                // Keep the auto-open
                 setTimeout(() => {
                     let autoOpenUrl;
 
+                    // Determine URL based on user's tokenPageDestination setting
                     if (settings.tokenPageDestination === 'axiom') {
                         if (tokenData.bondingCurveAddress) {
                             autoOpenUrl = `https://axiom.trade/meme/${tokenData.bondingCurveAddress}`;
@@ -814,15 +813,13 @@ function App() {
                             console.log(`⚠️ Auto-opening Axiom with token address (no bonding curve)`);
                         }
                     } else {
+                        // User wants Neo BullX
                         autoOpenUrl = `https://neo.bullx.io/terminal?chainId=1399811149&address=${tokenData.tokenAddress}`;
                         console.log(`✅ Auto-opening Neo BullX`);
                     }
 
-                    if (tokenData.pool === 'bonk' && settings.tokenPageDestination !== 'axiom') {
-                        autoOpenUrl = `https://letsbonk.fun/token/${tokenData.tokenAddress}`;
-                    } else if (tokenData.pool === 'pump' && settings.tokenPageDestination !== 'axiom') {
-                        autoOpenUrl = `https://pump.fun/${tokenData.tokenAddress}`;
-                    }
+                    // REMOVED: Platform-specific overrides that were forcing pump.fun
+                    // Let the user's tokenPageDestination setting determine the URL
 
                     console.log(`🔗 Auto-opening URL: ${autoOpenUrl}`);
 
@@ -1306,7 +1303,7 @@ function App() {
         fetchStatus();
         fetchLists();
         fetchDetectedTokens();
-       // connectWebSocket();
+        // connectWebSocket();
 
         return () => {
             if (websocket) {
