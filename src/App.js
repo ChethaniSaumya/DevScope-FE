@@ -737,6 +737,34 @@ function App() {
                 addNotification('error', `❌ Snipe failed: ${data.data.error}`);
                 break;
 
+            case 'open_dual_windows':
+                console.log('🚀 DUAL WINDOW COMMAND RECEIVED');
+                console.log('Window 1:', data.data.window1);
+                console.log('Window 2:', data.data.window2);
+
+                // Open first window (bonding curve)
+                setTimeout(() => {
+                    if (window.electronAPI && window.electronAPI.openExternalURL) {
+                        window.electronAPI.openExternalURL(data.data.window1.url);
+                    } else {
+                        window.open(data.data.window1.url, '_blank');
+                    }
+                    console.log(`✅ Opened window 1: ${data.data.window1.type}`);
+                }, 100);
+
+                // Open second window (pair address) with slight delay
+                setTimeout(() => {
+                    if (window.electronAPI && window.electronAPI.openExternalURL) {
+                        window.electronAPI.openExternalURL(data.data.window2.url);
+                    } else {
+                        window.open(data.data.window2.url, '_blank');
+                    }
+                    console.log(`✅ Opened window 2: ${data.data.window2.type}`);
+                }, 600);
+
+                addNotification('success', '🚀 Opened 2 windows: Bonding Curve + Pair Address');
+                break;
+
             case 'secondary_notification':
                 addNotification('info', `🔔 Token found in secondary list: ${data.data.tokenAddress.substring(0, 8)}...`);
                 if (data.data.soundNotification && window.electronAPI) {
