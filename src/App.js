@@ -24,6 +24,8 @@ import './App.css';
 const API_BASE = 'https://devscope.fun:3002/api';
 //const API_BASE = 'https://devscope.fun:3002/api';
 
+const openedTokens = new Set();
+
 function App() {
     // State management
     const [botStatus, setBotStatus] = useState({
@@ -766,7 +768,7 @@ function App() {
                 // Optionally show a modal or alert
                 alert(`Failed to find pair address for token ${data.data.tokenAddress.substring(0, 8)}... after ${data.data.attempts} attempts`);
                 break;
-                
+
             case 'auto_open_token_page':
                 console.log('\n' + '='.repeat(80));
                 console.log('🚀 AUTO-OPEN TOKEN PAGE MESSAGE RECEIVED');
