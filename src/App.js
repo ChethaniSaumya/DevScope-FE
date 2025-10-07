@@ -720,6 +720,8 @@ function App() {
     };
 
     const handleWebSocketMessage = (data) => {
+        console.log('📨 WebSocket message received:', data.type, data);
+
         switch (data.type) {
             case 'bot_status':
                 setBotStatus(prev => ({ ...prev, isRunning: data.data.isRunning }));
@@ -729,40 +731,47 @@ function App() {
                 console.log('Server log:', data.data);
                 break;
 
-            case 'auto_open_token_page':
-                console.log('⚠️ Ignoring auto_open_token_page - using bonding curve from secondary_popup_trigger instead');
-                break;
 
             case 'snipe_error':
                 addNotification('error', `❌ Snipe failed: ${data.data.error}`);
                 break;
 
             case 'open_dual_windows':
-                console.log('🚀 DUAL WINDOW COMMAND RECEIVED');
-                console.log('Window 1:', data.data.window1);
-                console.log('Window 2:', data.data.window2);
+                console.log('🚀 DUAL WINDOW OPEN COMMAND RECEIVED');
+                const window1Url = data.data.window1.url;
+                const window2Url = data.data.window2.url;
 
-                // Open first window (bonding curve)
+                // Open first window
+                if (window.electronAPI && window.electronAPI.openExternalURL) {
+                    window.electronAPI.openExternalURL(window1Url);
+                } else {
+                    window.open(window1Url, '_blank');
+                }
+
+                // Wait 100ms, then open second window
                 setTimeout(() => {
                     if (window.electronAPI && window.electronAPI.openExternalURL) {
-                        window.electronAPI.openExternalURL(data.data.window1.url);
+                        window.electronAPI.openExternalURL(window2Url);
                     } else {
-                        window.open(data.data.window1.url, '_blank');
+                        window.open(window2Url, '_blank');
                     }
-                    console.log(`✅ Opened window 1: ${data.data.window1.type}`);
                 }, 100);
 
-                // Open second window (pair address) with slight delay
-                setTimeout(() => {
-                    if (window.electronAPI && window.electronAPI.openExternalURL) {
-                        window.electronAPI.openExternalURL(data.data.window2.url);
-                    } else {
-                        window.open(data.data.window2.url, '_blank');
-                    }
-                    console.log(`✅ Opened window 2: ${data.data.window2.type}`);
-                }, 600);
+                console.log('✅ Both windows opened');
+                break;
 
-                addNotification('success', '🚀 Opened 2 windows: Bonding Curve + Pair Address');
+            case 'auto_open_token_page':
+                console.log('🚀 AUTO-OPEN COMMAND RECEIVED:', data.data.tokenPageUrl);
+
+                if (window.electronAPI && window.electronAPI.openExternalURL) {
+                    window.electronAPI.openExternalURL(data.data.tokenPageUrl);
+                } else {
+                    const newWindow = window.open(data.data.tokenPageUrl, '_blank');
+                    if (!newWindow) {
+                        console.error('❌ Popup blocked by browser');
+                        addNotification('error', '🚫 Browser blocked the popup - please allow popups');
+                    }
+                }
                 break;
 
             case 'secondary_notification':
