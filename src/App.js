@@ -738,7 +738,7 @@ function App() {
 
             case 'open_dual_windows':
                 console.log('🚀 DUAL WINDOW OPEN COMMAND RECEIVED');
-                const window1Url = data.data.window1.url;
+                /*const window1Url = data.data.window1.url;
                 const window2Url = data.data.window2.url;
 
                 // Open first window
@@ -757,23 +757,79 @@ function App() {
                     }
                 }, 100);
 
-                console.log('✅ Both windows opened');
+                console.log('✅ Both windows opened');*/
                 break;
 
             case 'auto_open_token_page':
-                console.log('🚀 AUTO-OPEN COMMAND RECEIVED:', data.data.tokenPageUrl);
+    console.log('\n' + '='.repeat(80));
+    console.log('🚀 AUTO-OPEN TOKEN PAGE MESSAGE RECEIVED');
+    console.log('='.repeat(80));
+    console.log('📦 Full message data:', JSON.stringify(data.data, null, 2));
+    console.log('🔗 Token Page URL:', data.data.tokenPageUrl);
+    console.log('🏷️ Address Type:', data.data.addressType);
+    console.log('📍 Address:', data.data.address);
+    console.log('🦎 Platform:', data.data.platform);
+    console.log('❓ Reason:', data.data.reason);
+    console.log('='.repeat(80) + '\n');
 
-                if (window.electronAPI && window.electronAPI.openExternalURL) {
-                    window.electronAPI.openExternalURL(data.data.tokenPageUrl);
+    const tokenPageUrl = data.data.tokenPageUrl;
+    
+    // Check if URL is valid
+    if (!tokenPageUrl || !tokenPageUrl.startsWith('http')) {
+        console.error('❌ Invalid URL received:', tokenPageUrl);
+        addNotification('error', '❌ Invalid token page URL received');
+        break;
+    }
+
+    // Check if electronAPI exists
+    console.log('🔍 Checking for Electron API...');
+    console.log('   window.electronAPI exists:', !!window.electronAPI);
+    console.log('   window.electronAPI.openExternalURL exists:', !!(window.electronAPI?.openExternalURL));
+
+    setTimeout(() => {
+        if (window.electronAPI && window.electronAPI.openExternalURL) {
+            console.log('🖥️ USING ELECTRON API TO OPEN URL');
+            try {
+                window.electronAPI.openExternalURL(tokenPageUrl);
+                console.log('✅ Electron API call successful');
+                addNotification('success', `🚀 Opening ${data.data.platform || 'token page'} via Electron`);
+            } catch (error) {
+                console.error('❌ Electron API error:', error);
+                addNotification('error', `❌ Failed to open: ${error.message}`);
+            }
+        } else {
+            console.log('🌐 USING BROWSER WINDOW.OPEN()');
+            console.log('   Attempting to open:', tokenPageUrl);
+            
+            try {
+                const newWindow = window.open(tokenPageUrl, '_blank', 'noopener,noreferrer');
+                console.log('   window.open() returned:', newWindow);
+                
+                if (!newWindow || newWindow.closed) {
+                    console.error('❌ POPUP BLOCKED BY BROWSER!');
+                    console.error('   Browser prevented the popup from opening');
+                    
+                    addNotification('error', '🚫 Browser blocked popup - Click "Allow" in address bar');
+                    
+                    setPopupBlockerModal({
+                        show: true,
+                        tokenUrl: tokenPageUrl,
+                        tokenAddress: data.data.tokenAddress,
+                        reason: 'Browser popup blocker is active'
+                    });
                 } else {
-                    const newWindow = window.open(data.data.tokenPageUrl, '_blank');
-                    if (!newWindow) {
-                        console.error('❌ Popup blocked by browser');
-                        addNotification('error', '🚫 Browser blocked the popup - please allow popups');
-                    }
+                    console.log('✅ WINDOW OPENED SUCCESSFULLY');
+                    addNotification('success', `🚀 ${data.data.platform || 'Token page'} opened`);
                 }
-                break;
-
+            } catch (error) {
+                console.error('❌ window.open() threw error:', error);
+                addNotification('error', `❌ Failed to open window: ${error.message}`);
+            }
+        }
+    }, 100);
+    
+    break;
+    
             case 'secondary_notification':
                 addNotification('info', `🔔 Token found in secondary list: ${data.data.tokenAddress.substring(0, 8)}...`);
                 if (data.data.soundNotification && window.electronAPI) {
