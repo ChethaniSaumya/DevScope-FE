@@ -731,7 +731,6 @@ function App() {
                 console.log('Server log:', data.data);
                 break;
 
-
             case 'snipe_error':
                 addNotification('error', `❌ Snipe failed: ${data.data.error}`);
                 break;
@@ -760,76 +759,84 @@ function App() {
                 console.log('✅ Both windows opened');*/
                 break;
 
-            case 'auto_open_token_page':
-    console.log('\n' + '='.repeat(80));
-    console.log('🚀 AUTO-OPEN TOKEN PAGE MESSAGE RECEIVED');
-    console.log('='.repeat(80));
-    console.log('📦 Full message data:', JSON.stringify(data.data, null, 2));
-    console.log('🔗 Token Page URL:', data.data.tokenPageUrl);
-    console.log('🏷️ Address Type:', data.data.addressType);
-    console.log('📍 Address:', data.data.address);
-    console.log('🦎 Platform:', data.data.platform);
-    console.log('❓ Reason:', data.data.reason);
-    console.log('='.repeat(80) + '\n');
+            case 'pair_address_not_found':
+                console.log('❌ Pair address not found after retries');
+                addNotification('error', `❌ Could not find pair address for token after ${data.data.attempts} attempts`);
 
-    const tokenPageUrl = data.data.tokenPageUrl;
-    
-    // Check if URL is valid
-    if (!tokenPageUrl || !tokenPageUrl.startsWith('http')) {
-        console.error('❌ Invalid URL received:', tokenPageUrl);
-        addNotification('error', '❌ Invalid token page URL received');
-        break;
-    }
-
-    // Check if electronAPI exists
-    console.log('🔍 Checking for Electron API...');
-    console.log('   window.electronAPI exists:', !!window.electronAPI);
-    console.log('   window.electronAPI.openExternalURL exists:', !!(window.electronAPI?.openExternalURL));
-
-    setTimeout(() => {
-        if (window.electronAPI && window.electronAPI.openExternalURL) {
-            console.log('🖥️ USING ELECTRON API TO OPEN URL');
-            try {
-                window.electronAPI.openExternalURL(tokenPageUrl);
-                console.log('✅ Electron API call successful');
-                addNotification('success', `🚀 Opening ${data.data.platform || 'token page'} via Electron`);
-            } catch (error) {
-                console.error('❌ Electron API error:', error);
-                addNotification('error', `❌ Failed to open: ${error.message}`);
-            }
-        } else {
-            console.log('🌐 USING BROWSER WINDOW.OPEN()');
-            console.log('   Attempting to open:', tokenPageUrl);
-            
-            try {
-                const newWindow = window.open(tokenPageUrl, '_blank', 'noopener,noreferrer');
-                console.log('   window.open() returned:', newWindow);
+                // Optionally show a modal or alert
+                alert(`Failed to find pair address for token ${data.data.tokenAddress.substring(0, 8)}... after ${data.data.attempts} attempts`);
+                break;
                 
-                if (!newWindow || newWindow.closed) {
-                    console.error('❌ POPUP BLOCKED BY BROWSER!');
-                    console.error('   Browser prevented the popup from opening');
-                    
-                    addNotification('error', '🚫 Browser blocked popup - Click "Allow" in address bar');
-                    
-                    setPopupBlockerModal({
-                        show: true,
-                        tokenUrl: tokenPageUrl,
-                        tokenAddress: data.data.tokenAddress,
-                        reason: 'Browser popup blocker is active'
-                    });
-                } else {
-                    console.log('✅ WINDOW OPENED SUCCESSFULLY');
-                    addNotification('success', `🚀 ${data.data.platform || 'Token page'} opened`);
+            case 'auto_open_token_page':
+                console.log('\n' + '='.repeat(80));
+                console.log('🚀 AUTO-OPEN TOKEN PAGE MESSAGE RECEIVED');
+                console.log('='.repeat(80));
+                console.log('📦 Full message data:', JSON.stringify(data.data, null, 2));
+                console.log('🔗 Token Page URL:', data.data.tokenPageUrl);
+                console.log('🏷️ Address Type:', data.data.addressType);
+                console.log('📍 Address:', data.data.address);
+                console.log('🦎 Platform:', data.data.platform);
+                console.log('❓ Reason:', data.data.reason);
+                console.log('='.repeat(80) + '\n');
+
+                const tokenPageUrl = data.data.tokenPageUrl;
+
+                // Check if URL is valid
+                if (!tokenPageUrl || !tokenPageUrl.startsWith('http')) {
+                    console.error('❌ Invalid URL received:', tokenPageUrl);
+                    addNotification('error', '❌ Invalid token page URL received');
+                    break;
                 }
-            } catch (error) {
-                console.error('❌ window.open() threw error:', error);
-                addNotification('error', `❌ Failed to open window: ${error.message}`);
-            }
-        }
-    }, 100);
-    
-    break;
-    
+
+                // Check if electronAPI exists
+                console.log('🔍 Checking for Electron API...');
+                console.log('   window.electronAPI exists:', !!window.electronAPI);
+                console.log('   window.electronAPI.openExternalURL exists:', !!(window.electronAPI?.openExternalURL));
+
+                setTimeout(() => {
+                    if (window.electronAPI && window.electronAPI.openExternalURL) {
+                        console.log('🖥️ USING ELECTRON API TO OPEN URL');
+                        try {
+                            window.electronAPI.openExternalURL(tokenPageUrl);
+                            console.log('✅ Electron API call successful');
+                            addNotification('success', `🚀 Opening ${data.data.platform || 'token page'} via Electron`);
+                        } catch (error) {
+                            console.error('❌ Electron API error:', error);
+                            addNotification('error', `❌ Failed to open: ${error.message}`);
+                        }
+                    } else {
+                        console.log('🌐 USING BROWSER WINDOW.OPEN()');
+                        console.log('   Attempting to open:', tokenPageUrl);
+
+                        try {
+                            const newWindow = window.open(tokenPageUrl, '_blank', 'noopener,noreferrer');
+                            console.log('   window.open() returned:', newWindow);
+
+                            if (!newWindow || newWindow.closed) {
+                                console.error('❌ POPUP BLOCKED BY BROWSER!');
+                                console.error('   Browser prevented the popup from opening');
+
+                                addNotification('error', '🚫 Browser blocked popup - Click "Allow" in address bar');
+
+                                setPopupBlockerModal({
+                                    show: true,
+                                    tokenUrl: tokenPageUrl,
+                                    tokenAddress: data.data.tokenAddress,
+                                    reason: 'Browser popup blocker is active'
+                                });
+                            } else {
+                                console.log('✅ WINDOW OPENED SUCCESSFULLY');
+                                addNotification('success', `🚀 ${data.data.platform || 'Token page'} opened`);
+                            }
+                        } catch (error) {
+                            console.error('❌ window.open() threw error:', error);
+                            addNotification('error', `❌ Failed to open window: ${error.message}`);
+                        }
+                    }
+                }, 100);
+
+                break;
+
             case 'secondary_notification':
                 addNotification('info', `🔔 Token found in secondary list: ${data.data.tokenAddress.substring(0, 8)}...`);
                 if (data.data.soundNotification && window.electronAPI) {
