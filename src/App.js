@@ -4061,19 +4061,7 @@ function App() {
                     </div>
 
                     <div className="space-y-4">
-                        {/* Info box about global defaults */}
-                        <div className="bg-blue-900/20 border border-blue-500/30 rounded-lg p-3">
-                            <div className="flex items-center space-x-2 mb-2">
-                                <div className="w-2 h-2 rounded-full bg-blue-500"></div>
-                                <span className="text-blue-400 text-sm font-medium">Using Global Defaults</span>
-                            </div>
-                            <p className="text-blue-300 text-xs">
-                                Amount ({settings.globalSnipeSettings.amount} SOL), Fees ({settings.globalSnipeSettings.fees}%),
-                                MEV Protection ({settings.globalSnipeSettings.mevProtection ? 'ON' : 'OFF'}), and
-                                Sound ({settings.globalSnipeSettings.soundNotification}) are loaded from Global Snipe Settings.
-                            </p>
-                        </div>
-
+                        
                         <div>
                             <label className="block text-sm font-medium text-gray-300 mb-2">
                                 Wallet Address, Twitter Username, or Community ID
