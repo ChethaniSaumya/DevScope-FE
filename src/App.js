@@ -610,14 +610,15 @@ function App() {
 
     // Form states
     const [showAddForm, setShowAddForm] = useState({ type: null, show: false });
-    const [formData, setFormData] = useState({
+
+    const [formData, setFormData] = useState(() => ({
         address: '',
         username: '',
-        amount: 0.01,
-        fees: 10,
-        mevProtection: true,
-        soundNotification: 'default.wav'
-    });
+        amount: settings.globalSnipeSettings.amount, // ✅ USE GLOBAL DEFAULT
+        fees: settings.globalSnipeSettings.fees, // ✅ USE GLOBAL DEFAULT
+        mevProtection: settings.globalSnipeSettings.mevProtection, // ✅ USE GLOBAL DEFAULT
+        soundNotification: settings.globalSnipeSettings.soundNotification // ✅ USE GLOBAL DEFAULT
+    }));
     // App.js - Part 2: WebSocket and Message Handling
 
 
@@ -1399,6 +1400,18 @@ function App() {
             soundNotification: 'default.wav'
         });
     };
+
+    useEffect(() => {
+        setFormData({
+            address: '',
+            username: '',
+            amount: settings.globalSnipeSettings.amount, // ✅ USE GLOBAL DEFAULT
+            fees: settings.globalSnipeSettings.fees, // ✅ USE GLOBAL DEFAULT
+            mevProtection: settings.globalSnipeSettings.mevProtection, // ✅ USE GLOBAL DEFAULT
+            soundNotification: settings.globalSnipeSettings.soundNotification // ✅ USE GLOBAL DEFAULT
+        });
+    }, [settings.globalSnipeSettings]); // ✅ Re-initialize when global settings change
+
 
     // Effects
     useEffect(() => {
@@ -4032,6 +4045,19 @@ function App() {
                     </div>
 
                     <div className="space-y-4">
+                        <div className="bg-blue-900/20 border border-blue-500/30 rounded-lg p-3 mb-4">
+                            <div className="flex items-center space-x-2 mb-2">
+                                <div className="w-2 h-2 rounded-full bg-blue-500"></div>
+                                <span className="text-blue-400 text-sm font-medium">Using Global Defaults</span>
+                            </div>
+                            <p className="text-blue-300 text-xs">
+                                Amount ({settings.globalSnipeSettings.amount} SOL), Fees ({settings.globalSnipeSettings.fees}%),
+                                MEV Protection ({settings.globalSnipeSettings.mevProtection ? 'ON' : 'OFF'}), and
+                                Sound ({settings.globalSnipeSettings.soundNotification}) are loaded from Global Snipe Settings.
+                                You can customize these for each admin individually after adding.
+                            </p>
+                        </div>
+
                         <div>
                             <label className="block text-sm font-medium text-gray-300 mb-2">
                                 Wallet Address, Twitter Username, or Community ID
@@ -4213,7 +4239,7 @@ function App() {
                                     <span className="bg-green-600 text-white px-2 py-1 rounded">{item.amount} SOL</span>
                                     <span className="bg-blue-600 text-white px-2 py-1 rounded">{item.fees}% fees</span>
                                     <span className={`px-2 py-1 rounded ${item.mevProtection ? 'bg-purple-600 text-white' : 'bg-gray-600 text-gray-300'}`}>
-                                        {item.mevProtection ? '🛡️ MEV' : '❌ No MEV'}
+                                        {item.mevProtection ? '🛡️ MEV (Global)' : '❌ No MEV (Global)'}
                                     </span>
                                     {item.soundNotification && (
                                         <span className="bg-yellow-600 text-white px-2 py-1 rounded">🔊 {item.soundNotification}</span>
@@ -4502,4 +4528,3 @@ function App() {
 }
 
 export default App;
-
