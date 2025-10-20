@@ -614,10 +614,10 @@ function App() {
     const [formData, setFormData] = useState(() => ({
         address: '',
         username: '',
-        amount: settings.globalSnipeSettings.amount, // ✅ USE GLOBAL DEFAULT
-        fees: settings.globalSnipeSettings.fees, // ✅ USE GLOBAL DEFAULT
-        mevProtection: settings.globalSnipeSettings.mevProtection, // ✅ USE GLOBAL DEFAULT
-        soundNotification: settings.globalSnipeSettings.soundNotification // ✅ USE GLOBAL DEFAULT
+        amount: settings.globalSnipeSettings.amount,
+        fees: settings.globalSnipeSettings.fees,
+        mevProtection: settings.globalSnipeSettings.mevProtection,
+        soundNotification: settings.globalSnipeSettings.soundNotification
     }));
     // App.js - Part 2: WebSocket and Message Handling
 
@@ -1394,13 +1394,12 @@ function App() {
         setFormData({
             address: '',
             username: '',
-            amount: 0.01,
-            fees: 10,
-            mevProtection: true,
-            soundNotification: 'default.wav'
+            amount: settings.globalSnipeSettings.amount,
+            fees: settings.globalSnipeSettings.fees,
+            mevProtection: settings.globalSnipeSettings.mevProtection,
+            soundNotification: settings.globalSnipeSettings.soundNotification
         });
     };
-
 
     // Effects
     useEffect(() => {
@@ -4013,8 +4012,6 @@ function App() {
         </div>
     );
 
-    // App.js - Parts 8 & 9: Lists, Forms, and Main Component
-    // ✅ RENAME: Change from renderAddForm to AddFormModal (uppercase)
     const AddFormModal = ({ listType, onClose, onAdd }) => {
         // ✅ Use local state for form data within modal
         const [localFormData, setLocalFormData] = useState({
@@ -4038,6 +4035,15 @@ function App() {
             });
         }, [listType, settings.globalSnipeSettings]);
 
+        const handleSubmit = () => {
+            onAdd(listType, {
+                address: localFormData.address,
+                amount: localFormData.amount,
+                fees: localFormData.fees,
+                mevProtection: localFormData.mevProtection,
+                soundNotification: localFormData.soundNotification
+            });
+        };
 
         return (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -4074,8 +4080,8 @@ function App() {
                             </label>
                             <input
                                 type="text"
-                                value={formData.address}
-                                onChange={(e) => setFormData(prev => ({
+                                value={localFormData.address}
+                                onChange={(e) => setLocalFormData(prev => ({
                                     ...prev,
                                     address: e.target.value
                                 }))}
@@ -4096,8 +4102,11 @@ function App() {
                                 <input
                                     type="number"
                                     step="0.001"
-                                    value={formData.amount}
-                                    onChange={(e) => setFormData(prev => ({ ...prev, amount: parseFloat(e.target.value) }))}
+                                    value={localFormData.amount}
+                                    onChange={(e) => setLocalFormData(prev => ({
+                                        ...prev,
+                                        amount: parseFloat(e.target.value) || 0
+                                    }))}
                                     className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                 />
                             </div>
@@ -4106,8 +4115,11 @@ function App() {
                                 <label className="block text-sm font-medium text-gray-300 mb-2">Fees (%)</label>
                                 <input
                                     type="number"
-                                    value={formData.fees}
-                                    onChange={(e) => setFormData(prev => ({ ...prev, fees: parseInt(e.target.value) }))}
+                                    value={localFormData.fees}
+                                    onChange={(e) => setLocalFormData(prev => ({
+                                        ...prev,
+                                        fees: parseInt(e.target.value) || 0
+                                    }))}
                                     className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                 />
                             </div>
@@ -4118,8 +4130,11 @@ function App() {
                             <div className="flex items-center space-x-2">
                                 <input
                                     type="checkbox"
-                                    checked={formData.mevProtection}
-                                    onChange={(e) => setFormData(prev => ({ ...prev, mevProtection: e.target.checked }))}
+                                    checked={localFormData.mevProtection}
+                                    onChange={(e) => setLocalFormData(prev => ({
+                                        ...prev,
+                                        mevProtection: e.target.checked
+                                    }))}
                                     disabled={true}
                                     className="w-4 h-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
                                 />
@@ -4134,8 +4149,11 @@ function App() {
                             <label className="block text-sm font-medium text-gray-300 mb-2">Sound Notification</label>
                             <div className="flex space-x-2">
                                 <select
-                                    value={formData.soundNotification}
-                                    onChange={(e) => setFormData(prev => ({ ...prev, soundNotification: e.target.value }))}
+                                    value={localFormData.soundNotification}
+                                    onChange={(e) => setLocalFormData(prev => ({
+                                        ...prev,
+                                        soundNotification: e.target.value
+                                    }))}
                                     className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
                                 >
                                     {SOUND_OPTIONS.map(option => (
@@ -4146,7 +4164,7 @@ function App() {
                                 </select>
                                 <button
                                     type="button"
-                                    onClick={() => previewSound(formData.soundNotification)}
+                                    onClick={() => previewSound(localFormData.soundNotification)}
                                     className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
                                     title="Preview sound"
                                 >
@@ -4170,16 +4188,8 @@ function App() {
 
                     <div className="flex flex-col space-y-2 md:flex-row md:space-y-0 md:space-x-4 mt-6">
                         <button
-                            onClick={() => {
-                                onAdd(listType, {
-                                    address: formData.address,
-                                    amount: formData.amount,
-                                    fees: formData.fees,
-                                    mevProtection: formData.mevProtection,
-                                    soundNotification: formData.soundNotification
-                                });
-                            }}
-                            disabled={!formData.address || !formData.amount || !formData.fees}
+                            onClick={handleSubmit}
+                            disabled={!localFormData.address || !localFormData.amount || !localFormData.fees}
                             className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors flex items-center justify-center space-x-2"
                         >
                             <span>✅ Add & Save to Firebase</span>
