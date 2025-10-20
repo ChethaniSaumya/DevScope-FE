@@ -1401,17 +1401,6 @@ function App() {
         });
     };
 
-    useEffect(() => {
-        setFormData({
-            address: '',
-            username: '',
-            amount: settings.globalSnipeSettings.amount, // ✅ USE GLOBAL DEFAULT
-            fees: settings.globalSnipeSettings.fees, // ✅ USE GLOBAL DEFAULT
-            mevProtection: settings.globalSnipeSettings.mevProtection, // ✅ USE GLOBAL DEFAULT
-            soundNotification: settings.globalSnipeSettings.soundNotification // ✅ USE GLOBAL DEFAULT
-        });
-    }, [settings.globalSnipeSettings]); // ✅ Re-initialize when global settings change
-
 
     // Effects
     useEffect(() => {
@@ -4025,9 +4014,19 @@ function App() {
     );
 
     // App.js - Parts 8 & 9: Lists, Forms, and Main Component
-    const renderAddForm = (listType) => {
-        const isWalletList = true; // Always treat as wallet input now
-        // Remove the useState call from here - it should be in your main component
+    // ✅ RENAME: Change from renderAddForm to AddFormModal (uppercase)
+    const AddFormModal = ({ listType, onClose, onAdd }) => {
+        // ✅ NOW useEffect works because this is a proper React component
+        React.useEffect(() => {
+            setFormData({
+                address: '',
+                username: '',
+                amount: settings.globalSnipeSettings.amount,
+                fees: settings.globalSnipeSettings.fees,
+                mevProtection: settings.globalSnipeSettings.mevProtection,
+                soundNotification: settings.globalSnipeSettings.soundNotification
+            });
+        }, [listType]); // Reset when listType changes
 
         return (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -4045,7 +4044,8 @@ function App() {
                     </div>
 
                     <div className="space-y-4">
-                        <div className="bg-blue-900/20 border border-blue-500/30 rounded-lg p-3 mb-4">
+                        {/* Info box about global defaults */}
+                        <div className="bg-blue-900/20 border border-blue-500/30 rounded-lg p-3">
                             <div className="flex items-center space-x-2 mb-2">
                                 <div className="w-2 h-2 rounded-full bg-blue-500"></div>
                                 <span className="text-blue-400 text-sm font-medium">Using Global Defaults</span>
@@ -4054,7 +4054,6 @@ function App() {
                                 Amount ({settings.globalSnipeSettings.amount} SOL), Fees ({settings.globalSnipeSettings.fees}%),
                                 MEV Protection ({settings.globalSnipeSettings.mevProtection ? 'ON' : 'OFF'}), and
                                 Sound ({settings.globalSnipeSettings.soundNotification}) are loaded from Global Snipe Settings.
-                                You can customize these for each admin individually after adding.
                             </p>
                         </div>
 
@@ -4103,14 +4102,21 @@ function App() {
                             </div>
                         </div>
 
-                        <div className="flex items-center space-x-2">
-                            <input
-                                type="checkbox"
-                                checked={formData.mevProtection}
-                                onChange={(e) => setFormData(prev => ({ ...prev, mevProtection: e.target.checked }))}
-                                className="w-4 h-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500"
-                            />
-                            <label className="text-sm text-gray-300">🛡️ MEV Protection</label>
+                        {/* ✅ MEV Protection - DISABLED (read-only) */}
+                        <div>
+                            <div className="flex items-center space-x-2">
+                                <input
+                                    type="checkbox"
+                                    checked={formData.mevProtection}
+                                    onChange={(e) => setFormData(prev => ({ ...prev, mevProtection: e.target.checked }))}
+                                    disabled={true}
+                                    className="w-4 h-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                                />
+                                <label className="text-sm text-gray-300">🛡️ MEV Protection (From Global Settings)</label>
+                            </div>
+                            <p className="text-xs text-gray-400 ml-6 mt-1">
+                                MEV Protection is inherited from Global Snipe Settings and cannot be changed per-admin.
+                            </p>
                         </div>
 
                         <div>
@@ -4153,21 +4159,22 @@ function App() {
 
                     <div className="flex flex-col space-y-2 md:flex-row md:space-y-0 md:space-x-4 mt-6">
                         <button
-                            onClick={() => addListItem(listType, {
-                                [isWalletList ? 'address' : 'username']: isWalletList ? formData.address : formData.username,
-                                amount: formData.amount,
-                                fees: formData.fees,
-                                mevProtection: formData.mevProtection,
-                                soundNotification: formData.soundNotification,
-                                isCommunity: isCommunity // Add this field
-                            })}
+                            onClick={() => {
+                                onAdd(listType, {
+                                    address: formData.address,
+                                    amount: formData.amount,
+                                    fees: formData.fees,
+                                    mevProtection: formData.mevProtection,
+                                    soundNotification: formData.soundNotification
+                                });
+                            }}
                             disabled={!formData.address || !formData.amount || !formData.fees}
                             className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors flex items-center justify-center space-x-2"
                         >
                             <span>✅ Add & Save to Firebase</span>
                         </button>
                         <button
-                            onClick={() => setShowAddForm({ type: null, show: false })}
+                            onClick={onClose}
                             className="flex-1 px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors"
                         >
                             ❌ Cancel
@@ -4333,7 +4340,13 @@ function App() {
                 {renderEnhancedListSection('secondary_admins', 'Secondary Admins (Notify)', <Bell className="text-orange-400" size={20} />)}
             </div>
 
-            {showAddForm.show && renderAddForm(showAddForm.type)}
+            {showAddForm.show && (
+                <AddFormModal
+                    listType={showAddForm.type}
+                    onClose={() => setShowAddForm({ type: null, show: false })}
+                    onAdd={addListItem}
+                />
+            )}
         </div>
     );
 
