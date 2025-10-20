@@ -4016,9 +4016,19 @@ function App() {
     // App.js - Parts 8 & 9: Lists, Forms, and Main Component
     // ✅ RENAME: Change from renderAddForm to AddFormModal (uppercase)
     const AddFormModal = ({ listType, onClose, onAdd }) => {
-        // ✅ NOW useEffect works because this is a proper React component
-        React.useEffect(() => {
-            setFormData({
+        // ✅ Use local state for form data within modal
+        const [localFormData, setLocalFormData] = useState({
+            address: '',
+            username: '',
+            amount: settings.globalSnipeSettings.amount,
+            fees: settings.globalSnipeSettings.fees,
+            mevProtection: settings.globalSnipeSettings.mevProtection,
+            soundNotification: settings.globalSnipeSettings.soundNotification
+        });
+
+        // ✅ Reset form when modal opens or listType changes
+        useEffect(() => {
+            setLocalFormData({
                 address: '',
                 username: '',
                 amount: settings.globalSnipeSettings.amount,
@@ -4026,7 +4036,8 @@ function App() {
                 mevProtection: settings.globalSnipeSettings.mevProtection,
                 soundNotification: settings.globalSnipeSettings.soundNotification
             });
-        }, [listType]); // Reset when listType changes
+        }, [listType, settings.globalSnipeSettings]);
+
 
         return (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
