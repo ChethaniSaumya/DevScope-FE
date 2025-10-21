@@ -791,7 +791,6 @@ function App() {
                     break;
                 }
 
-                // Check if electronAPI exists
                 console.log('🔍 Checking for Electron API...');
                 console.log('   window.electronAPI exists:', !!window.electronAPI);
                 console.log('   window.electronAPI.openExternalURL exists:', !!(window.electronAPI?.openExternalURL));
@@ -802,7 +801,7 @@ function App() {
                         try {
                             window.electronAPI.openExternalURL(tokenPageUrl);
                             console.log('✅ Electron API call successful');
-                            addNotification('success', `🚀 Opening ${data.data.platform || 'token page'} via Electron`);
+                            addNotification('success', `✅ ALREADY SNIPED! Opening ${data.data.platform || 'token page'}`);
                         } catch (error) {
                             console.error('❌ Electron API error:', error);
                             addNotification('error', `❌ Failed to open: ${error.message}`);
@@ -815,17 +814,20 @@ function App() {
                             const newWindow = window.open(tokenPageUrl, '_blank', 'noopener,noreferrer');
                             console.log('   window.open() returned:', newWindow);
 
-                            if (!newWindow || newWindow.closed) {
+                            // FIXED: Only check for null, don't check closed status immediately
+                            if (!newWindow) {
                                 console.error('❌ POPUP BLOCKED BY BROWSER!');
-                                console.error('   Browser prevented the popup from opening');
-
                                 addNotification('error', '🚫 Browser blocked popup - Click "Allow" in address bar');
 
-                                // DON'T show popup blocker modal - just notify
-                                console.log('ℹ️ User can click the popup manually from the notification');
+                                setPopupBlockerModal({
+                                    show: true,
+                                    tokenUrl: tokenPageUrl,
+                                    tokenAddress: data.data.tokenAddress,
+                                    reason: 'Browser popup blocker is active'
+                                });
                             } else {
                                 console.log('✅ WINDOW OPENED SUCCESSFULLY');
-                                addNotification('success', `🚀 ${data.data.platform || 'Token page'} opened`);
+                                addNotification('success', `✅ ALREADY SNIPED! Opening ${data.data.platform || 'token page'}`);
                             }
                         } catch (error) {
                             console.error('❌ window.open() threw error:', error);
@@ -879,14 +881,6 @@ function App() {
                         : '';
 
                 addNotification('info', `${matchTypeText[data.data.matchType] || '🔍 Match'} ${data.data.name || data.data.symbol} ${twitterInfo}`);
-
-                if (data.data.matchType === 'primary_admin') {
-                    console.log('🎯 PRIMARY MATCH - Showing popup');
-                    setSecondaryPopup({
-                        show: true,
-                        tokenData: data.data
-                    });
-                }
 
                 if (data.data.config && data.data.config.soundNotification && window.electronAPI) {
                     window.electronAPI.playSound(data.data.config.soundNotification);
@@ -2649,20 +2643,12 @@ function App() {
 
         const token = secondaryPopup.tokenData;
 
-        // ✅ Define isPrimary and dynamic text
-        const isPrimary = token.matchType === 'primary_admin';
-        const title = isPrimary ? '🎯 Primary Match - Auto-Sniped!' : '🔔 Secondary Match Found!';
-        const subtitle = isPrimary ? 'Token automatically sniped and opened' : 'Review and decide to snipe';
-
         return (
             <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
                 <div className="bg-gray-800 rounded-lg p-6 w-full max-w-2xl max-h-screen overflow-y-auto">
                     {/* Header */}
                     <div className="flex items-center justify-between mb-6">
-                        <div>
-                            <h2 className="text-2xl font-bold text-white">{title}</h2>
-                            <p className="text-sm text-gray-400 mt-1">{subtitle}</p>
-                        </div>
+                        <h2 className="text-2xl font-bold text-white">🔔 Secondary Match Found!</h2>
                         <button
                             onClick={() => setSecondaryPopup({ show: false, tokenData: null })}
                             className="text-gray-400 hover:text-white"
@@ -2719,6 +2705,8 @@ function App() {
                         </div>
                     </div>
 
+                    {/* ✅ REMOVED: Entire "Address Detection Status" section */}
+
                     {/* Current Global Snipe Settings Display */}
                     <div className="bg-gray-700 p-4 rounded mb-6">
                         <h4 className="text-lg font-semibold text-white mb-3">Current Global Snipe Settings:</h4>
@@ -2740,24 +2728,24 @@ function App() {
 
                     {/* Action Buttons */}
                     <div className="flex flex-col space-y-3 md:flex-row md:space-y-0 md:space-x-4">
-                        {/* ONLY show snipe button for Secondary matches */}
-                        {!isPrimary && (
-                            <button
-                                onClick={() => snipeWithGlobalSettings(token.tokenAddress)}
-                                className="flex-1 px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors font-bold flex items-center justify-center space-x-2"
-                            >
-                                <Target size={20} />
-                                <span>SNIPE ({settings.globalSnipeSettings.amount} SOL)</span>
-                            </button>
-                        )}
-
-                        {/* Show "Already Sniped" message for Primary matches */}
-                        {isPrimary && (
-                            <div className="flex-1 px-6 py-3 bg-green-900/20 border-2 border-green-500 text-green-400 rounded-lg font-bold flex items-center justify-center space-x-2">
-                                <CheckCircle size={20} />
-                                <span>✅ ALREADY SNIPED!</span>
-                            </div>
-                        )}
+                        {/* COMMENTED OUT - Auto-open handles this
+                        <button
+                            onClick={() => viewTokenPageFromPopup(token)}
+                            className="flex-1 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center justify-center space-x-2"
+                        >
+                            <span>🌐 View Token Page</span>
+                        
+                        </button>
+*/}
+                        {/*
+                        <button
+                            onClick={() => snipeWithGlobalSettings(token.tokenAddress)}
+                            className="flex-1 px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors font-bold flex items-center justify-center space-x-2"
+                        >
+                            <Target size={20} />
+                            <span>SNIPE ({settings.globalSnipeSettings.amount} SOL)</span>
+                        </button>
+                        */}
                     </div>
                 </div>
             </div>
@@ -2864,7 +2852,6 @@ function App() {
         }
     };
 
-    // Replace the attemptPopupWithDetection function with this simplified version
     const attemptPopupWithDetection = async (url, tokenAddress, openType) => {
         console.log(`🚀 ATTEMPTING POPUP OPENING (${openType.toUpperCase()})`);
 
@@ -2894,7 +2881,7 @@ function App() {
                 };
             }
 
-            // SUCCESS - popup opened
+            // SUCCESS - popup opened (don't check closed status immediately)
             console.log('✅ POPUP OPENED SUCCESSFULLY');
             return {
                 success: true,
