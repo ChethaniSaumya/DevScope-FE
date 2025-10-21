@@ -791,6 +791,7 @@ function App() {
                     break;
                 }
 
+                // Check if electronAPI exists
                 console.log('🔍 Checking for Electron API...');
                 console.log('   window.electronAPI exists:', !!window.electronAPI);
                 console.log('   window.electronAPI.openExternalURL exists:', !!(window.electronAPI?.openExternalURL));
@@ -801,7 +802,7 @@ function App() {
                         try {
                             window.electronAPI.openExternalURL(tokenPageUrl);
                             console.log('✅ Electron API call successful');
-                            addNotification('success', `✅ ALREADY SNIPED! Opening ${data.data.platform || 'token page'}`);
+                            addNotification('success', `🚀 Opening ${data.data.platform || 'token page'} via Electron`);
                         } catch (error) {
                             console.error('❌ Electron API error:', error);
                             addNotification('error', `❌ Failed to open: ${error.message}`);
@@ -814,9 +815,10 @@ function App() {
                             const newWindow = window.open(tokenPageUrl, '_blank', 'noopener,noreferrer');
                             console.log('   window.open() returned:', newWindow);
 
-                            // FIXED: Only check for null, don't check closed status immediately
-                            if (!newWindow) {
+                            if (!newWindow || newWindow.closed) {
                                 console.error('❌ POPUP BLOCKED BY BROWSER!');
+                                console.error('   Browser prevented the popup from opening');
+
                                 addNotification('error', '🚫 Browser blocked popup - Click "Allow" in address bar');
 
                                 setPopupBlockerModal({
@@ -827,7 +829,7 @@ function App() {
                                 });
                             } else {
                                 console.log('✅ WINDOW OPENED SUCCESSFULLY');
-                                addNotification('success', `✅ ALREADY SNIPED! Opening ${data.data.platform || 'token page'}`);
+                                addNotification('success', `🚀 ${data.data.platform || 'Token page'} opened`);
                             }
                         } catch (error) {
                             console.error('❌ window.open() threw error:', error);
@@ -2852,6 +2854,7 @@ function App() {
         }
     };
 
+    // Replace the attemptPopupWithDetection function with this simplified version
     const attemptPopupWithDetection = async (url, tokenAddress, openType) => {
         console.log(`🚀 ATTEMPTING POPUP OPENING (${openType.toUpperCase()})`);
 
@@ -2881,7 +2884,7 @@ function App() {
                 };
             }
 
-            // SUCCESS - popup opened (don't check closed status immediately)
+            // SUCCESS - popup opened
             console.log('✅ POPUP OPENED SUCCESSFULLY');
             return {
                 success: true,
@@ -4058,7 +4061,7 @@ function App() {
                     </div>
 
                     <div className="space-y-4">
-
+                        
                         <div>
                             <label className="block text-sm font-medium text-gray-300 mb-2">
                                 Wallet Address, Twitter Username, or Community ID
