@@ -1620,6 +1620,8 @@ function App() {
                 </div>
             </div>
 
+            {renderCacheManagement()}
+
             {/* Used Communities List */}
             <div className="bg-gray-800 rounded-lg p-4 md:p-6">
                 <h3 className="text-lg font-semibold text-white mb-4">Used Communities</h3>
@@ -2854,6 +2856,72 @@ function App() {
         }
     };
 
+    // Add these functions to your App.js (around line 600)
+    const clearAllCache = async () => {
+        try {
+            await apiCall('/cache/clear-all', { method: 'DELETE' });
+            addNotification('success', '🗑️ All cache cleared successfully');
+
+            // Refresh data
+            await fetchUsedCommunities();
+            await fetchUsedTweets();
+        } catch (error) {
+            addNotification('error', '❌ Failed to clear cache');
+        }
+    };
+
+    const getCacheStatus = async () => {
+        try {
+            const data = await apiCall('/cache/status');
+            console.log('Cache status:', data.cache);
+            addNotification('info', `📊 Communities: ${data.cache.communities.inMemory} | Tweets: ${data.cache.tweets.inMemory}`);
+        } catch (error) {
+            addNotification('error', '❌ Failed to get cache status');
+        }
+    };
+
+    // Add this UI section to your Communities tab (around line 1600)
+    const renderCacheManagement = () => (
+        <div className="bg-gray-800 rounded-lg p-4 md:p-6">
+            <h3 className="text-lg font-semibold text-white mb-4">🗄️ Cache Management</h3>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <button
+                    onClick={getCacheStatus}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm"
+                >
+                    📊 Check Cache Status
+                </button>
+
+                <button
+                    onClick={clearAllCache}
+                    className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg transition-colors text-sm"
+                >
+                    🗑️ Clear All Cache
+                </button>
+
+                <button
+                    onClick={async () => {
+                        if (window.confirm('This will clear both cache AND Firebase data. Are you sure?')) {
+                            await clearUsedCommunities();
+                            await clearUsedTweets();
+                            await clearAllCache();
+                            addNotification('success', '🗑️ Everything cleared!');
+                        }
+                    }}
+                    className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors text-sm"
+                >
+                    ⚠️ Clear Everything
+                </button>
+            </div>
+
+            <p className="text-xs text-gray-400 mt-3">
+                Cache files store used communities and tweets locally for faster access.
+                Clear cache if you're experiencing sync issues.
+            </p>
+        </div>
+    );
+
     // Replace the attemptPopupWithDetection function with this simplified version
     const attemptPopupWithDetection = async (url, tokenAddress, openType) => {
         console.log(`🚀 ATTEMPTING POPUP OPENING (${openType.toUpperCase()})`);
@@ -2996,12 +3064,12 @@ function App() {
                     {/* Header */}
                     <div className="flex items-center justify-between mb-6">
                         <div className="flex items-center space-x-3">
-                            <div className="w-12 h-12 bg-red-600 rounded-full flex items-center justify-center">
-                                <span className="text-2xl">🚫</span>
+                            <div className="w-12 h-12 bg-green-500 rounded-full flex items-center justify-center">
+                                <span className="text-2xl">✅</span>
                             </div>
                             <div>
-                                <h2 className="text-2xl font-bold text-white">Popup Blocked by Chrome</h2>
-                                <p className="text-red-400">Token page couldn't open automatically</p>
+                                <h2 className="text-2xl font-bold text-white">Already Sniped</h2>
+                                <p className="text-green-400">Token processed successfully</p>
                             </div>
                         </div>
                         <button
@@ -4061,7 +4129,7 @@ function App() {
                     </div>
 
                     <div className="space-y-4">
-                        
+
                         <div>
                             <label className="block text-sm font-medium text-gray-300 mb-2">
                                 Wallet Address, Twitter Username, or Community ID
