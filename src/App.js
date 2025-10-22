@@ -903,38 +903,67 @@ function App() {
 
                 addNotification('info', `🔔 Secondary match found: ${tokenData.tokenAddress.substring(0, 8)}...`);
 
-                setTimeout(() => {
+                setTimeout(async () => {
                     let autoOpenUrl;
+                    const token = tokenData;
 
                     // Determine URL based on user's tokenPageDestination setting
                     if (settings.tokenPageDestination === 'axiom') {
-                        if (tokenData.bondingCurveAddress) {
-                            autoOpenUrl = `https://axiom.trade/meme/${tokenData.bondingCurveAddress}`;
-                            console.log(`✅ Auto-opening Axiom with bonding curve: ${tokenData.bondingCurveAddress}`);
-                        } else {
-                            autoOpenUrl = `https://axiom.trade/meme/${tokenData.tokenAddress}`;
-                            console.log(`⚠️ Auto-opening Axiom with token address (no bonding curve)`);
+
+                        // Check if it's a Pump.fun token
+                        if (token.platform === 'pumpfun' || token.pool === 'pump') {
+                            // Use bonding curve for Pump.fun
+                            if (token.bondingCurveAddress) {
+                                autoOpenUrl = `https://axiom.trade/meme/${token.bondingCurveAddress}`;
+                                console.log(`✅ SECONDARY: Using bonding curve: ${token.bondingCurveAddress}`);
+                            } else {
+                                autoOpenUrl = `https://axiom.trade/meme/${token.tokenAddress}`;
+                                console.log(`⚠️ SECONDARY: No bonding curve, using token address`);
+                            }
+                        }
+                        // Check if it's a Let's Bonk token
+                        else if (token.platform === 'letsbonk' || token.pool === 'bonk') {
+                            console.log(`🦎 SECONDARY: Let's Bonk token, fetching pair address...`);
+
+                            try {
+                                const response = await fetch(`${API_BASE}/pair-address/${token.tokenAddress}`);
+                                const data = await response.json();
+
+                                if (data.success && data.pairData?.pairAddress) {
+                                    autoOpenUrl = `https://axiom.trade/meme/${data.pairData.pairAddress}`;
+                                    console.log(`✅ SECONDARY: Using pair address: ${data.pairData.pairAddress}`);
+                                } else {
+                                    autoOpenUrl = `https://axiom.trade/meme/${token.tokenAddress}`;
+                                    console.log(`⚠️ SECONDARY: No pair found, using token address`);
+                                }
+                            } catch (error) {
+                                console.error(`❌ SECONDARY: Error fetching pair:`, error);
+                                autoOpenUrl = `https://axiom.trade/meme/${token.tokenAddress}`;
+                            }
+                        }
+                        else {
+                            // Unknown platform - use token address
+                            autoOpenUrl = `https://axiom.trade/meme/${token.tokenAddress}`;
+                            console.log(`⚠️ SECONDARY: Unknown platform, using token address`);
                         }
                     } else {
-                        // User wants Neo BullX
-                        autoOpenUrl = `https://neo.bullx.io/terminal?chainId=1399811149&address=${tokenData.tokenAddress}`;
-                        console.log(`✅ Auto-opening Neo BullX`);
+                        // Neo BullX destination
+                        autoOpenUrl = `https://neo.bullx.io/terminal?chainId=1399811149&address=${token.tokenAddress}`;
+                        console.log(`✅ SECONDARY: Opening Neo BullX`);
                     }
 
-                    // REMOVED: Platform-specific overrides that were forcing pump.fun
-                    // Let the user's tokenPageDestination setting determine the URL
+                    console.log(`🔗 SECONDARY AUTO-OPEN URL: ${autoOpenUrl}`);
 
-                    console.log(`🔗 Auto-opening URL: ${autoOpenUrl}`);
-
+                    // Open the URL
                     if (window.electronAPI && window.electronAPI.openExternalURL) {
                         window.electronAPI.openExternalURL(autoOpenUrl);
-                        console.log('🖥️ Opened via Electron API');
+                        console.log('🖥️ SECONDARY: Opened via Electron');
                     } else {
                         const newWindow = window.open(autoOpenUrl, '_blank');
                         if (newWindow) {
-                            console.log('✅ Browser window opened successfully');
+                            console.log('✅ SECONDARY: Browser opened');
                         } else {
-                            console.error('❌ Popup blocked by browser');
+                            console.error('❌ SECONDARY: Popup blocked');
                             addNotification('warning', '🚫 Auto-open blocked by browser');
                         }
                     }
