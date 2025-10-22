@@ -66,7 +66,7 @@ function App() {
     const [selectedTemplate, setSelectedTemplate] = useState(0);
     const [customWallet, setCustomWallet] = useState('');
     const [customTwitter, setCustomTwitter] = useState('');
-
+    const [openedTokens, setOpenedTokens] = useState(new Set());
     const [usedCommunities, setUsedCommunities] = useState([]);
     const [usedTweets, setUsedTweets] = useState([]);
     const [customTweet, setCustomTweet] = useState('');
@@ -803,71 +803,56 @@ function App() {
             case 'auto_open_token_page':
                 console.log('\n' + '='.repeat(80));
                 console.log('🚀 AUTO-OPEN TOKEN PAGE MESSAGE RECEIVED');
-                console.log('='.repeat(80));
-                console.log('📦 Full message data:', JSON.stringify(data.data, null, 2));
                 console.log('🔗 Token Page URL:', data.data.tokenPageUrl);
-                console.log('🏷️ Address Type:', data.data.addressType);
-                console.log('📍 Address:', data.data.address);
-                console.log('🦎 Platform:', data.data.platform);
+                console.log('🎯 Token Address:', data.data.tokenAddress);
                 console.log('❓ Reason:', data.data.reason);
                 console.log('='.repeat(80) + '\n');
 
                 const tokenPageUrl = data.data.tokenPageUrl;
+                const tokenAddress = data.data.tokenAddress;
 
-                // Check if URL is valid
-                if (!tokenPageUrl || !tokenPageUrl.startsWith('http')) {
-                    console.error('❌ Invalid URL received:', tokenPageUrl);
-                    addNotification('error', '❌ Invalid token page URL received');
-                    break;
+                // ✅ ADD DEDUPLICATION CHECK
+                if (openedTokens.has(tokenAddress)) {
+                    console.log(`⏭️ SKIPPING: Already opened browser for ${tokenAddress}`);
+                    break; // Don't open again
                 }
 
-                // Check if electronAPI exists
-                console.log('🔍 Checking for Electron API...');
-                console.log('   window.electronAPI exists:', !!window.electronAPI);
-                console.log('   window.electronAPI.openExternalURL exists:', !!(window.electronAPI?.openExternalURL));
+                // ✅ MARK AS OPENED
+                setOpenedTokens(prev => {
+                    const newSet = new Set(prev);
+                    newSet.add(tokenAddress);
+                    return newSet;
+                });
 
+                // ✅ AUTO-CLEANUP AFTER 5 MINUTES
                 setTimeout(() => {
-                    if (window.electronAPI && window.electronAPI.openExternalURL) {
-                        console.log('🖥️ USING ELECTRON API TO OPEN URL');
-                        try {
-                            window.electronAPI.openExternalURL(tokenPageUrl);
-                            console.log('✅ Electron API call successful');
-                            addNotification('success', `🚀 Opening ${data.data.platform || 'token page'} via Electron`);
-                        } catch (error) {
-                            console.error('❌ Electron API error:', error);
-                            addNotification('error', `❌ Failed to open: ${error.message}`);
-                        }
+                    setOpenedTokens(prev => {
+                        const newSet = new Set(prev);
+                        newSet.delete(tokenAddress);
+                        return newSet;
+                    });
+                    console.log(`🧹 Cleaned up opened token: ${tokenAddress}`);
+                }, 5 * 60 * 1000); // 5 minutes
+
+                // 🔥 REMOVE DELAY - OPEN IMMEDIATELY
+                if (window.electronAPI && window.electronAPI.openExternalURL) {
+                    window.electronAPI.openExternalURL(tokenPageUrl);
+                    console.log('✅ Opened via Electron API:', tokenPageUrl);
+                } else {
+                    const newWindow = window.open(tokenPageUrl, '_blank');
+                    if (newWindow) {
+                        console.log('✅ Opened via browser:', tokenPageUrl);
                     } else {
-                        console.log('🌐 USING BROWSER WINDOW.OPEN()');
-                        console.log('   Attempting to open:', tokenPageUrl);
-
-                        try {
-                            const newWindow = window.open(tokenPageUrl, '_blank', 'noopener,noreferrer');
-                            console.log('   window.open() returned:', newWindow);
-
-                            if (!newWindow || newWindow.closed) {
-                                console.error('❌ POPUP BLOCKED BY BROWSER!');
-                                console.error('   Browser prevented the popup from opening');
-
-                                addNotification('error', '🚫 Browser blocked popup - Click "Allow" in address bar');
-
-                                setPopupBlockerModal({
-                                    show: true,
-                                    tokenUrl: tokenPageUrl,
-                                    tokenAddress: data.data.tokenAddress,
-                                    reason: 'Browser popup blocker is active'
-                                });
-                            } else {
-                                console.log('✅ WINDOW OPENED SUCCESSFULLY');
-                                addNotification('success', `🚀 ${data.data.platform || 'Token page'} opened`);
-                            }
-                        } catch (error) {
-                            console.error('❌ window.open() threw error:', error);
-                            addNotification('error', `❌ Failed to open window: ${error.message}`);
-                        }
+                        console.error('❌ Browser blocked popup for:', tokenPageUrl);
+                        // Show popup blocker guidance
+                        setPopupBlockerModal({
+                            show: true,
+                            tokenUrl: tokenPageUrl,
+                            tokenAddress: tokenAddress,
+                            reason: 'Browser popup blocker is active'
+                        });
                     }
-                }, 100);
-
+                }
                 break;
 
             case 'secondary_notification':
