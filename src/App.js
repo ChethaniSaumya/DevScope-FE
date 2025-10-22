@@ -887,6 +887,97 @@ function App() {
                 if (data.data.config && data.data.config.soundNotification && window.electronAPI) {
                     window.electronAPI.playSound(data.data.config.soundNotification);
                 }
+
+                // ✅ NEW: HANDLE PRIMARY MATCHES (BOTH DEMO AND REAL)
+                if (data.data.matchType === 'primary_wallet' || data.data.matchType === 'primary_admin') {
+                    console.log('🎯 PRIMARY MATCH DETECTED - SHOWING POPUP + AUTO-OPENING WINDOW');
+
+                    const tokenData = data.data;
+
+                    // Show popup for ALL primary matches (demo and real)
+                    setSecondaryPopup({
+                        show: true,
+                        tokenData: tokenData,
+                        globalSettings: settings.globalSnipeSettings,
+                        isPrimary: true // ✅ Flag to show "Already Sniped" message
+                    });
+
+                    addNotification('info', `🎯 Primary match: ${tokenData.tokenAddress.substring(0, 8)}...`);
+
+                    // For DEMO tokens: Trigger manual snipe
+                    if (tokenData.isDemo) {
+                        console.log('🧪 DEMO PRIMARY - Triggering snipe');
+                        setTimeout(async () => {
+                            try {
+                                await apiCall(`/snipe-with-global-settings/${tokenData.tokenAddress}`, { method: 'POST' });
+                                addNotification('success', `🧪 Demo token sniped: ${tokenData.tokenAddress.substring(0, 8)}...`);
+                            } catch (error) {
+                                addNotification('error', `❌ Demo snipe failed: ${error.message}`);
+                            }
+                        }, 100);
+                    }
+
+                    // Auto-open window after 500ms (for both demo and real)
+                    setTimeout(async () => {
+                        let autoOpenUrl;
+                        const token = tokenData;
+
+                        // Determine URL based on user's tokenPageDestination setting
+                        if (settings.tokenPageDestination === 'axiom') {
+                            // For demo tokens, just use token address
+                            if (token.isDemo) {
+                                autoOpenUrl = `https://axiom.trade/meme/${token.tokenAddress}`;
+                                console.log(`🧪 Demo Primary: Opening Axiom with token address`);
+                            } else {
+                                // For real tokens, fetch bonding curve/pair
+                                try {
+                                    const response = await fetch(`${API_BASE}/pair-address/${token.tokenAddress}`);
+                                    const addressData = await response.json();
+
+                                    if (addressData.success) {
+                                        if (addressData.bondingCurveData?.bondingCurveAddress) {
+                                            autoOpenUrl = `https://axiom.trade/meme/${addressData.bondingCurveData.bondingCurveAddress}`;
+                                            console.log(`✅ Real Primary: Using bonding curve: ${addressData.bondingCurveData.bondingCurveAddress}`);
+                                        } else if (addressData.pairData?.pairAddress) {
+                                            autoOpenUrl = `https://axiom.trade/meme/${addressData.pairData.pairAddress}`;
+                                            console.log(`✅ Real Primary: Using pair address: ${addressData.pairData.pairAddress}`);
+                                        } else {
+                                            autoOpenUrl = `https://axiom.trade/meme/${token.tokenAddress}`;
+                                            console.log(`⚠️ Real Primary: No address found, using token address`);
+                                        }
+                                    } else {
+                                        autoOpenUrl = `https://axiom.trade/meme/${token.tokenAddress}`;
+                                    }
+                                } catch (error) {
+                                    console.error(`❌ Error fetching address:`, error);
+                                    autoOpenUrl = `https://axiom.trade/meme/${token.tokenAddress}`;
+                                }
+                            }
+                        } else {
+                            // Neo BullX destination
+                            autoOpenUrl = `https://neo.bullx.io/terminal?chainId=1399811149&address=${token.tokenAddress}`;
+                            console.log(`✅ Primary: Opening Neo BullX`);
+                        }
+
+                        console.log(`🔗 PRIMARY AUTO-OPEN URL: ${autoOpenUrl}`);
+
+                        // Open the URL
+                        if (window.electronAPI && window.electronAPI.openExternalURL) {
+                            window.electronAPI.openExternalURL(autoOpenUrl);
+                            console.log('🖥️ Primary: Opened via Electron');
+                        } else {
+                            const newWindow = window.open(autoOpenUrl, '_blank');
+                            if (newWindow) {
+                                console.log('✅ Primary: Browser opened');
+                            } else {
+                                console.error('❌ Primary: Popup blocked');
+                                addNotification('warning', '🚫 Auto-open blocked by browser');
+                            }
+                        }
+
+                        addNotification('success', '🚀 Token page opened automatically!');
+                    }, 500);
+                }
                 break;
 
             case 'secondary_popup_trigger':
@@ -2673,20 +2764,55 @@ function App() {
         if (!secondaryPopup.show || !secondaryPopup.tokenData) return null;
 
         const token = secondaryPopup.tokenData;
+        const isPrimary = secondaryPopup.isPrimary || false; // Check if it's a primary match
 
         return (
             <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
                 <div className="bg-gray-800 rounded-lg p-6 w-full max-w-2xl max-h-screen overflow-y-auto">
-                    {/* Header */}
+                    {/* Header - Different for Primary vs Secondary */}
                     <div className="flex items-center justify-between mb-6">
-                        <h2 className="text-2xl font-bold text-white">🔔 Secondary Match Found!</h2>
+                        {isPrimary ? (
+                            // Primary Admin Header - "Already Sniped"
+                            <div className="flex items-center space-x-3">
+                                <div className="w-12 h-12 bg-green-500 rounded-full flex items-center justify-center animate-pulse">
+                                    <span className="text-2xl">✅</span>
+                                </div>
+                                <div>
+                                    <h2 className="text-2xl font-bold text-green-400">Already Sniped!</h2>
+                                    <p className="text-green-300">🎯 Primary match - Auto-sniped successfully</p>
+                                </div>
+                            </div>
+                        ) : (
+                            // Secondary Admin Header - "Secondary Match Found"
+                            <h2 className="text-2xl font-bold text-white">🔔 Secondary Match Found!</h2>
+                        )}
                         <button
-                            onClick={() => setSecondaryPopup({ show: false, tokenData: null })}
+                            onClick={() => setSecondaryPopup({ show: false, tokenData: null, isPrimary: false })}
                             className="text-gray-400 hover:text-white"
                         >
                             ✖️
                         </button>
                     </div>
+
+                    {/* Already Sniped Banner for Primary */}
+                    {isPrimary && (
+                        <div className="mb-6 bg-gradient-to-r from-green-900/40 to-green-800/40 border-2 border-green-500 rounded-lg p-4">
+                            <div className="flex items-center space-x-3">
+                                <div className="text-4xl">🎯</div>
+                                <div className="flex-1">
+                                    <h3 className="text-lg font-bold text-green-400">Auto-Snipe Executed</h3>
+                                    <p className="text-sm text-green-300">
+                                        This token was automatically sniped using your primary admin settings
+                                    </p>
+                                    <div className="mt-2 flex items-center space-x-4 text-xs text-green-200">
+                                        <span>✅ Trade Submitted</span>
+                                        <span>✅ Window Opened</span>
+                                        <span>✅ Notification Sent</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                     {/* Token Details */}
                     <div className="space-y-4 mb-6">
@@ -2736,11 +2862,11 @@ function App() {
                         </div>
                     </div>
 
-                    {/* ✅ REMOVED: Entire "Address Detection Status" section */}
-
                     {/* Current Global Snipe Settings Display */}
                     <div className="bg-gray-700 p-4 rounded mb-6">
-                        <h4 className="text-lg font-semibold text-white mb-3">Current Global Snipe Settings:</h4>
+                        <h4 className="text-lg font-semibold text-white mb-3">
+                            {isPrimary ? 'Settings Used for Auto-Snipe:' : 'Current Global Snipe Settings:'}
+                        </h4>
                         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                             <div className="text-center">
                                 <p className="text-sm text-gray-400">Amount</p>
@@ -2757,27 +2883,30 @@ function App() {
                         </div>
                     </div>
 
-                    {/* Action Buttons */}
-                    <div className="flex flex-col space-y-3 md:flex-row md:space-y-0 md:space-x-4">
-                        {/* COMMENTED OUT - Auto-open handles this
-                        <button
-                            onClick={() => viewTokenPageFromPopup(token)}
-                            className="flex-1 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center justify-center space-x-2"
-                        >
-                            <span>🌐 View Token Page</span>
-                        
-                        </button>
-*/}
-                        {/*
-                        <button
-                            onClick={() => snipeWithGlobalSettings(token.tokenAddress)}
-                            className="flex-1 px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors font-bold flex items-center justify-center space-x-2"
-                        >
-                            <Target size={20} />
-                            <span>SNIPE ({settings.globalSnipeSettings.amount} SOL)</span>
-                        </button>
-                        */}
-                    </div>
+                    {/* Action Buttons - Only show for Secondary */}
+                    {!isPrimary && (
+                        <div className="flex flex-col space-y-3 md:flex-row md:space-y-0 md:space-x-4">
+                            <button
+                                onClick={() => snipeWithGlobalSettings(token.tokenAddress)}
+                                className="flex-1 px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors font-bold flex items-center justify-center space-x-2"
+                            >
+                                <Target size={20} />
+                                <span>SNIPE ({settings.globalSnipeSettings.amount} SOL)</span>
+                            </button>
+                        </div>
+                    )}
+
+                    {/* Close button for Primary */}
+                    {isPrimary && (
+                        <div className="flex justify-center">
+                            <button
+                                onClick={() => setSecondaryPopup({ show: false, tokenData: null, isPrimary: false })}
+                                className="px-6 py-3 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors"
+                            >
+                                Close
+                            </button>
+                        </div>
+                    )}
                 </div>
             </div>
         );
