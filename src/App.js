@@ -85,7 +85,7 @@ function App() {
         apiError: null,             // NEW
         lastApiError: null
     });
-    const [primarySnipePopup, setPrimarySnipePopup] = useState({
+    const [primaryPopup, setPrimaryPopup] = useState({
         show: false,
         tokenData: null,
         snipeResult: null
@@ -742,6 +742,32 @@ function App() {
                 addNotification('error', `❌ Snipe failed: ${data.data.error}`);
                 break;
 
+            case 'snipe_success':
+                console.log('✅ SNIPE SUCCESS MESSAGE RECEIVED:', data.data);
+
+                // Update primary popup with snipe results if it's showing for this token
+                setPrimaryPopup(prev => {
+                    if (prev.show && prev.tokenData && prev.tokenData.tokenAddress === data.data.tokenAddress) {
+                        return {
+                            ...prev,
+                            snipeResult: data.data
+                        };
+                    }
+                    return prev;
+                });
+
+                // Also update the detected tokens list
+                setDetectedTokens(prev =>
+                    prev.map(token =>
+                        token.tokenAddress === data.data.tokenAddress
+                            ? { ...token, snipeStatus: 'success', signature: data.data.signature }
+                            : token
+                    )
+                );
+
+                addNotification('success', `✅ Snipe successful: ${data.data.signature.substring(0, 8)}...`);
+                break;
+
             case 'open_dual_windows':
                 console.log('🚀 DUAL WINDOW OPEN COMMAND RECEIVED');
                 /*const window1Url = data.data.window1.url;
@@ -772,23 +798,6 @@ function App() {
 
                 // Optionally show a modal or alert
                 alert(`Failed to find pair address for token ${data.data.tokenAddress.substring(0, 8)}... after ${data.data.attempts} attempts`);
-                break;
-
-            case 'snipe_success':
-                console.log('✅ SNIPE SUCCESS MESSAGE RECEIVED:', data.data);
-
-                // Update primary popup with snipe result
-                setPrimarySnipePopup(prev => {
-                    if (prev.show && prev.tokenData?.tokenAddress === data.data.tokenAddress) {
-                        return {
-                            ...prev,
-                            snipeResult: data.data
-                        };
-                    }
-                    return prev;
-                });
-
-                addNotification('success', `✅ Snipe successful: ${data.data.tokenAddress.substring(0, 8)}...`);
                 break;
 
             case 'auto_open_token_page':
@@ -905,29 +914,24 @@ function App() {
 
                 addNotification('info', `${matchTypeText[data.data.matchType] || '🔍 Match'} ${data.data.name || data.data.symbol} ${twitterInfo}`);
 
-                // ✅ NEW: Show primary snipe popup for primary matches (auto-sniped tokens)
-                if (data.data.matchType === 'primary_admin' || data.data.matchType === 'primary_wallet') {
-                    console.log('🎯 PRIMARY MATCH DETECTED - Showing snipe confirmation popup');
-
-                    // Show the "Already Sniped" popup
-                    setPrimarySnipePopup({
+                // 🔥 NEW: Show primary popup for primary matches
+                if (data.data.matchType === 'primary_wallet' || data.data.matchType === 'primary_admin') {
+                    console.log('🎯 PRIMARY MATCH DETECTED - SHOWING POPUP');
+                    setPrimaryPopup({
                         show: true,
                         tokenData: data.data,
                         snipeResult: null // Will be updated when snipe completes
                     });
 
-                    // Auto-play sound for primary match
-                    if (data.data.config && data.data.config.soundNotification) {
-                        console.log('🔊 Playing primary match sound:', data.data.config.soundNotification);
-                        previewSound(data.data.config.soundNotification);
-                    }
+                    // Auto-open token page after a short delay
+                    setTimeout(() => {
+                        viewTokenPageFromPopup(data.data);
+                    }, 1000);
                 }
 
-                // Play sound notification for all matches (if config exists and sound is set)
                 if (data.data.config && data.data.config.soundNotification && window.electronAPI) {
                     window.electronAPI.playSound(data.data.config.soundNotification);
                 }
-
                 break;
 
             case 'secondary_popup_trigger':
@@ -1631,72 +1635,6 @@ function App() {
         }
     };
 
-    // Add these functions to your App.js (around line 600)
-    const clearAllCache = async () => {
-        try {
-            await apiCall('/cache/clear-all', { method: 'DELETE' });
-            addNotification('success', '🗑️ All cache cleared successfully');
-
-            // Refresh data
-            await fetchUsedCommunities();
-            await fetchUsedTweets();
-        } catch (error) {
-            addNotification('error', '❌ Failed to clear cache');
-        }
-    };
-
-    const getCacheStatus = async () => {
-        try {
-            const data = await apiCall('/cache/status');
-            console.log('Cache status:', data.cache);
-            addNotification('info', `📊 Communities: ${data.cache.communities.inMemory} | Tweets: ${data.cache.tweets.inMemory}`);
-        } catch (error) {
-            addNotification('error', '❌ Failed to get cache status');
-        }
-    };
-
-    // Add this UI section to your Communities tab (around line 1600)
-    const renderCacheManagement = () => (
-        <div className="bg-gray-800 rounded-lg p-4 md:p-6">
-            <h3 className="text-lg font-semibold text-white mb-4">🗄️ Cache Management</h3>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <button
-                    onClick={getCacheStatus}
-                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm"
-                >
-                    📊 Check Cache Status
-                </button>
-
-                <button
-                    onClick={clearAllCache}
-                    className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg transition-colors text-sm"
-                >
-                    🗑️ Clear All Cache
-                </button>
-
-                <button
-                    onClick={async () => {
-                        if (window.confirm('This will clear both cache AND Firebase data. Are you sure?')) {
-                            await clearUsedCommunities();
-                            await clearUsedTweets();
-                            await clearAllCache();
-                            addNotification('success', '🗑️ Everything cleared!');
-                        }
-                    }}
-                    className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors text-sm"
-                >
-                    ⚠️ Clear Everything
-                </button>
-            </div>
-
-            <p className="text-xs text-gray-400 mt-3">
-                Cache files store used communities and tweets locally for faster access.
-                Clear cache if you're experiencing sync issues.
-            </p>
-        </div>
-    );
-
     const renderCommunityManagement = () => (
         <div className="space-y-4 md:space-y-6">
             {/* Firebase Status & Controls */}
@@ -1726,8 +1664,6 @@ function App() {
                     Used communities: <span className="text-white font-semibold">{usedCommunities.length}</span>
                 </div>
             </div>
-
-            {renderCacheManagement()}
 
             {/* Used Communities List */}
             <div className="bg-gray-800 rounded-lg p-4 md:p-6">
@@ -2748,7 +2684,144 @@ function App() {
             addNotification('error', '❌ Failed to logout from Twitter');
         }
     };
+    const renderPrimaryPopup = () => {
+        if (!primaryPopup.show || !primaryPopup.tokenData) return null;
 
+        const token = primaryPopup.tokenData;
+        const snipeResult = primaryPopup.snipeResult;
+
+        return (
+            <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+                <div className="bg-gray-800 rounded-lg p-6 w-full max-w-2xl max-h-screen overflow-y-auto border-2 border-green-500">
+                    {/* Header */}
+                    <div className="flex items-center justify-between mb-6">
+                        <div className="flex items-center space-x-3">
+                            <div className="w-12 h-12 bg-green-600 rounded-full flex items-center justify-center">
+                                <span className="text-2xl">🎯</span>
+                            </div>
+                            <div>
+                                <h2 className="text-2xl font-bold text-white">✅ Primary Match - Already Sniped!</h2>
+                                <p className="text-green-400">Token was automatically sniped from your primary list</p>
+                            </div>
+                        </div>
+                        <button
+                            onClick={() => setPrimaryPopup({ show: false, tokenData: null, snipeResult: null })}
+                            className="text-gray-400 hover:text-white text-2xl"
+                        >
+                            ✖️
+                        </button>
+                    </div>
+
+                    {/* Token Details */}
+                    <div className="space-y-4 mb-6">
+                        <div className="flex items-center space-x-4">
+                            <div className="w-16 h-16 rounded-full overflow-hidden bg-gray-600">
+                                {token.uri ? (
+                                    <img src={token.uri} alt={token.name} className="w-full h-full object-cover" />
+                                ) : (
+                                    <div className="w-full h-full flex items-center justify-center">
+                                        <Coins className="text-gray-400" size={24} />
+                                    </div>
+                                )}
+                            </div>
+                            <div>
+                                <h3 className="text-xl font-bold text-white">{token.name || 'Unknown Token'}</h3>
+                                <p className="text-gray-300">${token.symbol || 'UNKNOWN'}</p>
+                                <p className="text-sm text-green-400">🎯 Matched: {token.matchedEntity}</p>
+                            </div>
+                        </div>
+
+                        {/* Quick Stats */}
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="bg-gray-700 p-3 rounded">
+                                <p className="text-sm text-gray-400">Platform</p>
+                                <p className="text-white font-bold">{token.platform?.toUpperCase() || 'UNKNOWN'}</p>
+                            </div>
+                            <div className="bg-gray-700 p-3 rounded">
+                                <p className="text-sm text-gray-400">Market Cap</p>
+                                <p className="text-white font-bold">{formatNumber(token.marketCapSol)} SOL</p>
+                            </div>
+                        </div>
+
+                        {/* Token Address */}
+                        <div className="bg-gray-700 p-3 rounded">
+                            <p className="text-sm text-gray-400 mb-2">Token Address:</p>
+                            <div className="flex items-center space-x-2">
+                                <code className="text-sm font-mono text-white flex-1 break-all">
+                                    {token.tokenAddress}
+                                </code>
+                                <button
+                                    onClick={() => copyToClipboard(token.tokenAddress, 'Token address')}
+                                    className="text-blue-400 hover:text-blue-300 px-2 py-1"
+                                >
+                                    📋
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Snipe Result */}
+                        {snipeResult && (
+                            <div className="bg-green-900/20 border border-green-500/30 rounded-lg p-4">
+                                <h4 className="text-lg font-semibold text-green-400 mb-2">✅ Snipe Successful</h4>
+                                <div className="space-y-2">
+                                    <div className="flex justify-between">
+                                        <span className="text-gray-300">Amount:</span>
+                                        <span className="text-white font-bold">{snipeResult.amount} SOL</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                        <span className="text-gray-300">Transaction:</span>
+                                        <span className="text-blue-400 font-mono text-sm">
+                                            {snipeResult.signature?.substring(0, 16)}...
+                                        </span>
+                                    </div>
+                                    {snipeResult.timing && (
+                                        <div className="flex justify-between">
+                                            <span className="text-gray-300">Snipe Time:</span>
+                                            <span className="text-yellow-400">{snipeResult.timing.totalTime?.toFixed(2)}ms</span>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Action Buttons */}
+                    <div className="flex flex-col space-y-3 md:flex-row md:space-y-0 md:space-x-4">
+                        <button
+                            onClick={() => viewTokenPageFromPopup(token)}
+                            className="flex-1 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center justify-center space-x-2"
+                        >
+                            <ExternalLink size={20} />
+                            <span>🌐 View Token Page</span>
+                        </button>
+
+                        {snipeResult?.signature && (
+                            <button
+                                onClick={() => {
+                                    const explorerUrl = `https://solscan.io/tx/${snipeResult.signature}`;
+                                    if (window.electronAPI && window.electronAPI.openExternalURL) {
+                                        window.electronAPI.openExternalURL(explorerUrl);
+                                    } else {
+                                        window.open(explorerUrl, '_blank');
+                                    }
+                                }}
+                                className="flex-1 px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors flex items-center justify-center space-x-2"
+                            >
+                                <span>🔍 View Transaction</span>
+                            </button>
+                        )}
+                    </div>
+
+                    {/* Auto-open Notice */}
+                    <div className="mt-4 p-3 bg-blue-900/20 border border-blue-500/30 rounded-lg">
+                        <p className="text-blue-400 text-sm text-center">
+                            🚀 Token page will open automatically...
+                        </p>
+                    </div>
+                </div>
+            </div>
+        );
+    };
     const renderSecondaryPopup = () => {
         if (!secondaryPopup.show || !secondaryPopup.tokenData) return null;
 
@@ -2863,171 +2936,6 @@ function App() {
         );
     };
 
-    const renderPrimarySnipePopup = () => {
-        if (!primarySnipePopup.show || !primarySnipePopup.tokenData) return null;
-
-        const token = primarySnipePopup.tokenData;
-
-        return (
-            <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
-                <div className="bg-gray-800 rounded-lg p-6 w-full max-w-2xl max-h-screen overflow-y-auto border-4 border-green-500">
-                    {/* Header with Success Indicator */}
-                    <div className="flex items-center justify-between mb-6">
-                        <div className="flex items-center space-x-3">
-                            <div className="w-12 h-12 bg-green-600 rounded-full flex items-center justify-center animate-pulse">
-                                <span className="text-2xl">✅</span>
-                            </div>
-                            <div>
-                                <h2 className="text-2xl font-bold text-white">🎯 Primary Match - Already Sniped!</h2>
-                                <p className="text-green-400">Auto-snipe executed successfully</p>
-                            </div>
-                        </div>
-                        <button
-                            onClick={() => setPrimarySnipePopup({ show: false, tokenData: null, snipeResult: null })}
-                            className="text-gray-400 hover:text-white text-2xl"
-                        >
-                            ✖️
-                        </button>
-                    </div>
-
-                    {/* Already Sniped Banner */}
-                    <div className="bg-green-900/20 border border-green-500/30 rounded-lg p-4 mb-6">
-                        <div className="flex items-center space-x-3">
-                            <span className="text-3xl">🚀</span>
-                            <div>
-                                <h3 className="text-xl font-bold text-green-400">Already Sniped!</h3>
-                                <p className="text-green-300 text-sm">
-                                    This token was automatically purchased from your Primary Admin list
-                                </p>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Token Details */}
-                    <div className="space-y-4 mb-6">
-                        <div className="flex items-center space-x-4">
-                            <div className="w-16 h-16 rounded-full overflow-hidden bg-gray-600">
-                                {token.uri ? (
-                                    <img src={token.uri} alt={token.name} className="w-full h-full object-cover" />
-                                ) : (
-                                    <div className="w-full h-full flex items-center justify-center">
-                                        <Coins className="text-gray-400" size={24} />
-                                    </div>
-                                )}
-                            </div>
-                            <div>
-                                <h3 className="text-xl font-bold text-white">{token.name || 'Unknown Token'}</h3>
-                                <p className="text-gray-300">${token.symbol || 'UNKNOWN'}</p>
-                                <p className="text-sm text-green-400">✅ Matched: {token.matchedEntity}</p>
-                            </div>
-                        </div>
-
-                        {/* Snipe Details */}
-                        <div className="bg-gray-700 p-4 rounded">
-                            <h4 className="text-lg font-semibold text-white mb-3">Snipe Details:</h4>
-                            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                                <div className="text-center">
-                                    <p className="text-sm text-gray-400">Amount</p>
-                                    <p className="text-white font-bold">{token.config?.amount || 0} SOL</p>
-                                </div>
-                                <div className="text-center">
-                                    <p className="text-sm text-gray-400">Fees</p>
-                                    <p className="text-white font-bold">{token.config?.fees || 0}%</p>
-                                </div>
-                                <div className="text-center">
-                                    <p className="text-sm text-gray-400">MEV Protection</p>
-                                    <p className="text-white font-bold">{token.config?.mevProtection ? '🛡️ ON' : '❌ OFF'}</p>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Quick Stats */}
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="bg-gray-700 p-3 rounded">
-                                <p className="text-sm text-gray-400">Platform</p>
-                                <p className="text-white font-bold">{token.platform?.toUpperCase() || 'UNKNOWN'}</p>
-                            </div>
-                            <div className="bg-gray-700 p-3 rounded">
-                                <p className="text-sm text-gray-400">Market Cap</p>
-                                <p className="text-white font-bold">{formatNumber(token.marketCapSol)} SOL</p>
-                            </div>
-                        </div>
-
-                        {/* Token Address */}
-                        <div className="bg-gray-700 p-3 rounded">
-                            <p className="text-sm text-gray-400 mb-2">Token Address:</p>
-                            <div className="flex items-center space-x-2">
-                                <code className="text-sm font-mono text-white flex-1 break-all">
-                                    {token.tokenAddress}
-                                </code>
-                                <button
-                                    onClick={() => copyToClipboard(token.tokenAddress, 'Token address')}
-                                    className="text-blue-400 hover:text-blue-300 px-2 py-1"
-                                >
-                                    📋
-                                </button>
-                            </div>
-                        </div>
-
-                        {/* Transaction Info (if available) */}
-                        {primarySnipePopup.snipeResult?.signature && (
-                            <div className="bg-green-900/20 border border-green-500/30 rounded-lg p-4">
-                                <h4 className="text-green-400 font-medium mb-2">Transaction Details:</h4>
-                                <div className="space-y-2">
-                                    <div className="flex items-center justify-between">
-                                        <span className="text-sm text-gray-400">Status:</span>
-                                        <span className="text-green-400 font-bold">✅ Confirmed</span>
-                                    </div>
-                                    <div className="flex items-center space-x-2">
-                                        <span className="text-sm text-gray-400">Signature:</span>
-                                        <code className="text-xs text-white bg-gray-700 px-2 py-1 rounded flex-1 truncate">
-                                            {primarySnipePopup.snipeResult.signature}
-                                        </code>
-                                        <button
-                                            onClick={() => copyToClipboard(primarySnipePopup.snipeResult.signature, 'Transaction signature')}
-                                            className="text-blue-400 hover:text-blue-300 text-xs"
-                                        >
-                                            📋
-                                        </button>
-                                    </div>
-                                    <button
-                                        onClick={() => {
-                                            const explorerUrl = `https://solscan.io/tx/${primarySnipePopup.snipeResult.signature}`;
-                                            if (window.electronAPI && window.electronAPI.openExternalURL) {
-                                                window.electronAPI.openExternalURL(explorerUrl);
-                                            } else {
-                                                window.open(explorerUrl, '_blank');
-                                            }
-                                        }}
-                                        className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors"
-                                    >
-                                        🔗 View on Solscan Explorer
-                                    </button>
-                                </div>
-                            </div>
-                        )}
-                    </div>
-
-                    {/* Action Buttons */}
-                    <div className="flex flex-col space-y-3 md:flex-row md:space-y-0 md:space-x-4">
-                        <button
-                            onClick={() => viewTokenPageFromPopup(token)}
-                            className="flex-1 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center justify-center space-x-2"
-                        >
-                            <span>🌐 View Token Page</span>
-                        </button>
-                        <button
-                            onClick={() => setPrimarySnipePopup({ show: false, tokenData: null, snipeResult: null })}
-                            className="flex-1 px-6 py-3 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors"
-                        >
-                            ✖️ Close
-                        </button>
-                    </div>
-                </div>
-            </div>
-        );
-    };
-
     // 3. COUNTDOWN TIMER COMPONENT
     const PairDetectionCountdown = ({ tokenAddress, onRetry }) => {
         const [countdown, setCountdown] = useState(3);
@@ -3070,10 +2978,11 @@ function App() {
     };
 
     // 5. AUTO-OPEN WITH ADDRESS (Updated for bonding curves)
-    const autoOpenTokenPageWithAddress = async (tokenAddress, url, addressType) => {
+    const autoOpenTokenPageWithAddress = async (tokenAddress, url, addressType, isPrimaryMatch = false) => {
         console.log(`🚀 AUTO-OPENING TOKEN PAGE WITH ${addressType.toUpperCase()}`);
         console.log(`🔗 URL: ${url}`);
         console.log(`🎯 Token: ${tokenAddress}`);
+        console.log(`🎯 Is Primary Match: ${isPrimaryMatch}`);
 
         try {
             const popupResult = await attemptPopupWithDetection(url, tokenAddress, `auto-open-with-${addressType}`);
@@ -3081,14 +2990,16 @@ function App() {
             if (popupResult.success) {
                 console.log(`✅ AUTO-OPEN WITH ${addressType.toUpperCase()} SUCCEEDED`);
                 addNotification('success', `🚀 Token page auto-opened with ${addressType === 'bonding_curve' ? 'bonding curve' : 'pair address'}!`);
-
-                // Close the popup since we successfully opened the page
-                setSecondaryPopup({ show: false, tokenData: null });
-
             } else {
                 console.error(`❌ AUTO-OPEN WITH ${addressType.toUpperCase()} FAILED:`, popupResult.reason);
-                addNotification('warning', '🚫 Auto-open blocked - use "View Token Page" button');
-                handlePopupBlockedScenario(url, tokenAddress, popupResult.reason, `auto-open-with-${addressType}`);
+
+                // 🔥 DON'T show popup blocker modal for primary matches
+                if (!isPrimaryMatch) {
+                    addNotification('warning', '🚫 Auto-open blocked - use "View Token Page" button');
+                    handlePopupBlockedScenario(url, tokenAddress, popupResult.reason, `auto-open-with-${addressType}`);
+                } else {
+                    addNotification('info', '🌐 Use the "View Token Page" button below');
+                }
             }
         } catch (error) {
             console.error(`❌ Error in auto-open with ${addressType}:`, error);
@@ -4779,8 +4690,8 @@ function App() {
 
             {/* Enhanced Popups */}
             {renderSecondaryPopup()}
-            {renderPrimarySnipePopup()}
-            {/*renderPopupBlockerModal()*/}
+            {renderPrimaryPopup()}
+            {renderPopupBlockerModal()}
 
             {/* Footer Info */}
             <footer className="bg-gray-800 border-t border-gray-700 px-4 md:px-6 py-3">
