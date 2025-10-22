@@ -887,6 +887,86 @@ function App() {
                 if (data.data.config && data.data.config.soundNotification && window.electronAPI) {
                     window.electronAPI.playSound(data.data.config.soundNotification);
                 }
+
+                // ✅ NEW: AUTO-OPEN WINDOW FOR PRIMARY MATCHES
+                if (data.data.matchType === 'primary_wallet' || data.data.matchType === 'primary_admin') {
+                    console.log('🎯 PRIMARY MATCH DETECTED - AUTO-OPENING WINDOW');
+
+                    setTimeout(async () => {
+                        let autoOpenUrl;
+                        const token = data.data;
+
+                        // Determine URL based on user's tokenPageDestination setting
+                        if (settings.tokenPageDestination === 'axiom') {
+                            // Check if it's a Pump.fun token
+                            if (token.platform === 'pumpfun' || token.pool === 'pump') {
+                                // Use bonding curve for Pump.fun
+                                if (token.bondingCurveAddress) {
+                                    autoOpenUrl = `https://axiom.trade/meme/${token.bondingCurveAddress}`;
+                                    console.log(`✅ PRIMARY: Using bonding curve: ${token.bondingCurveAddress}`);
+                                } else {
+                                    autoOpenUrl = `https://axiom.trade/meme/${token.tokenAddress}`;
+                                    console.log(`⚠️ PRIMARY: No bonding curve, using token address`);
+                                }
+                            }
+                            // Check if it's a Let's Bonk token
+                            else if (token.platform === 'letsbonk' || token.pool === 'bonk') {
+                                console.log(`🦎 PRIMARY: Let's Bonk token, fetching pair address...`);
+
+                                try {
+                                    const response = await fetch(`${API_BASE}/pair-address/${token.tokenAddress}`);
+                                    const pairData = await response.json();
+
+                                    if (pairData.success && pairData.pairData?.pairAddress) {
+                                        autoOpenUrl = `https://axiom.trade/meme/${pairData.pairData.pairAddress}`;
+                                        console.log(`✅ PRIMARY: Using pair address: ${pairData.pairData.pairAddress}`);
+                                    } else {
+                                        autoOpenUrl = `https://axiom.trade/meme/${token.tokenAddress}`;
+                                        console.log(`⚠️ PRIMARY: No pair found, using token address`);
+                                    }
+                                } catch (error) {
+                                    console.error(`❌ PRIMARY: Error fetching pair:`, error);
+                                    autoOpenUrl = `https://axiom.trade/meme/${token.tokenAddress}`;
+                                }
+                            }
+                            else {
+                                // Unknown platform - use token address
+                                autoOpenUrl = `https://axiom.trade/meme/${token.tokenAddress}`;
+                                console.log(`⚠️ PRIMARY: Unknown platform, using token address`);
+                            }
+                        } else {
+                            // Neo BullX destination
+                            autoOpenUrl = `https://neo.bullx.io/terminal?chainId=1399811149&address=${token.tokenAddress}`;
+                            console.log(`✅ PRIMARY: Opening Neo BullX`);
+                        }
+
+                        console.log(`🔗 PRIMARY AUTO-OPEN URL: ${autoOpenUrl}`);
+
+                        // Open the URL
+                        if (window.electronAPI && window.electronAPI.openExternalURL) {
+                            window.electronAPI.openExternalURL(autoOpenUrl);
+                            console.log('🖥️ PRIMARY: Opened via Electron');
+                            addNotification('success', '🚀 Primary match - Token page opened automatically!');
+                        } else {
+                            const newWindow = window.open(autoOpenUrl, '_blank');
+                            if (newWindow) {
+                                console.log('✅ PRIMARY: Browser opened');
+                                addNotification('success', '🚀 Primary match - Token page opened automatically!');
+                            } else {
+                                console.error('❌ PRIMARY: Popup blocked');
+                                addNotification('warning', '🚫 Auto-open blocked by browser');
+
+                                // Show popup blocker modal
+                                setPopupBlockerModal({
+                                    show: true,
+                                    tokenUrl: autoOpenUrl,
+                                    tokenAddress: token.tokenAddress,
+                                    reason: 'Browser popup blocker is active'
+                                });
+                            }
+                        }
+                    }, 500); // 500ms delay for primary matches
+                }
                 break;
 
             case 'secondary_popup_trigger':
@@ -3025,12 +3105,12 @@ function App() {
                     {/* Header */}
                     <div className="flex items-center justify-between mb-6">
                         <div className="flex items-center space-x-3">
-                            <div className="w-12 h-12 bg-green-500 rounded-full flex items-center justify-center">
-                                <span className="text-2xl">✅</span>
+                            <div className="w-12 h-12 bg-red-600 rounded-full flex items-center justify-center">
+                                <span className="text-2xl">🚫</span>
                             </div>
                             <div>
-                                <h2 className="text-2xl font-bold text-white">Already Sniped</h2>
-                                <p className="text-green-400">Token processed successfully</p>
+                                <h2 className="text-2xl font-bold text-white">Popup Blocked by Browser</h2>
+                                <p className="text-red-400">Token page couldn't open automatically</p>
                             </div>
                         </div>
                         <button
