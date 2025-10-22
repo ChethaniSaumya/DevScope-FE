@@ -2996,12 +2996,12 @@ function App() {
                     {/* Header */}
                     <div className="flex items-center justify-between mb-6">
                         <div className="flex items-center space-x-3">
-                            <div className="w-12 h-12 bg-red-600 rounded-full flex items-center justify-center">
-                                <span className="text-2xl">🚫</span>
+                            <div className="w-12 h-12 bg-green-500 rounded-full flex items-center justify-center">
+                                <span className="text-2xl">✅</span>
                             </div>
                             <div>
-                                <h2 className="text-2xl font-bold text-white">Popup Blocked by Chrome</h2>
-                                <p className="text-red-400">Token page couldn't open automatically</p>
+                                <h2 className="text-2xl font-bold text-white">Already Sniped</h2>
+                                <p className="text-green-400">Token processed successfully</p>
                             </div>
                         </div>
                         <button
@@ -4061,7 +4061,7 @@ function App() {
                     </div>
 
                     <div className="space-y-4">
-                        
+
                         <div>
                             <label className="block text-sm font-medium text-gray-300 mb-2">
                                 Wallet Address, Twitter Username, or Community ID
