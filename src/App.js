@@ -1631,6 +1631,72 @@ function App() {
         }
     };
 
+    // Add these functions to your App.js (around line 600)
+    const clearAllCache = async () => {
+        try {
+            await apiCall('/cache/clear-all', { method: 'DELETE' });
+            addNotification('success', '🗑️ All cache cleared successfully');
+
+            // Refresh data
+            await fetchUsedCommunities();
+            await fetchUsedTweets();
+        } catch (error) {
+            addNotification('error', '❌ Failed to clear cache');
+        }
+    };
+
+    const getCacheStatus = async () => {
+        try {
+            const data = await apiCall('/cache/status');
+            console.log('Cache status:', data.cache);
+            addNotification('info', `📊 Communities: ${data.cache.communities.inMemory} | Tweets: ${data.cache.tweets.inMemory}`);
+        } catch (error) {
+            addNotification('error', '❌ Failed to get cache status');
+        }
+    };
+
+    // Add this UI section to your Communities tab (around line 1600)
+    const renderCacheManagement = () => (
+        <div className="bg-gray-800 rounded-lg p-4 md:p-6">
+            <h3 className="text-lg font-semibold text-white mb-4">🗄️ Cache Management</h3>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <button
+                    onClick={getCacheStatus}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm"
+                >
+                    📊 Check Cache Status
+                </button>
+
+                <button
+                    onClick={clearAllCache}
+                    className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg transition-colors text-sm"
+                >
+                    🗑️ Clear All Cache
+                </button>
+
+                <button
+                    onClick={async () => {
+                        if (window.confirm('This will clear both cache AND Firebase data. Are you sure?')) {
+                            await clearUsedCommunities();
+                            await clearUsedTweets();
+                            await clearAllCache();
+                            addNotification('success', '🗑️ Everything cleared!');
+                        }
+                    }}
+                    className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors text-sm"
+                >
+                    ⚠️ Clear Everything
+                </button>
+            </div>
+
+            <p className="text-xs text-gray-400 mt-3">
+                Cache files store used communities and tweets locally for faster access.
+                Clear cache if you're experiencing sync issues.
+            </p>
+        </div>
+    );
+
     const renderCommunityManagement = () => (
         <div className="space-y-4 md:space-y-6">
             {/* Firebase Status & Controls */}
@@ -1660,6 +1726,8 @@ function App() {
                     Used communities: <span className="text-white font-semibold">{usedCommunities.length}</span>
                 </div>
             </div>
+
+            {renderCacheManagement()}
 
             {/* Used Communities List */}
             <div className="bg-gray-800 rounded-lg p-4 md:p-6">
