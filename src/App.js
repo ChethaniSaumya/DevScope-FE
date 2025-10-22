@@ -4780,7 +4780,7 @@ function App() {
             {/* Enhanced Popups */}
             {renderSecondaryPopup()}
             {renderPrimarySnipePopup()}
-            {renderPopupBlockerModal()}
+            {/*renderPopupBlockerModal()*/}
 
             {/* Footer Info */}
             <footer className="bg-gray-800 border-t border-gray-700 px-4 md:px-6 py-3">
