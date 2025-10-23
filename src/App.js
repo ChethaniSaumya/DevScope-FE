@@ -4733,7 +4733,7 @@ function App() {
                             🧪 Demo
                         </button>
 
-                        <button
+                        {/*<button
                             onClick={() => setActiveTab('twitter')}
                             className={`py-3 md:py-4 px-2 border-b-2 transition-colors whitespace-nowrap text-sm md:text-base ${activeTab === 'twitter'
                                 ? 'border-blue-500 text-blue-400'
@@ -4741,7 +4741,7 @@ function App() {
                                 }`}
                         >
                             🐦 Twitter Session
-                        </button>
+                        </button>*/}
                     </div>
                 </div>
             </nav>
@@ -4811,3 +4811,4 @@ function App() {
 }
 
 export default App;
+
