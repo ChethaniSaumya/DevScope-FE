@@ -610,14 +610,15 @@ function App() {
 
     // Form states
     const [showAddForm, setShowAddForm] = useState({ type: null, show: false });
-    const [formData, setFormData] = useState({
+
+    const [formData, setFormData] = useState(() => ({
         address: '',
         username: '',
-        amount: 0.01,
-        fees: 10,
-        mevProtection: true,
-        soundNotification: 'default.wav'
-    });
+        amount: settings.globalSnipeSettings.amount,
+        fees: settings.globalSnipeSettings.fees,
+        mevProtection: settings.globalSnipeSettings.mevProtection,
+        soundNotification: settings.globalSnipeSettings.soundNotification
+    }));
     // App.js - Part 2: WebSocket and Message Handling
 
 
@@ -886,6 +887,97 @@ function App() {
                 if (data.data.config && data.data.config.soundNotification && window.electronAPI) {
                     window.electronAPI.playSound(data.data.config.soundNotification);
                 }
+
+                // ✅ NEW: HANDLE PRIMARY MATCHES (BOTH DEMO AND REAL)
+                if (data.data.matchType === 'primary_wallet' || data.data.matchType === 'primary_admin') {
+                    console.log('🎯 PRIMARY MATCH DETECTED - SHOWING POPUP + AUTO-OPENING WINDOW');
+
+                    const tokenData = data.data;
+
+                    // Show popup for ALL primary matches (demo and real)
+                    setSecondaryPopup({
+                        show: true,
+                        tokenData: tokenData,
+                        globalSettings: settings.globalSnipeSettings,
+                        isPrimary: true // ✅ Flag to show "Already Sniped" message
+                    });
+
+                    addNotification('info', `🎯 Primary match: ${tokenData.tokenAddress.substring(0, 8)}...`);
+
+                    // For DEMO tokens: Trigger manual snipe
+                    if (tokenData.isDemo) {
+                        console.log('🧪 DEMO PRIMARY - Triggering snipe');
+                        setTimeout(async () => {
+                            try {
+                                await apiCall(`/snipe-with-global-settings/${tokenData.tokenAddress}`, { method: 'POST' });
+                                addNotification('success', `🧪 Demo token sniped: ${tokenData.tokenAddress.substring(0, 8)}...`);
+                            } catch (error) {
+                                addNotification('error', `❌ Demo snipe failed: ${error.message}`);
+                            }
+                        }, 100);
+                    }
+
+                    // Auto-open window after 500ms (for both demo and real)
+                    setTimeout(async () => {
+                        let autoOpenUrl;
+                        const token = tokenData;
+
+                        // Determine URL based on user's tokenPageDestination setting
+                        if (settings.tokenPageDestination === 'axiom') {
+                            // For demo tokens, just use token address
+                            if (token.isDemo) {
+                                autoOpenUrl = `https://axiom.trade/meme/${token.tokenAddress}`;
+                                console.log(`🧪 Demo Primary: Opening Axiom with token address`);
+                            } else {
+                                // For real tokens, fetch bonding curve/pair
+                                try {
+                                    const response = await fetch(`${API_BASE}/pair-address/${token.tokenAddress}`);
+                                    const addressData = await response.json();
+
+                                    if (addressData.success) {
+                                        if (addressData.bondingCurveData?.bondingCurveAddress) {
+                                            autoOpenUrl = `https://axiom.trade/meme/${addressData.bondingCurveData.bondingCurveAddress}`;
+                                            console.log(`✅ Real Primary: Using bonding curve: ${addressData.bondingCurveData.bondingCurveAddress}`);
+                                        } else if (addressData.pairData?.pairAddress) {
+                                            autoOpenUrl = `https://axiom.trade/meme/${addressData.pairData.pairAddress}`;
+                                            console.log(`✅ Real Primary: Using pair address: ${addressData.pairData.pairAddress}`);
+                                        } else {
+                                            autoOpenUrl = `https://axiom.trade/meme/${token.tokenAddress}`;
+                                            console.log(`⚠️ Real Primary: No address found, using token address`);
+                                        }
+                                    } else {
+                                        autoOpenUrl = `https://axiom.trade/meme/${token.tokenAddress}`;
+                                    }
+                                } catch (error) {
+                                    console.error(`❌ Error fetching address:`, error);
+                                    autoOpenUrl = `https://axiom.trade/meme/${token.tokenAddress}`;
+                                }
+                            }
+                        } else {
+                            // Neo BullX destination
+                            autoOpenUrl = `https://neo.bullx.io/terminal?chainId=1399811149&address=${token.tokenAddress}`;
+                            console.log(`✅ Primary: Opening Neo BullX`);
+                        }
+
+                        console.log(`🔗 PRIMARY AUTO-OPEN URL: ${autoOpenUrl}`);
+
+                        // Open the URL
+                        if (window.electronAPI && window.electronAPI.openExternalURL) {
+                            window.electronAPI.openExternalURL(autoOpenUrl);
+                            console.log('🖥️ Primary: Opened via Electron');
+                        } else {
+                            const newWindow = window.open(autoOpenUrl, '_blank');
+                            if (newWindow) {
+                                console.log('✅ Primary: Browser opened');
+                            } else {
+                                console.error('❌ Primary: Popup blocked');
+                                addNotification('warning', '🚫 Auto-open blocked by browser');
+                            }
+                        }
+
+                        addNotification('success', '🚀 Token page opened automatically!');
+                    }, 500);
+                }
                 break;
 
             case 'secondary_popup_trigger':
@@ -902,38 +994,67 @@ function App() {
 
                 addNotification('info', `🔔 Secondary match found: ${tokenData.tokenAddress.substring(0, 8)}...`);
 
-                setTimeout(() => {
+                setTimeout(async () => {
                     let autoOpenUrl;
+                    const token = tokenData;
 
                     // Determine URL based on user's tokenPageDestination setting
                     if (settings.tokenPageDestination === 'axiom') {
-                        if (tokenData.bondingCurveAddress) {
-                            autoOpenUrl = `https://axiom.trade/meme/${tokenData.bondingCurveAddress}`;
-                            console.log(`✅ Auto-opening Axiom with bonding curve: ${tokenData.bondingCurveAddress}`);
-                        } else {
-                            autoOpenUrl = `https://axiom.trade/meme/${tokenData.tokenAddress}`;
-                            console.log(`⚠️ Auto-opening Axiom with token address (no bonding curve)`);
+
+                        // Check if it's a Pump.fun token
+                        if (token.platform === 'pumpfun' || token.pool === 'pump') {
+                            // Use bonding curve for Pump.fun
+                            if (token.bondingCurveAddress) {
+                                autoOpenUrl = `https://axiom.trade/meme/${token.bondingCurveAddress}`;
+                                console.log(`✅ SECONDARY: Using bonding curve: ${token.bondingCurveAddress}`);
+                            } else {
+                                autoOpenUrl = `https://axiom.trade/meme/${token.tokenAddress}`;
+                                console.log(`⚠️ SECONDARY: No bonding curve, using token address`);
+                            }
+                        }
+                        // Check if it's a Let's Bonk token
+                        else if (token.platform === 'letsbonk' || token.pool === 'bonk') {
+                            console.log(`🦎 SECONDARY: Let's Bonk token, fetching pair address...`);
+
+                            try {
+                                const response = await fetch(`${API_BASE}/pair-address/${token.tokenAddress}`);
+                                const data = await response.json();
+
+                                if (data.success && data.pairData?.pairAddress) {
+                                    autoOpenUrl = `https://axiom.trade/meme/${data.pairData.pairAddress}`;
+                                    console.log(`✅ SECONDARY: Using pair address: ${data.pairData.pairAddress}`);
+                                } else {
+                                    autoOpenUrl = `https://axiom.trade/meme/${token.tokenAddress}`;
+                                    console.log(`⚠️ SECONDARY: No pair found, using token address`);
+                                }
+                            } catch (error) {
+                                console.error(`❌ SECONDARY: Error fetching pair:`, error);
+                                autoOpenUrl = `https://axiom.trade/meme/${token.tokenAddress}`;
+                            }
+                        }
+                        else {
+                            // Unknown platform - use token address
+                            autoOpenUrl = `https://axiom.trade/meme/${token.tokenAddress}`;
+                            console.log(`⚠️ SECONDARY: Unknown platform, using token address`);
                         }
                     } else {
-                        // User wants Neo BullX
-                        autoOpenUrl = `https://neo.bullx.io/terminal?chainId=1399811149&address=${tokenData.tokenAddress}`;
-                        console.log(`✅ Auto-opening Neo BullX`);
+                        // Neo BullX destination
+                        autoOpenUrl = `https://neo.bullx.io/terminal?chainId=1399811149&address=${token.tokenAddress}`;
+                        console.log(`✅ SECONDARY: Opening Neo BullX`);
                     }
 
-                    // REMOVED: Platform-specific overrides that were forcing pump.fun
-                    // Let the user's tokenPageDestination setting determine the URL
+                    console.log(`🔗 SECONDARY AUTO-OPEN URL: ${autoOpenUrl}`);
 
-                    console.log(`🔗 Auto-opening URL: ${autoOpenUrl}`);
-
+                    // Open the URL
                     if (window.electronAPI && window.electronAPI.openExternalURL) {
                         window.electronAPI.openExternalURL(autoOpenUrl);
-                        console.log('🖥️ Opened via Electron API');
+                        console.log('🖥️ SECONDARY: Opened via Electron');
                     } else {
                         const newWindow = window.open(autoOpenUrl, '_blank');
                         if (newWindow) {
-                            console.log('✅ Browser window opened successfully');
+                            console.log('✅ SECONDARY: Browser opened');
                         } else {
-                            console.error('❌ Popup blocked by browser');
+                            console.error('❌ SECONDARY: Popup blocked');
                             addNotification('warning', '🚫 Auto-open blocked by browser');
                         }
                     }
@@ -1393,10 +1514,10 @@ function App() {
         setFormData({
             address: '',
             username: '',
-            amount: 0.01,
-            fees: 10,
-            mevProtection: true,
-            soundNotification: 'default.wav'
+            amount: settings.globalSnipeSettings.amount,
+            fees: settings.globalSnipeSettings.fees,
+            mevProtection: settings.globalSnipeSettings.mevProtection,
+            soundNotification: settings.globalSnipeSettings.soundNotification
         });
     };
 
@@ -2643,20 +2764,55 @@ function App() {
         if (!secondaryPopup.show || !secondaryPopup.tokenData) return null;
 
         const token = secondaryPopup.tokenData;
+        const isPrimary = secondaryPopup.isPrimary || false; // Check if it's a primary match
 
         return (
             <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
                 <div className="bg-gray-800 rounded-lg p-6 w-full max-w-2xl max-h-screen overflow-y-auto">
-                    {/* Header */}
+                    {/* Header - Different for Primary vs Secondary */}
                     <div className="flex items-center justify-between mb-6">
-                        <h2 className="text-2xl font-bold text-white">🔔 Secondary Match Found!</h2>
+                        {isPrimary ? (
+                            // Primary Admin Header - "Already Sniped"
+                            <div className="flex items-center space-x-3">
+                                <div className="w-12 h-12 bg-green-500 rounded-full flex items-center justify-center animate-pulse">
+                                    <span className="text-2xl">✅</span>
+                                </div>
+                                <div>
+                                    <h2 className="text-2xl font-bold text-green-400">Already Sniped!</h2>
+                                    <p className="text-green-300">🎯 Primary match - Auto-sniped successfully</p>
+                                </div>
+                            </div>
+                        ) : (
+                            // Secondary Admin Header - "Secondary Match Found"
+                            <h2 className="text-2xl font-bold text-white">🔔 Secondary Match Found!</h2>
+                        )}
                         <button
-                            onClick={() => setSecondaryPopup({ show: false, tokenData: null })}
+                            onClick={() => setSecondaryPopup({ show: false, tokenData: null, isPrimary: false })}
                             className="text-gray-400 hover:text-white"
                         >
                             ✖️
                         </button>
                     </div>
+
+                    {/* Already Sniped Banner for Primary */}
+                    {isPrimary && (
+                        <div className="mb-6 bg-gradient-to-r from-green-900/40 to-green-800/40 border-2 border-green-500 rounded-lg p-4">
+                            <div className="flex items-center space-x-3">
+                                <div className="text-4xl">🎯</div>
+                                <div className="flex-1">
+                                    <h3 className="text-lg font-bold text-green-400">Auto-Snipe Executed</h3>
+                                    <p className="text-sm text-green-300">
+                                        This token was automatically sniped using your primary admin settings
+                                    </p>
+                                    <div className="mt-2 flex items-center space-x-4 text-xs text-green-200">
+                                        <span>✅ Trade Submitted</span>
+                                        <span>✅ Window Opened</span>
+                                        <span>✅ Notification Sent</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                     {/* Token Details */}
                     <div className="space-y-4 mb-6">
@@ -2706,11 +2862,11 @@ function App() {
                         </div>
                     </div>
 
-                    {/* ✅ REMOVED: Entire "Address Detection Status" section */}
-
                     {/* Current Global Snipe Settings Display */}
                     <div className="bg-gray-700 p-4 rounded mb-6">
-                        <h4 className="text-lg font-semibold text-white mb-3">Current Global Snipe Settings:</h4>
+                        <h4 className="text-lg font-semibold text-white mb-3">
+                            {isPrimary ? 'Settings Used for Auto-Snipe:' : 'Current Global Snipe Settings:'}
+                        </h4>
                         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                             <div className="text-center">
                                 <p className="text-sm text-gray-400">Amount</p>
@@ -2727,27 +2883,30 @@ function App() {
                         </div>
                     </div>
 
-                    {/* Action Buttons */}
-                    <div className="flex flex-col space-y-3 md:flex-row md:space-y-0 md:space-x-4">
-                        {/* COMMENTED OUT - Auto-open handles this
-                        <button
-                            onClick={() => viewTokenPageFromPopup(token)}
-                            className="flex-1 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center justify-center space-x-2"
-                        >
-                            <span>🌐 View Token Page</span>
-                        
-                        </button>
-*/}
-                        {/*
-                        <button
-                            onClick={() => snipeWithGlobalSettings(token.tokenAddress)}
-                            className="flex-1 px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors font-bold flex items-center justify-center space-x-2"
-                        >
-                            <Target size={20} />
-                            <span>SNIPE ({settings.globalSnipeSettings.amount} SOL)</span>
-                        </button>
-                        */}
-                    </div>
+                    {/* Action Buttons - Only show for Secondary */}
+                    {!isPrimary && (
+                        <div className="flex flex-col space-y-3 md:flex-row md:space-y-0 md:space-x-4">
+                            <button
+                                onClick={() => snipeWithGlobalSettings(token.tokenAddress)}
+                                className="flex-1 px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors font-bold flex items-center justify-center space-x-2"
+                            >
+                                <Target size={20} />
+                                <span>SNIPE ({settings.globalSnipeSettings.amount} SOL)</span>
+                            </button>
+                        </div>
+                    )}
+
+                    {/* Close button for Primary */}
+                    {isPrimary && (
+                        <div className="flex justify-center">
+                            <button
+                                onClick={() => setSecondaryPopup({ show: false, tokenData: null, isPrimary: false })}
+                                className="px-6 py-3 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors"
+                            >
+                                Close
+                            </button>
+                        </div>
+                    )}
                 </div>
             </div>
         );
@@ -2999,7 +3158,7 @@ function App() {
                                 <span className="text-2xl">🚫</span>
                             </div>
                             <div>
-                                <h2 className="text-2xl font-bold text-white">Popup Blocked by Chrome</h2>
+                                <h2 className="text-2xl font-bold text-white">Popup Blocked by Browser</h2>
                                 <p className="text-red-400">Token page couldn't open automatically</p>
                             </div>
                         </div>
@@ -4011,10 +4170,38 @@ function App() {
         </div>
     );
 
-    // App.js - Parts 8 & 9: Lists, Forms, and Main Component
-    const renderAddForm = (listType) => {
-        const isWalletList = true; // Always treat as wallet input now
-        // Remove the useState call from here - it should be in your main component
+    const AddFormModal = ({ listType, onClose, onAdd }) => {
+        // ✅ Use local state for form data within modal
+        const [localFormData, setLocalFormData] = useState({
+            address: '',
+            username: '',
+            amount: settings.globalSnipeSettings.amount,
+            fees: settings.globalSnipeSettings.fees,
+            mevProtection: settings.globalSnipeSettings.mevProtection,
+            soundNotification: settings.globalSnipeSettings.soundNotification
+        });
+
+        // ✅ Reset form when modal opens or listType changes
+        useEffect(() => {
+            setLocalFormData({
+                address: '',
+                username: '',
+                amount: settings.globalSnipeSettings.amount,
+                fees: settings.globalSnipeSettings.fees,
+                mevProtection: settings.globalSnipeSettings.mevProtection,
+                soundNotification: settings.globalSnipeSettings.soundNotification
+            });
+        }, [listType, settings.globalSnipeSettings]);
+
+        const handleSubmit = () => {
+            onAdd(listType, {
+                address: localFormData.address,
+                amount: localFormData.amount,
+                fees: localFormData.fees,
+                mevProtection: localFormData.mevProtection,
+                soundNotification: localFormData.soundNotification
+            });
+        };
 
         return (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -4032,14 +4219,15 @@ function App() {
                     </div>
 
                     <div className="space-y-4">
+
                         <div>
                             <label className="block text-sm font-medium text-gray-300 mb-2">
                                 Wallet Address, Twitter Username, or Community ID
                             </label>
                             <input
                                 type="text"
-                                value={formData.address}
-                                onChange={(e) => setFormData(prev => ({
+                                value={localFormData.address}
+                                onChange={(e) => setLocalFormData(prev => ({
                                     ...prev,
                                     address: e.target.value
                                 }))}
@@ -4060,8 +4248,11 @@ function App() {
                                 <input
                                     type="number"
                                     step="0.001"
-                                    value={formData.amount}
-                                    onChange={(e) => setFormData(prev => ({ ...prev, amount: parseFloat(e.target.value) }))}
+                                    value={localFormData.amount}
+                                    onChange={(e) => setLocalFormData(prev => ({
+                                        ...prev,
+                                        amount: parseFloat(e.target.value) || 0
+                                    }))}
                                     className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                 />
                             </div>
@@ -4070,29 +4261,45 @@ function App() {
                                 <label className="block text-sm font-medium text-gray-300 mb-2">Fees (%)</label>
                                 <input
                                     type="number"
-                                    value={formData.fees}
-                                    onChange={(e) => setFormData(prev => ({ ...prev, fees: parseInt(e.target.value) }))}
+                                    value={localFormData.fees}
+                                    onChange={(e) => setLocalFormData(prev => ({
+                                        ...prev,
+                                        fees: parseInt(e.target.value) || 0
+                                    }))}
                                     className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                 />
                             </div>
                         </div>
 
-                        <div className="flex items-center space-x-2">
-                            <input
-                                type="checkbox"
-                                checked={formData.mevProtection}
-                                onChange={(e) => setFormData(prev => ({ ...prev, mevProtection: e.target.checked }))}
-                                className="w-4 h-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500"
-                            />
-                            <label className="text-sm text-gray-300">🛡️ MEV Protection</label>
+                        {/* ✅ MEV Protection - DISABLED (read-only) */}
+                        <div>
+                            <div className="flex items-center space-x-2">
+                                <input
+                                    type="checkbox"
+                                    checked={localFormData.mevProtection}
+                                    onChange={(e) => setLocalFormData(prev => ({
+                                        ...prev,
+                                        mevProtection: e.target.checked
+                                    }))}
+                                    disabled={true}
+                                    className="w-4 h-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                                />
+                                <label className="text-sm text-gray-300">🛡️ MEV Protection (From Global Settings)</label>
+                            </div>
+                            <p className="text-xs text-gray-400 ml-6 mt-1">
+                                MEV Protection is inherited from Global Snipe Settings and cannot be changed per-admin.
+                            </p>
                         </div>
 
                         <div>
                             <label className="block text-sm font-medium text-gray-300 mb-2">Sound Notification</label>
                             <div className="flex space-x-2">
                                 <select
-                                    value={formData.soundNotification}
-                                    onChange={(e) => setFormData(prev => ({ ...prev, soundNotification: e.target.value }))}
+                                    value={localFormData.soundNotification}
+                                    onChange={(e) => setLocalFormData(prev => ({
+                                        ...prev,
+                                        soundNotification: e.target.value
+                                    }))}
                                     className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
                                 >
                                     {SOUND_OPTIONS.map(option => (
@@ -4103,7 +4310,7 @@ function App() {
                                 </select>
                                 <button
                                     type="button"
-                                    onClick={() => previewSound(formData.soundNotification)}
+                                    onClick={() => previewSound(localFormData.soundNotification)}
                                     className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
                                     title="Preview sound"
                                 >
@@ -4127,21 +4334,14 @@ function App() {
 
                     <div className="flex flex-col space-y-2 md:flex-row md:space-y-0 md:space-x-4 mt-6">
                         <button
-                            onClick={() => addListItem(listType, {
-                                [isWalletList ? 'address' : 'username']: isWalletList ? formData.address : formData.username,
-                                amount: formData.amount,
-                                fees: formData.fees,
-                                mevProtection: formData.mevProtection,
-                                soundNotification: formData.soundNotification,
-                                isCommunity: isCommunity // Add this field
-                            })}
-                            disabled={!formData.address || !formData.amount || !formData.fees}
+                            onClick={handleSubmit}
+                            disabled={!localFormData.address || !localFormData.amount || !localFormData.fees}
                             className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors flex items-center justify-center space-x-2"
                         >
                             <span>✅ Add & Save to Firebase</span>
                         </button>
                         <button
-                            onClick={() => setShowAddForm({ type: null, show: false })}
+                            onClick={onClose}
                             className="flex-1 px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors"
                         >
                             ❌ Cancel
@@ -4213,7 +4413,7 @@ function App() {
                                     <span className="bg-green-600 text-white px-2 py-1 rounded">{item.amount} SOL</span>
                                     <span className="bg-blue-600 text-white px-2 py-1 rounded">{item.fees}% fees</span>
                                     <span className={`px-2 py-1 rounded ${item.mevProtection ? 'bg-purple-600 text-white' : 'bg-gray-600 text-gray-300'}`}>
-                                        {item.mevProtection ? '🛡️ MEV' : '❌ No MEV'}
+                                        {item.mevProtection ? '🛡️ MEV (Global)' : '❌ No MEV (Global)'}
                                     </span>
                                     {item.soundNotification && (
                                         <span className="bg-yellow-600 text-white px-2 py-1 rounded">🔊 {item.soundNotification}</span>
@@ -4307,7 +4507,13 @@ function App() {
                 {renderEnhancedListSection('secondary_admins', 'Secondary Admins (Notify)', <Bell className="text-orange-400" size={20} />)}
             </div>
 
-            {showAddForm.show && renderAddForm(showAddForm.type)}
+            {showAddForm.show && (
+                <AddFormModal
+                    listType={showAddForm.type}
+                    onClose={() => setShowAddForm({ type: null, show: false })}
+                    onAdd={addListItem}
+                />
+            )}
         </div>
     );
 
