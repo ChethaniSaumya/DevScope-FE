@@ -122,6 +122,8 @@ function App() {
             enableAdminFilter: true,
             enableCommunityReuse: true,
             snipeAllTokens: false,
+            enablePrimaryDetection: true,
+            enableSecondaryDetection: true,
             detectionOnlyMode: true,
             globalSnipeSettings: {
                 amount: 0.01,
@@ -2760,6 +2762,105 @@ function App() {
         }
     };
 
+    const renderDetectionSettings = () => (
+        <div className="bg-gray-800 rounded-lg p-4 md:p-6">
+            <h2 className="text-lg md:text-xl font-semibold text-white mb-4">🎯 Separate Detection Settings</h2>
+            <p className="text-sm text-gray-400 mb-4">
+                Enable or disable primary and secondary admin detection separately for testing
+            </p>
+
+            <div className="space-y-4">
+                {/* Primary Detection Toggle */}
+                <div className="flex flex-col space-y-3 md:flex-row md:items-center md:justify-between md:space-y-0 p-4 bg-gray-700 rounded-lg">
+                    <div>
+                        <h3 className="text-base md:text-lg font-medium text-purple-400">🎯 Primary Admin Detection</h3>
+                        <p className="text-sm text-gray-400">
+                            Auto-snipe tokens from primary admin list {settings.detectionOnlyMode ? '(detection only)' : '(with auto-snipe)'}
+                        </p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                        <input
+                            type="checkbox"
+                            checked={settings.enablePrimaryDetection}
+                            onChange={(e) => setSettings(prev => ({ ...prev, enablePrimaryDetection: e.target.checked }))}
+                            className="sr-only peer"
+                        />
+                        <div className="w-11 h-6 bg-gray-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-purple-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
+                    </label>
+                </div>
+
+                {/* Secondary Detection Toggle */}
+                <div className="flex flex-col space-y-3 md:flex-row md:items-center md:justify-between md:space-y-0 p-4 bg-gray-700 rounded-lg">
+                    <div>
+                        <h3 className="text-base md:text-lg font-medium text-orange-400">🔔 Secondary Admin Detection</h3>
+                        <p className="text-sm text-gray-400">
+                            Show popup notifications for tokens from secondary admin list
+                        </p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                        <input
+                            type="checkbox"
+                            checked={settings.enableSecondaryDetection}
+                            onChange={(e) => setSettings(prev => ({ ...prev, enableSecondaryDetection: e.target.checked }))}
+                            className="sr-only peer"
+                        />
+                        <div className="w-11 h-6 bg-gray-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-orange-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-orange-600"></div>
+                    </label>
+                </div>
+
+                {/* Detection Status */}
+                <div className="mt-6 p-4 bg-gray-700 rounded-lg">
+                    <h3 className="text-base md:text-lg font-medium text-white mb-2">Current Detection Status</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                        <div className="flex items-center space-x-2">
+                            <div className={`w-3 h-3 rounded-full ${settings.enablePrimaryDetection ? 'bg-purple-500' : 'bg-gray-500'}`}></div>
+                            <span className="text-gray-300">Primary Detection: {settings.enablePrimaryDetection ? 'ON' : 'OFF'}</span>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                            <div className={`w-3 h-3 rounded-full ${settings.enableSecondaryDetection ? 'bg-orange-500' : 'bg-gray-500'}`}></div>
+                            <span className="text-gray-300">Secondary Detection: {settings.enableSecondaryDetection ? 'ON' : 'OFF'}</span>
+                        </div>
+                    </div>
+
+                    {/* Status Explanation */}
+                    <div className="mt-3 p-3 bg-gray-600 rounded text-xs">
+                        {!settings.enablePrimaryDetection && !settings.enableSecondaryDetection ? (
+                            <p className="text-red-400">❌ All admin detection is disabled</p>
+                        ) : settings.enablePrimaryDetection && !settings.enableSecondaryDetection ? (
+                            <p className="text-purple-400">🎯 Only primary detection active (auto-snipe)</p>
+                        ) : !settings.enablePrimaryDetection && settings.enableSecondaryDetection ? (
+                            <p className="text-orange-400">🔔 Only secondary detection active (popup notifications)</p>
+                        ) : (
+                            <p className="text-green-400">✅ Both detection types active</p>
+                        )}
+                    </div>
+                </div>
+
+                <div className="flex flex-col space-y-2">
+                    <button
+                        onClick={async () => {
+                            try {
+                                await apiCall('/detection-settings', {
+                                    method: 'POST',
+                                    body: JSON.stringify({
+                                        enablePrimaryDetection: settings.enablePrimaryDetection,
+                                        enableSecondaryDetection: settings.enableSecondaryDetection
+                                    })
+                                });
+                                addNotification('success', '✅ Detection settings updated successfully');
+                            } catch (error) {
+                                addNotification('error', '❌ Failed to update detection settings');
+                            }
+                        }}
+                        className="w-full px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors"
+                    >
+                        Save Detection Settings
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+
     const renderSecondaryPopup = () => {
         if (!secondaryPopup.show || !secondaryPopup.tokenData) return null;
 
@@ -3809,6 +3910,8 @@ function App() {
                     </div>
                 </div>
             </div>
+
+            {renderDetectionSettings()}
 
             {/* Filter Settings */}
             <div className="bg-gray-800 rounded-lg p-4 md:p-6">
