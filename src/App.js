@@ -129,7 +129,8 @@ function App() {
                 amount: 0.01,
                 fees: 10,
                 mevProtection: true,
-                soundNotification: 'default.wav'
+                soundNotification: 'default.wav',
+                priorityFee: 0.0005
             }
         });
 
@@ -1543,7 +1544,7 @@ function App() {
         try {
             await apiCall('/global-snipe-settings', {
                 method: 'POST',
-                body: JSON.stringify(newSettings)
+                body: JSON.stringify(newSettings)  // This will now include priorityFee
             });
 
             const updatedGlobalSettings = { ...settings.globalSnipeSettings, ...newSettings };
@@ -2445,6 +2446,29 @@ function App() {
 
                             // Auto-save to localStorage
                             const updatedGlobalSettings = { ...settings.globalSnipeSettings, fees: newFees };
+                            saveToLocalStorage(STORAGE_KEYS.GLOBAL_SNIPE, updatedGlobalSettings);
+                        }}
+                        className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
+                    />
+                </div>
+
+                <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">Priority Fee (SOL)</label>
+                    <input
+                        type="number"
+                        step="0.0001"
+                        value={settings.globalSnipeSettings.priorityFee}
+                        onChange={(e) => {
+                            const newPriorityFee = parseFloat(e.target.value);
+                            setSettings(prev => ({
+                                ...prev,
+                                globalSnipeSettings: {
+                                    ...prev.globalSnipeSettings,
+                                    priorityFee: newPriorityFee
+                                }
+                            }));
+                            setHasGlobalSettingsChanged(true);
+                            const updatedGlobalSettings = { ...settings.globalSnipeSettings, priorityFee: newPriorityFee };
                             saveToLocalStorage(STORAGE_KEYS.GLOBAL_SNIPE, updatedGlobalSettings);
                         }}
                         className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
