@@ -2452,29 +2452,6 @@ function App() {
                     />
                 </div>
 
-                <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-2">Priority Fee (SOL)</label>
-                    <input
-                        type="number"
-                        step="0.0001"
-                        value={settings.globalSnipeSettings.priorityFee}
-                        onChange={(e) => {
-                            const newPriorityFee = parseFloat(e.target.value);
-                            setSettings(prev => ({
-                                ...prev,
-                                globalSnipeSettings: {
-                                    ...prev.globalSnipeSettings,
-                                    priorityFee: newPriorityFee
-                                }
-                            }));
-                            setHasGlobalSettingsChanged(true);
-                            const updatedGlobalSettings = { ...settings.globalSnipeSettings, priorityFee: newPriorityFee };
-                            saveToLocalStorage(STORAGE_KEYS.GLOBAL_SNIPE, updatedGlobalSettings);
-                        }}
-                        className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
-                    />
-                </div>
-
                 <div className="flex items-center space-x-2">
                     <input
                         type="checkbox"
@@ -2498,6 +2475,30 @@ function App() {
                         className="w-4 h-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500"
                     />
                     <label className="text-sm text-gray-300">🛡️ MEV Protection</label>
+                </div>
+
+
+                <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">Priority Fee (SOL)</label>
+                    <input
+                        type="number"
+                        step="0.0001"
+                        value={settings.globalSnipeSettings.priorityFee}
+                        onChange={(e) => {
+                            const newPriorityFee = parseFloat(e.target.value);
+                            setSettings(prev => ({
+                                ...prev,
+                                globalSnipeSettings: {
+                                    ...prev.globalSnipeSettings,
+                                    priorityFee: newPriorityFee
+                                }
+                            }));
+                            setHasGlobalSettingsChanged(true);
+                            const updatedGlobalSettings = { ...settings.globalSnipeSettings, priorityFee: newPriorityFee };
+                            saveToLocalStorage(STORAGE_KEYS.GLOBAL_SNIPE, updatedGlobalSettings);
+                        }}
+                        className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
+                    />
                 </div>
 
                 <div>
