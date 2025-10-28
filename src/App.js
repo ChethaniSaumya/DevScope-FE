@@ -2603,38 +2603,60 @@ function App() {
 
                                         if (response.success) {
                                             setGlobalSettingsMessage(`✅ Global settings saved! Updated ${response.primaryUpdated + response.secondaryUpdated} admin entries.`);
+                                            addNotification('success', `✅ Global settings saved! Updated ${response.primaryUpdated + response.secondaryUpdated} admin entries.`);
 
                                             // Refresh the lists to show updated amounts
                                             await fetchLists();
                                         }
                                     } else {
                                         setGlobalSettingsMessage('✅ Global snipe settings saved! Will apply to new admins only.');
+                                        addNotification('success', '✅ Global snipe settings saved! Will apply to new admins only.');
                                     }
 
                                     setHasGlobalSettingsChanged(false);
                                     clearGlobalSettingsMessage();
                                 } catch (error) {
                                     setGlobalSettingsMessage('❌ Failed to save settings to server');
+                                    addNotification('error', '❌ Failed to save global settings to server');
                                     clearGlobalSettingsMessage();
                                 }
                             }}
                             disabled={!hasGlobalSettingsChanged}
-                            className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
+                            className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors flex items-center justify-center space-x-2"
                         >
-                            💾 Save to Server
-                            {amountUpdateMode === 'all_existing' && ' & Update All Admins'}
+                            <span>💾</span>
+                            <span>Save to Server</span>
+                            {amountUpdateMode === 'all_existing' && <span className="text-xs">(Update All Admins)</span>}
                         </button>
 
                         <button
                             onClick={() => {
                                 clearLocalStorage();
                                 setGlobalSettingsMessage('🗑️ Local storage cleared successfully!');
+                                addNotification('success', '🗑️ Local storage cleared successfully!');
                                 clearGlobalSettingsMessage();
                             }}
-                            className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
+                            className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors flex items-center justify-center space-x-2"
                         >
-                            🗑️ Clear Local Storage
+                            <span>🗑️</span>
+                            <span>Clear Local Storage</span>
                         </button>
+                    </div>
+
+                    {/* Save Status Indicator */}
+                    <div className="flex items-center justify-between text-sm">
+                        <div className="flex items-center space-x-2">
+                            <div className={`w-2 h-2 rounded-full ${hasGlobalSettingsChanged ? 'bg-yellow-500 animate-pulse' : 'bg-green-500'}`}></div>
+                            <span className={hasGlobalSettingsChanged ? 'text-yellow-400' : 'text-green-400'}>
+                                {hasGlobalSettingsChanged ? 'Unsaved changes' : 'All changes saved'}
+                            </span>
+                        </div>
+
+                        {hasGlobalSettingsChanged && (
+                            <span className="text-xs text-gray-400">
+                                Click "Save to Server" to apply changes
+                            </span>
+                        )}
                     </div>
 
                     {/* Message display */}
@@ -2668,10 +2690,32 @@ function App() {
                         </div>
                     </div>
                 </div>
+
+                {/* Current Settings Preview */}
+                <div className="mt-4 p-3 bg-blue-900/20 border border-blue-500/30 rounded-lg">
+                    <h4 className="text-sm font-semibold text-blue-400 mb-2">📊 Current Global Settings</h4>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+                        <div>
+                            <span className="text-gray-400">Amount:</span>
+                            <span className="text-white ml-1">{settings.globalSnipeSettings.amount} SOL</span>
+                        </div>
+                        <div>
+                            <span className="text-gray-400">Fees:</span>
+                            <span className="text-white ml-1">{settings.globalSnipeSettings.fees}%</span>
+                        </div>
+                        <div>
+                            <span className="text-gray-400">Priority Fee:</span>
+                            <span className="text-white ml-1">{settings.globalSnipeSettings.priorityFee} SOL</span>
+                        </div>
+                        <div>
+                            <span className="text-gray-400">MEV Protection:</span>
+                            <span className="text-white ml-1">{settings.globalSnipeSettings.mevProtection ? '🛡️ ON' : '❌ OFF'}</span>
+                        </div>
+                    </div>
+                </div>
             </div>
         );
     };
-
     // Add this new function after renderGlobalSnipeSettings()
     const renderSoundManagement = () => (
         <div className="bg-gray-800 rounded-lg p-4 md:p-6">
