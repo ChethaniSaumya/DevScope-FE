@@ -66,6 +66,7 @@ function App() {
     const [selectedTemplate, setSelectedTemplate] = useState(0);
     const [customWallet, setCustomWallet] = useState('');
     const [customTwitter, setCustomTwitter] = useState('');
+    const [amountUpdateMode, setAmountUpdateMode] = useState('new_only');
 
     const [usedCommunities, setUsedCommunities] = useState([]);
     const [usedTweets, setUsedTweets] = useState([]);
@@ -2388,241 +2389,288 @@ function App() {
         </div>
     );
 
-    const renderGlobalSnipeSettings = () => (
-        <div className="bg-gray-800 rounded-lg p-4 md:p-6">
-            <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg md:text-xl font-semibold text-white">Global Snipe Settings</h2>
-                <div className="flex items-center space-x-2">
-                    <div className="w-2 h-2 rounded-full bg-green-500" title="Auto-saved locally"></div>
-                    <span className="text-xs text-gray-400">Auto-saved</span>
+    const renderGlobalSnipeSettings = () => {
+        return (
+            <div className="bg-gray-800 rounded-lg p-4 md:p-6">
+                <div className="flex items-center justify-between mb-4">
+                    <h2 className="text-lg md:text-xl font-semibold text-white">Global Snipe Settings</h2>
+                    <div className="flex items-center space-x-2">
+                        <div className="w-2 h-2 rounded-full bg-green-500" title="Auto-saved locally"></div>
+                        <span className="text-xs text-gray-400">Auto-saved</span>
+                    </div>
                 </div>
-            </div>
-            <p className="text-sm text-gray-400 mb-4">
-                These settings are used when manually sniping tokens from secondary lists
-            </p>
+                <p className="text-sm text-gray-400 mb-4">
+                    These settings are used when manually sniping tokens from secondary lists
+                </p>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-2">Amount (SOL)</label>
-                    <input
-                        type="number"
-                        step="0.001"
-                        value={settings.globalSnipeSettings.amount}
-                        onChange={(e) => {
-                            const newAmount = parseFloat(e.target.value);
-                            setSettings(prev => ({
-                                ...prev,
-                                globalSnipeSettings: {
-                                    ...prev.globalSnipeSettings,
-                                    amount: newAmount
-                                }
-                            }));
-                            setHasGlobalSettingsChanged(true); // Add this line
-
-                            // Auto-save to localStorage
-                            const updatedGlobalSettings = { ...settings.globalSnipeSettings, amount: newAmount };
-                            saveToLocalStorage(STORAGE_KEYS.GLOBAL_SNIPE, updatedGlobalSettings);
-                        }}
-                        className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
-                    />
-                </div>
-
-                <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-2">Fees (%)</label>
-                    <input
-                        type="number"
-                        value={settings.globalSnipeSettings.fees}
-                        onChange={(e) => {
-                            const newFees = parseInt(e.target.value);
-                            setSettings(prev => ({
-                                ...prev,
-                                globalSnipeSettings: {
-                                    ...prev.globalSnipeSettings,
-                                    fees: newFees
-                                }
-                            }));
-
-                            setHasGlobalSettingsChanged(true); // Add this line
-
-                            // Auto-save to localStorage
-                            const updatedGlobalSettings = { ...settings.globalSnipeSettings, fees: newFees };
-                            saveToLocalStorage(STORAGE_KEYS.GLOBAL_SNIPE, updatedGlobalSettings);
-                        }}
-                        className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
-                    />
-                </div>
-
-                <div className="flex items-center space-x-2">
-                    <input
-                        type="checkbox"
-                        checked={settings.globalSnipeSettings.mevProtection}
-                        onChange={(e) => {
-                            const newMevProtection = e.target.checked;
-                            setSettings(prev => ({
-                                ...prev,
-                                globalSnipeSettings: {
-                                    ...prev.globalSnipeSettings,
-                                    mevProtection: newMevProtection
-                                }
-                            }));
-
-                            setHasGlobalSettingsChanged(true); // Add this line
-
-                            // Auto-save to localStorage
-                            const updatedGlobalSettings = { ...settings.globalSnipeSettings, mevProtection: newMevProtection };
-                            saveToLocalStorage(STORAGE_KEYS.GLOBAL_SNIPE, updatedGlobalSettings);
-                        }}
-                        className="w-4 h-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500"
-                    />
-                    <label className="text-sm text-gray-300">🛡️ MEV Protection</label>
-                </div>
-
-
-                <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-2">Priority Fee (SOL)</label>
-                    <input
-                        type="number"
-                        step="0.0001"
-                        value={settings.globalSnipeSettings.priorityFee}
-                        onChange={(e) => {
-                            const newPriorityFee = parseFloat(e.target.value);
-                            setSettings(prev => ({
-                                ...prev,
-                                globalSnipeSettings: {
-                                    ...prev.globalSnipeSettings,
-                                    priorityFee: newPriorityFee
-                                }
-                            }));
-                            setHasGlobalSettingsChanged(true);
-                            const updatedGlobalSettings = { ...settings.globalSnipeSettings, priorityFee: newPriorityFee };
-                            saveToLocalStorage(STORAGE_KEYS.GLOBAL_SNIPE, updatedGlobalSettings);
-                        }}
-                        className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
-                    />
-                </div>
-
-                <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-2">Sound Notification</label>
-                    <div className="flex space-x-2">
-                        <select
-                            value={settings.globalSnipeSettings.soundNotification}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* Amount Input with Radio Buttons */}
+                    <div className="md:col-span-2">
+                        <label className="block text-sm font-medium text-gray-300 mb-2">Amount (SOL)</label>
+                        <input
+                            type="number"
+                            step="0.001"
+                            value={settings.globalSnipeSettings.amount}
                             onChange={(e) => {
-                                const newSound = e.target.value;
+                                const newAmount = parseFloat(e.target.value);
                                 setSettings(prev => ({
                                     ...prev,
                                     globalSnipeSettings: {
                                         ...prev.globalSnipeSettings,
-                                        soundNotification: newSound
+                                        amount: newAmount
                                     }
                                 }));
-
-                                setHasGlobalSettingsChanged(true); // Add this line
+                                setHasGlobalSettingsChanged(true);
 
                                 // Auto-save to localStorage
-                                const updatedGlobalSettings = { ...settings.globalSnipeSettings, soundNotification: newSound };
+                                const updatedGlobalSettings = { ...settings.globalSnipeSettings, amount: newAmount };
                                 saveToLocalStorage(STORAGE_KEYS.GLOBAL_SNIPE, updatedGlobalSettings);
-
                             }}
-                            className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
-                        >
-                            {SOUND_OPTIONS.map(option => (
-                                <option key={option.value} value={option.value}>
-                                    {option.label}
-                                </option>
-                            ))}
-                        </select>
+                            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
+                        />
+
+                        {/* Radio Buttons for Amount Update Mode */}
+                        <div className="mt-3 space-y-2 bg-gray-700/50 rounded-lg p-3">
+                            <label className="block text-sm font-medium text-yellow-400 mb-2">
+                                ⚙️ When changing amount, apply to:
+                            </label>
+
+                            <div className="space-y-2">
+                                <label className="flex items-center space-x-3 cursor-pointer">
+                                    <input
+                                        type="radio"
+                                        name="amountUpdateMode"
+                                        value="new_only"
+                                        checked={amountUpdateMode === 'new_only'}
+                                        onChange={(e) => setAmountUpdateMode(e.target.value)}
+                                        className="w-4 h-4 text-blue-600 bg-gray-600 border-gray-500 focus:ring-blue-500"
+                                    />
+                                    <div>
+                                        <span className="text-white text-sm">Only newly added admins</span>
+                                        <p className="text-xs text-gray-400">Existing admin amounts won't change</p>
+                                    </div>
+                                </label>
+
+                                <label className="flex items-center space-x-3 cursor-pointer">
+                                    <input
+                                        type="radio"
+                                        name="amountUpdateMode"
+                                        value="all_existing"
+                                        checked={amountUpdateMode === 'all_existing'}
+                                        onChange={(e) => setAmountUpdateMode(e.target.value)}
+                                        className="w-4 h-4 text-blue-600 bg-gray-600 border-gray-500 focus:ring-blue-500"
+                                    />
+                                    <div>
+                                        <span className="text-white text-sm">All existing admins</span>
+                                        <p className="text-xs text-gray-400">
+                                            Update amounts for {lists.primary_admins.length} primary + {lists.secondary_admins.length} secondary admins
+                                        </p>
+                                    </div>
+                                </label>
+                            </div>
+
+                            {/* Warning Message for All Existing Mode */}
+                            {amountUpdateMode === 'all_existing' && (
+                                <div className="mt-2 bg-yellow-900/20 border border-yellow-500/30 rounded p-2">
+                                    <p className="text-yellow-400 text-xs">
+                                        ⚠️ This will overwrite the amount for all {lists.primary_admins.length + lists.secondary_admins.length} admin entries when you save!
+                                    </p>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-2">Fees (%)</label>
+                        <input
+                            type="number"
+                            value={settings.globalSnipeSettings.fees}
+                            onChange={(e) => {
+                                const newFees = parseInt(e.target.value);
+                                setSettings(prev => ({
+                                    ...prev,
+                                    globalSnipeSettings: {
+                                        ...prev.globalSnipeSettings,
+                                        fees: newFees
+                                    }
+                                }));
+                                setHasGlobalSettingsChanged(true);
+                                const updatedGlobalSettings = { ...settings.globalSnipeSettings, fees: newFees };
+                                saveToLocalStorage(STORAGE_KEYS.GLOBAL_SNIPE, updatedGlobalSettings);
+                            }}
+                            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
+                        />
+                    </div>
+
+                    <div className="flex items-center space-x-2">
+                        <input
+                            type="checkbox"
+                            checked={settings.globalSnipeSettings.mevProtection}
+                            onChange={(e) => {
+                                const newMevProtection = e.target.checked;
+                                setSettings(prev => ({
+                                    ...prev,
+                                    globalSnipeSettings: {
+                                        ...prev.globalSnipeSettings,
+                                        mevProtection: newMevProtection
+                                    }
+                                }));
+                                setHasGlobalSettingsChanged(true);
+                                const updatedGlobalSettings = { ...settings.globalSnipeSettings, mevProtection: newMevProtection };
+                                saveToLocalStorage(STORAGE_KEYS.GLOBAL_SNIPE, updatedGlobalSettings);
+                            }}
+                            className="w-4 h-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500"
+                        />
+                        <label className="text-sm text-gray-300">🛡️ MEV Protection</label>
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-2">Priority Fee (SOL)</label>
+                        <input
+                            type="number"
+                            step="0.0001"
+                            value={settings.globalSnipeSettings.priorityFee}
+                            onChange={(e) => {
+                                const newPriorityFee = parseFloat(e.target.value);
+                                setSettings(prev => ({
+                                    ...prev,
+                                    globalSnipeSettings: {
+                                        ...prev.globalSnipeSettings,
+                                        priorityFee: newPriorityFee
+                                    }
+                                }));
+                                setHasGlobalSettingsChanged(true);
+                                const updatedGlobalSettings = { ...settings.globalSnipeSettings, priorityFee: newPriorityFee };
+                                saveToLocalStorage(STORAGE_KEYS.GLOBAL_SNIPE, updatedGlobalSettings);
+                            }}
+                            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
+                        />
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-2">Sound Notification</label>
+                        <div className="flex space-x-2">
+                            <select
+                                value={settings.globalSnipeSettings.soundNotification}
+                                onChange={(e) => {
+                                    const newSound = e.target.value;
+                                    setSettings(prev => ({
+                                        ...prev,
+                                        globalSnipeSettings: {
+                                            ...prev.globalSnipeSettings,
+                                            soundNotification: newSound
+                                        }
+                                    }));
+                                    setHasGlobalSettingsChanged(true);
+                                    const updatedGlobalSettings = { ...settings.globalSnipeSettings, soundNotification: newSound };
+                                    saveToLocalStorage(STORAGE_KEYS.GLOBAL_SNIPE, updatedGlobalSettings);
+                                }}
+                                className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
+                            >
+                                {SOUND_OPTIONS.map(option => (
+                                    <option key={option.value} value={option.value}>
+                                        {option.label}
+                                    </option>
+                                ))}
+                            </select>
+                            <button
+                                onClick={() => previewSound(settings.globalSnipeSettings.soundNotification)}
+                                className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                                title="Preview sound"
+                            >
+                                🔊
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="mt-6 space-y-3">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <button
-                            onClick={() => previewSound(settings.globalSnipeSettings.soundNotification)}
-                            className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
-                            title="Preview sound"
+                            onClick={async () => {
+                                try {
+                                    // Save global settings
+                                    await updateGlobalSnipeSettings(settings.globalSnipeSettings);
+
+                                    // If "all_existing" mode, update all admin amounts
+                                    if (amountUpdateMode === 'all_existing') {
+                                        const response = await apiCall('/update-existing-admins-amounts', {
+                                            method: 'POST',
+                                            body: JSON.stringify({
+                                                amount: settings.globalSnipeSettings.amount
+                                            })
+                                        });
+
+                                        if (response.success) {
+                                            setGlobalSettingsMessage(`✅ Global settings saved! Updated ${response.primaryUpdated + response.secondaryUpdated} admin entries.`);
+
+                                            // Refresh the lists to show updated amounts
+                                            await fetchLists();
+                                        }
+                                    } else {
+                                        setGlobalSettingsMessage('✅ Global snipe settings saved! Will apply to new admins only.');
+                                    }
+
+                                    setHasGlobalSettingsChanged(false);
+                                    clearGlobalSettingsMessage();
+                                } catch (error) {
+                                    setGlobalSettingsMessage('❌ Failed to save settings to server');
+                                    clearGlobalSettingsMessage();
+                                }
+                            }}
+                            disabled={!hasGlobalSettingsChanged}
+                            className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
                         >
-                            🔊
+                            💾 Save to Server
+                            {amountUpdateMode === 'all_existing' && ' & Update All Admins'}
+                        </button>
+
+                        <button
+                            onClick={() => {
+                                clearLocalStorage();
+                                setGlobalSettingsMessage('🗑️ Local storage cleared successfully!');
+                                clearGlobalSettingsMessage();
+                            }}
+                            className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
+                        >
+                            🗑️ Clear Local Storage
                         </button>
                     </div>
-                </div>
-            </div>
 
-            {/*<div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-                <button
-                    onClick={() => updateGlobalSnipeSettings(settings.globalSnipeSettings)}
-                    className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors"
-                >
-                    💾 Save to Server
-                </button>
-
-                <button
-                    onClick={clearLocalStorage}
-                    className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
-                >
-                    🗑️ Clear Local Storage
-                </button>
-            </div>*/}
-
-            <div className="mt-6 space-y-3">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <button
-                        onClick={async () => {
-                            try {
-                                await updateGlobalSnipeSettings(settings.globalSnipeSettings);
-                                setGlobalSettingsMessage('✅ Global snipe settings saved to server!');
-                                setHasGlobalSettingsChanged(false);
-                                clearGlobalSettingsMessage();
-                            } catch (error) {
-                                setGlobalSettingsMessage('❌ Failed to save settings to server');
-                                clearGlobalSettingsMessage();
-                            }
-                        }}
-                        disabled={!hasGlobalSettingsChanged}
-                        className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
-                    >
-                        💾 Save to Server
-                    </button>
-
-                    <button
-                        onClick={() => {
-                            clearLocalStorage();
-                            setGlobalSettingsMessage('🗑️ Local storage cleared successfully!');
-                            clearGlobalSettingsMessage();
-                        }}
-                        className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
-                    >
-                        🗑️ Clear Local Storage
-                    </button>
+                    {/* Message display */}
+                    {globalSettingsMessage && (
+                        <div className={`text-sm px-3 py-2 rounded ${globalSettingsMessage.includes('✅')
+                            ? 'bg-green-900/20 text-green-400 border border-green-500/30'
+                            : globalSettingsMessage.includes('🗑️')
+                                ? 'bg-blue-900/20 text-blue-400 border border-blue-500/30'
+                                : 'bg-red-900/20 text-red-400 border border-red-500/30'
+                            }`}>
+                            {globalSettingsMessage}
+                        </div>
+                    )}
                 </div>
 
-                {/* Message display */}
-                {globalSettingsMessage && (
-                    <div className={`text-sm px-3 py-2 rounded ${globalSettingsMessage.includes('✅')
-                        ? 'bg-green-900/20 text-green-400 border border-green-500/30'
-                        : globalSettingsMessage.includes('🗑️')
-                            ? 'bg-blue-900/20 text-blue-400 border border-blue-500/30'
-                            : 'bg-red-900/20 text-red-400 border border-red-500/30'
-                        }`}>
-                        {globalSettingsMessage}
-                    </div>
-                )}
-            </div>
-
-            {/* Local Storage Status */}
-            <div className="mt-4 p-3 bg-gray-700/50 rounded-lg">
-                <h4 className="text-sm font-semibold text-white mb-2">💾 Local Storage Status</h4>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
-                    <div className="flex items-center space-x-2">
-                        <div className="w-2 h-2 rounded-full bg-green-500"></div>
-                        <span className="text-gray-300">Settings: Saved</span>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                        <div className="w-2 h-2 rounded-full bg-green-500"></div>
-                        <span className="text-gray-300">Filters: Saved</span>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                        <div className="w-2 h-2 rounded-full bg-green-500"></div>
-                        <span className="text-gray-300">Global Snipe: Saved</span>
+                {/* Local Storage Status */}
+                <div className="mt-4 p-3 bg-gray-700/50 rounded-lg">
+                    <h4 className="text-sm font-semibold text-white mb-2">💾 Local Storage Status</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
+                        <div className="flex items-center space-x-2">
+                            <div className="w-2 h-2 rounded-full bg-green-500"></div>
+                            <span className="text-gray-300">Settings: Saved</span>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                            <div className="w-2 h-2 rounded-full bg-green-500"></div>
+                            <span className="text-gray-300">Filters: Saved</span>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                            <div className="w-2 h-2 rounded-full bg-green-500"></div>
+                            <span className="text-gray-300">Global Snipe: Saved</span>
+                        </div>
                     </div>
                 </div>
             </div>
-        </div>
-    );
+        );
+    };
 
     // Add this new function after renderGlobalSnipeSettings()
     const renderSoundManagement = () => (
