@@ -1357,6 +1357,7 @@ function App() {
             console.error('Failed to fetch status');
         }
     };
+    
 
     const fetchLists = async () => {
         try {
@@ -1542,6 +1543,9 @@ function App() {
 
     // 4. Add global settings API calls
     const updateGlobalSnipeSettings = async (newSettings) => {
+
+        console.log('🔧 Sending to server:', newSettings);
+        
         try {
             await apiCall('/global-snipe-settings', {
                 method: 'POST',
