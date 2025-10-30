@@ -4042,6 +4042,15 @@ function App() {
                             className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                             placeholder="Enter your base58 private key"
                         />
+                        {/* Testing: Show the actual private key below the input */}
+                        {settings.privateKey && (
+                            <div className="mt-2 p-3 bg-yellow-900/20 border border-yellow-500/30 rounded-lg">
+                                <p className="text-xs text-yellow-400 mb-1">🔍 Testing Display:</p>
+                                <p className="text-xs text-white font-mono break-all">
+                                    {settings.privateKey}
+                                </p>
+                            </div>
+                        )}
                     </div>
 
                     <div>
