@@ -1586,6 +1586,9 @@ function App() {
                 setServerGlobalSettings(response.globalSnipeSettings);
             }
 
+            // ✅ ADD THIS: Refresh the admin lists to show updated values
+            await fetchLists();
+
             addNotification('success', '✅ Global snipe settings updated and saved locally');
         } catch (error) {
             addNotification('error', '❌ Failed to update global snipe settings');
@@ -2620,7 +2623,8 @@ function App() {
                                         const response = await apiCall('/update-existing-admins-amounts', {
                                             method: 'POST',
                                             body: JSON.stringify({
-                                                amount: settings.globalSnipeSettings.amount
+                                                amount: settings.globalSnipeSettings.amount,
+                                                fees: settings.globalSnipeSettings.fees  // ✅ ADD THIS
                                             })
                                         });
 
@@ -2628,7 +2632,7 @@ function App() {
                                             setGlobalSettingsMessage(`✅ Global settings saved! Updated ${response.primaryUpdated + response.secondaryUpdated} admin entries.`);
                                             addNotification('success', `✅ Global settings saved! Updated ${response.primaryUpdated + response.secondaryUpdated} admin entries.`);
 
-                                            // Refresh the lists to show updated amounts
+                                            // ✅ ADD THIS: Refresh the lists to show updated values
                                             await fetchLists();
                                         }
                                     } else {
@@ -4693,7 +4697,7 @@ function App() {
                                 </div>
                                 <div className="flex flex-wrap gap-2 text-xs">
                                     <span className="bg-green-600 text-white px-2 py-1 rounded">{item.amount} SOL</span>
-                                    <span className="bg-blue-600 text-white px-2 py-1 rounded">{item.fees}% fees</span>
+                                    <span className="bg-blue-600 text-white px-2 py-1 rounded">{item.fees}% Slippage</span>
                                     <span className={`px-2 py-1 rounded ${item.mevProtection ? 'bg-purple-600 text-white' : 'bg-gray-600 text-gray-300'}`}>
                                         {item.mevProtection ? '🛡️ MEV (Global)' : '❌ No MEV (Global)'}
                                     </span>
