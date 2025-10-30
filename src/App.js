@@ -2486,6 +2486,7 @@ function App() {
                         </div>
 
 
+
                     </div>
 
                     <div>
@@ -2961,41 +2962,52 @@ function App() {
                     </div>
                 </div>
 
-                <button
-                    onClick={async () => {
-                        try {
-                            console.log('🔧 Saving Detection Settings...');
+                <div className="flex flex-col space-y-2">
+                    <button
+                        onClick={async () => {
+                            try {
+                                await apiCall('/detection-settings', {
+                                    method: 'POST',
+                                    body: JSON.stringify({
+                                        enablePrimaryDetection: settings.enablePrimaryDetection,
+                                        enableSecondaryDetection: settings.enableSecondaryDetection
+                                    })
+                                });
 
-                            const response = await apiCall('/detection-settings', {
-                                method: 'POST',
-                                body: JSON.stringify({
+                                // Add notification to dashboard
+                                addNotification('success', '✅ Detection settings updated successfully');
+
+                                // Show inline message below button
+                                setButtonMessages(prev => ({ ...prev, detectionSettings: '✅ Detection settings saved successfully!' }));
+                                clearButtonMessage('detectionSettings');
+
+                                // Store the original settings to track changes
+                                setOriginalSettings(prev => ({
+                                    ...prev,
                                     enablePrimaryDetection: settings.enablePrimaryDetection,
                                     enableSecondaryDetection: settings.enableSecondaryDetection
-                                })
-                            });
+                                }));
+                            } catch (error) {
+                                addNotification('error', '❌ Failed to update detection settings');
+                                setButtonMessages(prev => ({ ...prev, detectionSettings: '❌ Failed to save detection settings' }));
+                                clearButtonMessage('detectionSettings');
+                            }
+                        }}
+                        className="w-full px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors"
+                    >
+                        Save Detection Settings
+                    </button>
 
-                            console.log('✅ Detection settings saved successfully:', response);
-
-                            // Add notification
-                            addNotification('success', '✅ Detection settings updated successfully');
-
-                            // Store the original settings to track changes
-                            setOriginalSettings(prev => ({
-                                ...prev,
-                                enablePrimaryDetection: settings.enablePrimaryDetection,
-                                enableSecondaryDetection: settings.enableSecondaryDetection
-                            }));
-
-                            console.log('✅ Notification added and originalSettings updated');
-                        } catch (error) {
-                            console.error('❌ Failed to save detection settings:', error);
-                            addNotification('error', '❌ Failed to update detection settings');
-                        }
-                    }}
-                    className="w-full px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors"
-                >
-                    Save Detection Settings
-                </button>
+                    {/* Inline success/error message display */}
+                    {buttonMessages.detectionSettings && (
+                        <div className={`text-sm px-3 py-2 rounded ${buttonMessages.detectionSettings.includes('✅')
+                                ? 'bg-green-900/20 text-green-400 border border-green-500/30'
+                                : 'bg-red-900/20 text-red-400 border border-red-500/30'
+                            }`}>
+                            {buttonMessages.detectionSettings}
+                        </div>
+                    )}
+                </div>
             </div>
         </div>
     );
