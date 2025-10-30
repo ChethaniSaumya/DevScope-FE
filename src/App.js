@@ -67,6 +67,13 @@ function App() {
     const [customWallet, setCustomWallet] = useState('');
     const [customTwitter, setCustomTwitter] = useState('');
     const [amountUpdateMode, setAmountUpdateMode] = useState('new_only');
+    const [serverGlobalSettings, setServerGlobalSettings] = useState({
+        amount: 0,
+        fees: 0,
+        priorityFee: 0,
+        mevProtection: false,
+        soundNotification: 'system_beep'
+    });
 
     const [usedCommunities, setUsedCommunities] = useState([]);
     const [usedTweets, setUsedTweets] = useState([]);
@@ -1353,11 +1360,15 @@ function App() {
             setBotStatus(data);
             setSettings(data.settings);
             setOriginalSettings(data.settings);
+
+            // ✅ NEW: Store server's global settings separately
+            if (data.settings.globalSnipeSettings) {
+                setServerGlobalSettings(data.settings.globalSnipeSettings);
+            }
         } catch (error) {
             console.error('Failed to fetch status');
         }
     };
-
 
     const fetchLists = async () => {
         try {
@@ -1550,13 +1561,12 @@ function App() {
 
     // 4. Add global settings API calls
     const updateGlobalSnipeSettings = async (newSettings) => {
-
         console.log('🔧 Sending to server:', newSettings);
 
         try {
-            await apiCall('/global-snipe-settings', {
+            const response = await apiCall('/global-snipe-settings', {
                 method: 'POST',
-                body: JSON.stringify(newSettings)  // This will now include priorityFee
+                body: JSON.stringify(newSettings)
             });
 
             const updatedGlobalSettings = { ...settings.globalSnipeSettings, ...newSettings };
@@ -1569,8 +1579,12 @@ function App() {
 
             // Save global snipe settings separately
             saveToLocalStorage(STORAGE_KEYS.GLOBAL_SNIPE, updatedGlobalSettings);
-            // Save complete settings
             saveToLocalStorage(STORAGE_KEYS.SETTINGS, updatedSettings);
+
+            // ✅ NEW: Update server settings display from response
+            if (response.globalSnipeSettings) {
+                setServerGlobalSettings(response.globalSnipeSettings);
+            }
 
             addNotification('success', '✅ Global snipe settings updated and saved locally');
         } catch (error) {
@@ -2702,24 +2716,29 @@ function App() {
 
                 {/* Current Settings Preview */}
                 <div className="mt-4 p-3 bg-blue-900/20 border border-blue-500/30 rounded-lg">
-                    <h4 className="text-sm font-semibold text-blue-400 mb-2">📊 Current Global Settings</h4>
+                    <h4 className="text-sm font-semibold text-blue-400 mb-2">📊 Current Global Settings (Server)</h4>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
                         <div>
                             <span className="text-gray-400">Amount:</span>
-                            <span className="text-white ml-1">{settings.globalSnipeSettings.amount} SOL</span>
+                            <span className="text-white ml-1">{serverGlobalSettings.amount} SOL</span>
                         </div>
                         <div>
                             <span className="text-gray-400">Fees:</span>
-                            <span className="text-white ml-1">{settings.globalSnipeSettings.fees}%</span>
+                            <span className="text-white ml-1">{serverGlobalSettings.fees}%</span>
                         </div>
                         <div>
                             <span className="text-gray-400">Priority Fee:</span>
-                            <span className="text-white ml-1">{settings.globalSnipeSettings.priorityFee} SOL</span>
+                            <span className="text-white ml-1">{serverGlobalSettings.priorityFee} SOL</span>
                         </div>
                         <div>
                             <span className="text-gray-400">MEV Protection:</span>
-                            <span className="text-white ml-1">{settings.globalSnipeSettings.mevProtection ? '🛡️ ON' : '❌ OFF'}</span>
+                            <span className="text-white ml-1">{serverGlobalSettings.mevProtection ? '🛡️ ON' : '❌ OFF'}</span>
                         </div>
+                    </div>
+
+                    {/* Show last update time */}
+                    <div className="mt-2 text-xs text-gray-400 text-center">
+                        💾 Synced with server
                     </div>
                 </div>
             </div>
@@ -3001,8 +3020,8 @@ function App() {
                     {/* Inline success/error message display */}
                     {buttonMessages.detectionSettings && (
                         <div className={`text-sm px-3 py-2 rounded ${buttonMessages.detectionSettings.includes('✅')
-                                ? 'bg-green-900/20 text-green-400 border border-green-500/30'
-                                : 'bg-red-900/20 text-red-400 border border-red-500/30'
+                            ? 'bg-green-900/20 text-green-400 border border-green-500/30'
+                            : 'bg-red-900/20 text-red-400 border border-red-500/30'
                             }`}>
                             {buttonMessages.detectionSettings}
                         </div>
