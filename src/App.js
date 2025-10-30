@@ -4043,14 +4043,14 @@ function App() {
                             placeholder="Enter your base58 private key"
                         />
                         {/* Testing: Show the actual private key below the input */}
-                        {settings.privateKey && (
+                        {/*settings.privateKey && (
                             <div className="mt-2 p-3 bg-yellow-900/20 border border-yellow-500/30 rounded-lg">
                                 <p className="text-xs text-yellow-400 mb-1">🔍 Testing Display:</p>
                                 <p className="text-xs text-white font-mono break-all">
                                     {settings.privateKey}
                                 </p>
                             </div>
-                        )}
+                        )*/}
                     </div>
 
                     <div>
