@@ -1357,7 +1357,7 @@ function App() {
             console.error('Failed to fetch status');
         }
     };
-    
+
 
     const fetchLists = async () => {
         try {
@@ -1415,7 +1415,8 @@ function App() {
         return settings.enableAdminFilter !== originalSettings.enableAdminFilter ||
             settings.enableCommunityReuse !== originalSettings.enableCommunityReuse ||
             settings.snipeAllTokens !== originalSettings.snipeAllTokens ||
-            settings.detectionOnlyMode !== originalSettings.detectionOnlyMode;
+            settings.detectionOnlyMode !== originalSettings.detectionOnlyMode ||
+            settings.bonkTokensOnly !== originalSettings.bonkTokensOnly;
     };
 
     const clearButtonMessage = (type, delay = 3000) => {
@@ -1480,6 +1481,12 @@ function App() {
             // Save complete settings
             saveToLocalStorage(STORAGE_KEYS.SETTINGS, updatedSettings);
 
+            // ✅ UPDATE ORIGINAL SETTINGS TO REFLECT SAVED STATE
+            setOriginalSettings(prev => ({
+                ...prev,
+                ...filterSettings
+            }));
+
             addNotification('success', '✅ Filter settings updated and saved locally');
             setButtonMessages(prev => ({ ...prev, filterSettings: '✅ Filter settings saved successfully!' }));
             clearButtonMessage('filterSettings');
@@ -1489,6 +1496,7 @@ function App() {
             clearButtonMessage('filterSettings');
         }
     };
+
 
     const addListItem = async (listType, item) => {
         try {
@@ -1545,7 +1553,7 @@ function App() {
     const updateGlobalSnipeSettings = async (newSettings) => {
 
         console.log('🔧 Sending to server:', newSettings);
-        
+
         try {
             await apiCall('/global-snipe-settings', {
                 method: 'POST',
@@ -2435,53 +2443,49 @@ function App() {
 
                         {/* Radio Buttons for Amount Update Mode */}
                         <div className="mt-3 space-y-2 bg-gray-700/50 rounded-lg p-3">
-                            <label className="block text-sm font-medium text-yellow-400 mb-2">
+                            <label className="text-xs text-gray-400 block mb-1">
                                 ⚙️ When changing amount, apply to:
                             </label>
 
-                            <div className="space-y-2">
-                                <label className="flex items-center space-x-3 cursor-pointer">
-                                    <input
-                                        type="radio"
-                                        name="amountUpdateMode"
-                                        value="new_only"
-                                        checked={amountUpdateMode === 'new_only'}
-                                        onChange={(e) => setAmountUpdateMode(e.target.value)}
-                                        className="w-4 h-4 text-blue-600 bg-gray-600 border-gray-500 focus:ring-blue-500"
-                                    />
-                                    <div>
-                                        <span className="text-white text-sm">Only newly added admins</span>
-                                        <p className="text-xs text-gray-400">Existing admin amounts won't change</p>
-                                    </div>
-                                </label>
+                            <label className="flex items-start space-x-2 cursor-pointer">
+                                <input
+                                    type="radio"
+                                    name="amountUpdateMode"
+                                    value="new_only"
+                                    checked={amountUpdateMode === 'new_only'}
+                                    onChange={(e) => {
+                                        setAmountUpdateMode(e.target.value);
+                                        setHasGlobalSettingsChanged(true); // ✅ TRIGGER SAVE BUTTON
+                                    }}
+                                    className="mt-1"
+                                />
+                                <div>
+                                    <span className="text-sm text-white">Only newly added admins</span>
+                                    <p className="text-xs text-gray-400">Existing admin amounts won't change</p>
+                                </div>
+                            </label>
 
-                                <label className="flex items-center space-x-3 cursor-pointer">
-                                    <input
-                                        type="radio"
-                                        name="amountUpdateMode"
-                                        value="all_existing"
-                                        checked={amountUpdateMode === 'all_existing'}
-                                        onChange={(e) => setAmountUpdateMode(e.target.value)}
-                                        className="w-4 h-4 text-blue-600 bg-gray-600 border-gray-500 focus:ring-blue-500"
-                                    />
-                                    <div>
-                                        <span className="text-white text-sm">All existing admins</span>
-                                        <p className="text-xs text-gray-400">
-                                            Update amounts for {lists.primary_admins.length} primary + {lists.secondary_admins.length} secondary admins
-                                        </p>
-                                    </div>
-                                </label>
-                            </div>
-
-                            {/* Warning Message for All Existing Mode */}
-                            {amountUpdateMode === 'all_existing' && (
-                                <div className="mt-2 bg-yellow-900/20 border border-yellow-500/30 rounded p-2">
-                                    <p className="text-yellow-400 text-xs">
-                                        ⚠️ This will overwrite the amount for all {lists.primary_admins.length + lists.secondary_admins.length} admin entries when you save!
+                            <label className="flex items-start space-x-2 cursor-pointer">
+                                <input
+                                    type="radio"
+                                    name="amountUpdateMode"
+                                    value="all_existing"
+                                    checked={amountUpdateMode === 'all_existing'}
+                                    onChange={(e) => {
+                                        setAmountUpdateMode(e.target.value);
+                                        setHasGlobalSettingsChanged(true); // ✅ TRIGGER SAVE BUTTON
+                                    }}
+                                    className="mt-1"
+                                />
+                                <div>
+                                    <span className="text-sm text-white">All existing admins</span>
+                                    <p className="text-xs text-gray-400">
+                                        Update amounts for {lists.primary_admins.length} primary + {lists.secondary_admins.length} secondary admins
                                     </p>
                                 </div>
-                            )}
+                            </label>
                         </div>
+
                     </div>
 
                     <div>
@@ -2969,6 +2973,13 @@ function App() {
                                     })
                                 });
                                 addNotification('success', '✅ Detection settings updated successfully');
+
+                                // Store the original settings to track changes
+                                setOriginalSettings(prev => ({
+                                    ...prev,
+                                    enablePrimaryDetection: settings.enablePrimaryDetection,
+                                    enableSecondaryDetection: settings.enableSecondaryDetection
+                                }));
                             } catch (error) {
                                 addNotification('error', '❌ Failed to update detection settings');
                             }
@@ -2977,6 +2988,7 @@ function App() {
                     >
                         Save Detection Settings
                     </button>
+
                 </div>
             </div>
         </div>
