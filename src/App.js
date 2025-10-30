@@ -2504,7 +2504,7 @@ function App() {
                     </div>
 
                     <div>
-                        <label className="block text-sm font-medium text-gray-300 mb-2">Fees (%)</label>
+                        <label className="block text-sm font-medium text-gray-300 mb-2">Slippage (%)</label>
                         <input
                             type="number"
                             value={settings.globalSnipeSettings.fees}
@@ -4540,7 +4540,7 @@ function App() {
                             </div>
 
                             <div>
-                                <label className="block text-sm font-medium text-gray-300 mb-2">Fees (%)</label>
+                                <label className="block text-sm font-medium text-gray-300 mb-2">Slippage (%)</label>
                                 <input
                                     type="number"
                                     value={localFormData.fees}
