@@ -1497,7 +1497,6 @@ function App() {
         }
     };
 
-
     const addListItem = async (listType, item) => {
         try {
             await apiCall(`/lists/${listType}`, {
@@ -2486,6 +2485,7 @@ function App() {
                             </label>
                         </div>
 
+
                     </div>
 
                     <div>
@@ -2961,35 +2961,41 @@ function App() {
                     </div>
                 </div>
 
-                <div className="flex flex-col space-y-2">
-                    <button
-                        onClick={async () => {
-                            try {
-                                await apiCall('/detection-settings', {
-                                    method: 'POST',
-                                    body: JSON.stringify({
-                                        enablePrimaryDetection: settings.enablePrimaryDetection,
-                                        enableSecondaryDetection: settings.enableSecondaryDetection
-                                    })
-                                });
-                                addNotification('success', '✅ Detection settings updated successfully');
+                <button
+                    onClick={async () => {
+                        try {
+                            console.log('🔧 Saving Detection Settings...');
 
-                                // Store the original settings to track changes
-                                setOriginalSettings(prev => ({
-                                    ...prev,
+                            const response = await apiCall('/detection-settings', {
+                                method: 'POST',
+                                body: JSON.stringify({
                                     enablePrimaryDetection: settings.enablePrimaryDetection,
                                     enableSecondaryDetection: settings.enableSecondaryDetection
-                                }));
-                            } catch (error) {
-                                addNotification('error', '❌ Failed to update detection settings');
-                            }
-                        }}
-                        className="w-full px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors"
-                    >
-                        Save Detection Settings
-                    </button>
+                                })
+                            });
 
-                </div>
+                            console.log('✅ Detection settings saved successfully:', response);
+
+                            // Add notification
+                            addNotification('success', '✅ Detection settings updated successfully');
+
+                            // Store the original settings to track changes
+                            setOriginalSettings(prev => ({
+                                ...prev,
+                                enablePrimaryDetection: settings.enablePrimaryDetection,
+                                enableSecondaryDetection: settings.enableSecondaryDetection
+                            }));
+
+                            console.log('✅ Notification added and originalSettings updated');
+                        } catch (error) {
+                            console.error('❌ Failed to save detection settings:', error);
+                            addNotification('error', '❌ Failed to update detection settings');
+                        }
+                    }}
+                    className="w-full px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors"
+                >
+                    Save Detection Settings
+                </button>
             </div>
         </div>
     );
