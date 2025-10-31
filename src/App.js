@@ -1540,7 +1540,8 @@ function App() {
             amount: settings.globalSnipeSettings.amount,
             fees: settings.globalSnipeSettings.fees,
             mevProtection: settings.globalSnipeSettings.mevProtection,
-            soundNotification: settings.globalSnipeSettings.soundNotification
+            soundNotification: settings.globalSnipeSettings.soundNotification,
+            priorityFee: settings.globalSnipeSettings.priorityFee
         });
     };
 
@@ -4464,7 +4465,8 @@ function App() {
             amount: settings.globalSnipeSettings.amount,
             fees: settings.globalSnipeSettings.fees,
             mevProtection: settings.globalSnipeSettings.mevProtection,
-            soundNotification: settings.globalSnipeSettings.soundNotification
+            soundNotification: settings.globalSnipeSettings.soundNotification,
+            priorityFee: settings.globalSnipeSettings.priorityFee
         });
 
         // ✅ Reset form when modal opens or listType changes
@@ -4555,6 +4557,20 @@ function App() {
                                     className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                 />
                             </div>
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-medium text-gray-300 mb-2">Priority Fee (SOL)</label>
+                            <input
+                                type="number"
+                                step="0.0001"
+                                value={localFormData.priorityFee}
+                                onChange={(e) => setLocalFormData(prev => ({
+                                    ...prev,
+                                    priorityFee: parseFloat(e.target.value) || 0
+                                }))}
+                                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
+                            />
                         </div>
 
                         {/* ✅ MEV Protection - DISABLED (read-only) */}
@@ -4698,8 +4714,9 @@ function App() {
                                 <div className="flex flex-wrap gap-2 text-xs">
                                     <span className="bg-green-600 text-white px-2 py-1 rounded">{item.amount} SOL</span>
                                     <span className="bg-blue-600 text-white px-2 py-1 rounded">{item.fees}% Slippage</span>
+                                    <span className="bg-purple-600 text-white px-2 py-1 rounded">{item.priorityFee || 0} SOL Priority</span>
                                     <span className={`px-2 py-1 rounded ${item.mevProtection ? 'bg-purple-600 text-white' : 'bg-gray-600 text-gray-300'}`}>
-                                        {item.mevProtection ? '🛡️ MEV (Global)' : '❌ No MEV (Global)'}
+                                        {item.mevProtection ? '🛡️ MEV' : '❌ No MEV'}
                                     </span>
                                     {item.soundNotification && (
                                         <span className="bg-yellow-600 text-white px-2 py-1 rounded">🔊 {item.soundNotification}</span>
