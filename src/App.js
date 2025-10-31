@@ -613,21 +613,6 @@ function App() {
         }
     };
 
-    // Add this function in App.js after your other list functions
-    const updateAdminEntry = async (listType, id, updates) => {
-        try {
-            await apiCall(`/lists/${listType}/${id}/update`, {
-                method: 'POST',
-                body: JSON.stringify(updates)
-            });
-
-            await fetchLists(); // Refresh the lists
-            addNotification('success', '✅ Admin entry updated successfully');
-        } catch (error) {
-            addNotification('error', '❌ Failed to update admin entry');
-        }
-    };
-
     // Lists state
     const [lists, setLists] = useState({
         primary_admins: [],
@@ -4579,7 +4564,8 @@ function App() {
                 amount: localFormData.amount,
                 fees: localFormData.fees,
                 mevProtection: localFormData.mevProtection,
-                soundNotification: localFormData.soundNotification
+                soundNotification: localFormData.soundNotification,
+                priorityFee: localFormData.priorityFee
             });
         };
 
@@ -4827,33 +4813,6 @@ function App() {
                             >
                                 <Trash2 size={16} />
                             </button>
-
-                            <div className="flex space-x-2">
-                                {/* Add Edit Button */}
-                                <button
-                                    onClick={() => {
-                                        // Open a modal or inline editor
-                                        const newPriorityFee = prompt(`Edit priority fee for ${item.address}:`, item.priorityFee || 0);
-                                        if (newPriorityFee !== null) {
-                                            updateAdminEntry(listType, item.id, {
-                                                priorityFee: parseFloat(newPriorityFee)
-                                            });
-                                        }
-                                    }}
-                                    className="p-2 text-blue-400 hover:text-blue-300 hover:bg-blue-900/20 rounded transition-colors"
-                                    title="Edit priority fee"
-                                >
-                                    ✏️
-                                </button>
-
-                                <button
-                                    onClick={() => removeListItem(listType, item.id)}
-                                    className="p-2 text-red-400 hover:text-red-300 hover:bg-red-900/20 rounded transition-colors"
-                                    title="Remove from Firebase and local storage"
-                                >
-                                    <Trash2 size={16} />
-                                </button>
-                            </div>
                         </div>
                     ))
                 )}
