@@ -3228,12 +3228,7 @@ function App() {
                                     {token.config?.priorityFee || settings.globalSnipeSettings.priorityFee} SOL
                                 </p>
                             </div>
-                        </div>
-                        {/* Debug info - remove in production */}
-                        <div className="mt-2 p-2 bg-gray-600 rounded text-xs">
-                            <p className="text-gray-400">Debug: config.priorityFee = {token.config?.priorityFee}</p>
-                            <p className="text-gray-400">Debug: global.priorityFee = {settings.globalSnipeSettings.priorityFee}</p>
-                        </div>
+                        </div>                        
                     </div>
 
                     {/* Action Buttons - Only show for Secondary */}
