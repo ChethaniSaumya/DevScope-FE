@@ -3228,7 +3228,7 @@ function App() {
                                     {token.config?.priorityFee || settings.globalSnipeSettings.priorityFee} SOL
                                 </p>
                             </div>
-                        </div>                        
+                        </div>
                     </div>
 
                     {/* Action Buttons - Only show for Secondary */}
@@ -4531,6 +4531,7 @@ function App() {
 
     const AddFormModal = ({ listType, onClose, onAdd }) => {
         // ✅ Use local state for form data within modal
+  
         const [localFormData, setLocalFormData] = useState({
             address: '',
             username: '',
@@ -4538,7 +4539,7 @@ function App() {
             fees: settings.globalSnipeSettings.fees,
             mevProtection: settings.globalSnipeSettings.mevProtection,
             soundNotification: settings.globalSnipeSettings.soundNotification,
-            priorityFee: settings.globalSnipeSettings.priorityFee
+            priorityFee: settings.globalSnipeSettings.priorityFee  // ✅ ADD THIS LINE
         });
 
         // ✅ Reset form when modal opens or listType changes
@@ -4549,7 +4550,8 @@ function App() {
                 amount: settings.globalSnipeSettings.amount,
                 fees: settings.globalSnipeSettings.fees,
                 mevProtection: settings.globalSnipeSettings.mevProtection,
-                soundNotification: settings.globalSnipeSettings.soundNotification
+                soundNotification: settings.globalSnipeSettings.soundNotification,
+                priorityFee: settings.globalSnipeSettings.priorityFee
             });
         }, [listType, settings.globalSnipeSettings]);
 
