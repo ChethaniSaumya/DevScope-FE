@@ -1596,92 +1596,130 @@ function App() {
         }
     };
 
-    const snipeWithGlobalSettings = async (tokenAddress) => {
-        // ⏱️ START SNIPE TIMING - DECLARE OUTSIDE TRY BLOCK
-        const snipeStart = performance.now();
+    // In App.js - Replace your existing snipeWithGlobalSettings function
+const snipeWithGlobalSettings = async (tokenAddress) => {
+    // ⏱️ START SNIPE TIMING - DECLARE OUTSIDE TRY BLOCK
+    const snipeStart = performance.now();
 
-        try {
-            await apiCall(`/snipe-with-global-settings/${tokenAddress}`, { method: 'POST' });
-
-            // ⏱️ LOG SNIPE API TIMING
-            const snipeApiTime = performance.now() - snipeStart;
-            console.log(`⏱️ SECONDARY SNIPE API TIME: ${snipeApiTime.toFixed(2)}ms`);
-
-            addNotification('success', `🎯 Token sniped using global settings: ${tokenAddress.substring(0, 8)}...`);
-
-            // Close popup
-            setSecondaryPopup({ show: false, tokenData: null });
-
-            // ✅ AUTOMATICALLY OPEN TOKEN PAGE AFTER SECONDARY SNIPE
-            console.log('🌐 Auto-opening token page after secondary snipe...');
-
-            // Use a small delay
-            setTimeout(async () => {
-                // ⏱️ START BROWSER TIMING FOR SECONDARY SNIPE
-                const secondaryBrowserStart = performance.now();
-
-                if (settings.tokenPageDestination === 'axiom') {
-                    try {
-                        const response = await apiCall(`/pair-address/${tokenAddress}`);
-
-                        if (response.success && response.pairData && response.pairData.pairAddress) {
-                            const axiomUrl = `https://axiom.trade/meme/${response.pairData.pairAddress}`;
-
-                            if (window.electronAPI && window.electronAPI.openExternalURL) {
-                                window.electronAPI.openExternalURL(axiomUrl);
-                            } else {
-                                window.open(axiomUrl, '_blank');
-                            }
-
-                            // ⏱️ LOG SECONDARY SNIPE BROWSER TIMING
-                            const browserOpenTime = performance.now() - secondaryBrowserStart;
-                            console.log(`⏱️ SECONDARY SNIPE BROWSER TIMING: ${browserOpenTime.toFixed(2)}ms`);
-                            console.log(`   Total Snipe Time: ${(performance.now() - snipeStart).toFixed(2)}ms`);
-
-                            addNotification('success', `🌐 Axiom opened automatically with pair: ${response.pairData.pairAddress.substring(0, 8)}...`);
-                        } else {
-                            const fallbackUrl = `https://axiom.trade/meme/${tokenAddress}`;
-                            if (window.electronAPI && window.electronAPI.openExternalURL) {
-                                window.electronAPI.openExternalURL(fallbackUrl);
-                            } else {
-                                window.open(fallbackUrl, '_blank');
-                            }
-
-                            // ⏱️ LOG FALLBACK BROWSER TIMING
-                            const browserOpenTime = performance.now() - secondaryBrowserStart;
-                            console.log(`⏱️ SECONDARY SNIPE FALLBACK BROWSER TIMING: ${browserOpenTime.toFixed(2)}ms`);
-
-                            addNotification('warning', '🔍 No Bonding Curve found yet, opening Axiom with token address');
-                        }
-                    } catch (error) {
-                        console.error('Error opening Axiom with pair:', error);
-                        addNotification('error', '❌ Error opening token page');
-                    }
-                } else {
-                    // Neo BullX
-                    const neoBullxUrl = `https://neo.bullx.io/terminal?chainId=1399811149&address=${tokenAddress}`;
-                    if (window.electronAPI && window.electronAPI.openExternalURL) {
-                        window.electronAPI.openExternalURL(neoBullxUrl);
-                    } else {
-                        window.open(neoBullxUrl, '_blank');
-                    }
-
-                    // ⏱️ LOG NEO BULLX BROWSER TIMING
-                    const browserOpenTime = performance.now() - secondaryBrowserStart;
-                    console.log(`⏱️ SECONDARY SNIPE NEO BULLX BROWSER TIMING: ${browserOpenTime.toFixed(2)}ms`);
-
-                    addNotification('success', `🌐 Neo BullX opened automatically`);
-                }
-            }, 1000); // 1 second delay for secondary snipes
-
-        } catch (error) {
-            // ⏱️ LOG ERROR TIMING - NOW snipeStart IS ACCESSIBLE
-            const errorTime = performance.now() - snipeStart;
-            console.log(`⏱️ SECONDARY SNIPE ERROR TIME: ${errorTime.toFixed(2)}ms`);
-
-            addNotification('error', `❌ Failed to snipe token: ${error.message}`);
+    try {
+        // Get the token data from detectedTokens state
+        const tokenData = detectedTokens.find(token => token.tokenAddress === tokenAddress);
+        
+        // Use individual config if available, otherwise use global settings
+        const configToUse = tokenData?.config || settings.globalSnipeSettings;
+        
+        console.log(`🎯 Using ${tokenData?.config ? 'individual admin' : 'global'} settings for snipe`);
+        console.log(`   Token Address: ${tokenAddress}`);
+        console.log(`   Amount: ${configToUse.amount} SOL`);
+        console.log(`   Fees: ${configToUse.fees}%`);
+        console.log(`   Priority Fee: ${configToUse.priorityFee} SOL`);
+        console.log(`   MEV Protection: ${configToUse.mevProtection ? 'ON' : 'OFF'}`);
+        
+        // Log which admin config is being used
+        if (tokenData?.config) {
+            console.log(`   Admin Match: ${tokenData.matchedEntity} (${tokenData.matchType})`);
         }
-    };
+
+        const response = await apiCall(`/snipe-with-global-settings/${tokenAddress}`, {
+            method: 'POST',
+            body: JSON.stringify({
+                // Pass the individual config or global settings
+                amount: configToUse.amount,
+                fees: configToUse.fees,
+                priorityFee: configToUse.priorityFee,
+                mevProtection: configToUse.mevProtection
+            })
+        });
+
+        // ⏱️ LOG SNIPE API TIMING
+        const snipeApiTime = performance.now() - snipeStart;
+        console.log(`⏱️ SECONDARY SNIPE API TIME: ${snipeApiTime.toFixed(2)}ms`);
+
+        const sourceText = tokenData?.config ? 'individual admin' : 'global settings';
+        addNotification('success', `🎯 Token sniped using ${sourceText}: ${tokenAddress.substring(0, 8)}...`);
+
+        // Close popup
+        setSecondaryPopup({ show: false, tokenData: null });
+
+        // ✅ AUTOMATICALLY OPEN TOKEN PAGE AFTER SECONDARY SNIPE
+        console.log('🌐 Auto-opening token page after secondary snipe...');
+
+        // Use a small delay
+        setTimeout(async () => {
+            // ⏱️ START BROWSER TIMING FOR SECONDARY SNIPE
+            const secondaryBrowserStart = performance.now();
+
+            if (settings.tokenPageDestination === 'axiom') {
+                try {
+                    const response = await apiCall(`/pair-address/${tokenAddress}`);
+
+                    if (response.success && response.pairData && response.pairData.pairAddress) {
+                        const axiomUrl = `https://axiom.trade/meme/${response.pairData.pairAddress}`;
+
+                        if (window.electronAPI && window.electronAPI.openExternalURL) {
+                            window.electronAPI.openExternalURL(axiomUrl);
+                        } else {
+                            const newWindow = window.open(axiomUrl, '_blank');
+                            if (!newWindow || newWindow.closed) {
+                                addNotification('warning', '🚫 Browser blocked popup - Click "Allow" in address bar');
+                            }
+                        }
+
+                        // ⏱️ LOG SECONDARY SNIPE BROWSER TIMING
+                        const browserOpenTime = performance.now() - secondaryBrowserStart;
+                        console.log(`⏱️ SECONDARY SNIPE BROWSER TIMING: ${browserOpenTime.toFixed(2)}ms`);
+                        console.log(`   Total Snipe Time: ${(performance.now() - snipeStart).toFixed(2)}ms`);
+
+                        addNotification('success', `🌐 Axiom opened automatically with pair: ${response.pairData.pairAddress.substring(0, 8)}...`);
+                    } else {
+                        const fallbackUrl = `https://axiom.trade/meme/${tokenAddress}`;
+                        if (window.electronAPI && window.electronAPI.openExternalURL) {
+                            window.electronAPI.openExternalURL(fallbackUrl);
+                        } else {
+                            const newWindow = window.open(fallbackUrl, '_blank');
+                            if (!newWindow || newWindow.closed) {
+                                addNotification('warning', '🚫 Browser blocked popup - Click "Allow" in address bar');
+                            }
+                        }
+
+                        // ⏱️ LOG FALLBACK BROWSER TIMING
+                        const browserOpenTime = performance.now() - secondaryBrowserStart;
+                        console.log(`⏱️ SECONDARY SNIPE FALLBACK BROWSER TIMING: ${browserOpenTime.toFixed(2)}ms`);
+
+                        addNotification('warning', '🔍 No Bonding Curve found yet, opening Axiom with token address');
+                    }
+                } catch (error) {
+                    console.error('Error opening Axiom with pair:', error);
+                    addNotification('error', '❌ Error opening token page');
+                }
+            } else {
+                // Neo BullX
+                const neoBullxUrl = `https://neo.bullx.io/terminal?chainId=1399811149&address=${tokenAddress}`;
+                if (window.electronAPI && window.electronAPI.openExternalURL) {
+                    window.electronAPI.openExternalURL(neoBullxUrl);
+                } else {
+                    const newWindow = window.open(neoBullxUrl, '_blank');
+                    if (!newWindow || newWindow.closed) {
+                        addNotification('warning', '🚫 Browser blocked popup - Click "Allow" in address bar');
+                    }
+                }
+
+                // ⏱️ LOG NEO BULLX BROWSER TIMING
+                const browserOpenTime = performance.now() - secondaryBrowserStart;
+                console.log(`⏱️ SECONDARY SNIPE NEO BULLX BROWSER TIMING: ${browserOpenTime.toFixed(2)}ms`);
+
+                addNotification('success', `🌐 Neo BullX opened automatically`);
+            }
+        }, 1000); // 1 second delay for secondary snipes
+
+    } catch (error) {
+        // ⏱️ LOG ERROR TIMING - NOW snipeStart IS ACCESSIBLE
+        const errorTime = performance.now() - snipeStart;
+        console.log(`⏱️ SECONDARY SNIPE ERROR TIME: ${errorTime.toFixed(2)}ms`);
+
+        addNotification('error', `❌ Failed to snipe token: ${error.message}`);
+    }
+};
 
     const uploadSoundFile = async (file) => {
         if (!file) return;
@@ -3036,11 +3074,12 @@ function App() {
         </div>
     );
 
+    // Find the renderSecondaryPopup function in App.js and update the "Settings Used for Auto-Snipe" section
     const renderSecondaryPopup = () => {
         if (!secondaryPopup.show || !secondaryPopup.tokenData) return null;
 
         const token = secondaryPopup.tokenData;
-        const isPrimary = secondaryPopup.isPrimary || false; // Check if it's a primary match
+        const isPrimary = secondaryPopup.isPrimary || false;
 
         return (
             <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
@@ -3138,23 +3177,29 @@ function App() {
                         </div>
                     </div>
 
-                    {/* Current Global Snipe Settings Display */}
+                    {/* FIX: Use individual admin config instead of global settings */}
                     <div className="bg-gray-700 p-4 rounded mb-6">
                         <h4 className="text-lg font-semibold text-white mb-3">
-                            {isPrimary ? 'Settings Used for Auto-Snipe:' : 'Current Global Snipe Settings:'}
+                            {isPrimary ? 'Settings Used for Auto-Snipe:' : 'Current Admin Settings:'}
                         </h4>
                         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                             <div className="text-center">
                                 <p className="text-sm text-gray-400">Amount</p>
-                                <p className="text-white font-bold">{settings.globalSnipeSettings.amount} SOL</p>
+                                <p className="text-white font-bold">
+                                    {token.config?.amount || settings.globalSnipeSettings.amount} SOL
+                                </p>
                             </div>
                             <div className="text-center">
                                 <p className="text-sm text-gray-400">Fees</p>
-                                <p className="text-white font-bold">{settings.globalSnipeSettings.fees}%</p>
+                                <p className="text-white font-bold">
+                                    {token.config?.fees || settings.globalSnipeSettings.fees}%
+                                </p>
                             </div>
                             <div className="text-center">
-                                <p className="text-sm text-gray-400">MEV Protection</p>
-                                <p className="text-white font-bold">{settings.globalSnipeSettings.mevProtection ? '🛡️ ON' : '❌ OFF'}</p>
+                                <p className="text-sm text-gray-400">Priority Fee</p>
+                                <p className="text-white font-bold">
+                                    {token.config?.priorityFee || settings.globalSnipeSettings.priorityFee} SOL
+                                </p>
                             </div>
                         </div>
                     </div>
@@ -3167,7 +3212,7 @@ function App() {
                                 className="flex-1 px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors font-bold flex items-center justify-center space-x-2"
                             >
                                 <Target size={20} />
-                                <span>SNIPE ({settings.globalSnipeSettings.amount} SOL)</span>
+                                <span>SNIPE ({token.config?.amount || settings.globalSnipeSettings.amount} SOL)</span>
                             </button>
                         </div>
                     )}
