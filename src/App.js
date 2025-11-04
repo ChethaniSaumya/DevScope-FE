@@ -3999,7 +3999,9 @@ function App() {
                                                         <div>
                                                             <p className="text-sm text-white">@{token.twitterHandle}</p>
                                                             <p className="text-xs text-gray-400">Tweet from individual account</p>
-                                                            <p className="text-xs text-blue-400">Tweet ID: {token.twitter.split('/status/')[1]}</p>
+                                                            <p className="text-xs text-blue-400">
+                                                                Tweet ID: {token.twitter ? token.twitter.split('/status/')[1] : 'N/A'}
+                                                            </p>
 
                                                             <div className="mt-1">
                                                                 {token.matchType === 'primary_admin' && token.matchedEntity === token.twitterHandle ? (
@@ -4019,17 +4021,19 @@ function App() {
                                                                 📋
                                                             </button>
                                                             <button
-                                                                onClick={() => copyToClipboard(token.twitter, 'Tweet URL')}
+                                                                onClick={() => copyToClipboard(token.twitter || '', 'Tweet URL')}
                                                                 className="text-blue-400 hover:text-blue-300 px-2 py-1 text-xs"
                                                             >
                                                                 🔗
                                                             </button>
                                                             <button
                                                                 onClick={() => {
-                                                                    if (window.electronAPI && window.electronAPI.openExternalURL) {
+                                                                    if (token.twitter && window.electronAPI && window.electronAPI.openExternalURL) {
                                                                         window.electronAPI.openExternalURL(token.twitter);
-                                                                    } else {
+                                                                    } else if (token.twitter) {
                                                                         window.open(token.twitter, '_blank');
+                                                                    } else {
+                                                                        addNotification('error', 'No tweet URL available');
                                                                     }
                                                                     addNotification('success', `🌐 Opening tweet from @${token.twitterHandle}`);
                                                                 }}
@@ -4043,8 +4047,6 @@ function App() {
                                             </div>
                                         )}
 
-                                        {/* Action Buttons */}
-                                        {/* Action Buttons */}
                                         <div className="flex flex-col md:flex-row gap-3 mt-4">
                                             {/* View Token Page Button */}
                                             <button
