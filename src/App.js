@@ -3824,7 +3824,7 @@ function App() {
                                             </h4>
 
                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                {/* Market Cap */}
+                                                {/* Market Cap 
                                                 <div className="bg-gray-600/50 rounded-lg p-3">
                                                     <div className="flex items-center justify-between">
                                                         <span className="text-gray-400 text-sm">💰 Market Cap</span>
@@ -3835,9 +3835,9 @@ function App() {
                                                     <div className="text-xs text-gray-500 mt-1">
                                                         ~${(token.marketCapSol * 180).toFixed(2)} USD
                                                     </div>
-                                                </div>
+                                                </div>*/}
 
-                                                {/* Sol Amount */}
+                                                {/* Sol Amount 
                                                 <div className="bg-gray-600/50 rounded-lg p-3">
                                                     <div className="flex items-center justify-between">
                                                         <span className="text-gray-400 text-sm">💎 Sol Amount</span>
@@ -3848,7 +3848,7 @@ function App() {
                                                     <div className="text-xs text-gray-500 mt-1">
                                                         Initial liquidity
                                                     </div>
-                                                </div>
+                                                </div>*/}
 
                                                 {/* Token Address - COPYABLE */}
                                                 <div className="bg-gray-600/50 rounded-lg p-3">
