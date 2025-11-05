@@ -3904,8 +3904,7 @@ function App() {
                                         </div>
 
                                         {/* Enhanced Twitter information display */}
-                                        {/* Enhanced Twitter information display */}
-                                        {(token.twitterHandle || token.twitterCommunityId || token.twitterType === 'tweet') && (
+                                        {(token.twitterHandle || token.twitterCommunityId) && (
                                             <div className="bg-gray-700/50 rounded-lg p-3 mt-4">
                                                 <div className="flex items-center space-x-2 mb-2">
                                                     <span className="text-blue-400 font-medium">🐦 Twitter Detection:</span>
@@ -3917,6 +3916,7 @@ function App() {
                                                             <p className="text-sm text-white">Community ID: {token.twitterCommunityId}</p>
                                                             <p className="text-xs text-gray-400">Tracked in Firebase for duplicate prevention</p>
 
+                                                            {/* TWITTER ADMIN MATCH INDICATOR */}
                                                             <div className="mt-1">
                                                                 {token.matchType === 'primary_admin' && token.matchedEntity === `Community ${token.twitterCommunityId}` ? (
                                                                     <span className="text-green-400 text-xs bg-green-900/20 px-2 py-1 rounded">✅ Community Detected</span>
@@ -3926,6 +3926,7 @@ function App() {
                                                                     <span className="text-gray-400 text-xs bg-gray-900/20 px-2 py-1 rounded">❌ Community ID is not in lists</span>
                                                                 )}
                                                             </div>
+
                                                         </div>
                                                         <div className="flex space-x-2">
                                                             <button
@@ -3958,6 +3959,7 @@ function App() {
                                                             <p className="text-sm text-white">@{token.twitterHandle}</p>
                                                             <p className="text-xs text-gray-400">Individual Twitter account</p>
 
+                                                            {/* TWITTER ADMIN MATCH INDICATOR */}
                                                             <div className="mt-1">
                                                                 {token.matchType === 'primary_admin' && token.matchedEntity === token.twitterHandle ? (
                                                                     <span className="text-green-400 text-xs bg-green-900/20 px-2 py-1 rounded">✅ Primary Twitter Admin Match</span>
@@ -3992,61 +3994,11 @@ function App() {
                                                         </div>
                                                     </div>
                                                 )}
-
-                                                {/* ADD THIS NEW BLOCK FOR TWEET TYPE */}
-                                                {token.twitterType === 'tweet' && token.twitterHandle && (
-                                                    <div className="flex items-center justify-between">
-                                                        <div>
-                                                            <p className="text-sm text-white">@{token.twitterHandle}</p>
-                                                            <p className="text-xs text-gray-400">Tweet from individual account</p>
-                                                            <p className="text-xs text-blue-400">
-                                                                Tweet ID: {token.twitter ? token.twitter.split('/status/')[1] : 'N/A'}
-                                                            </p>
-
-                                                            <div className="mt-1">
-                                                                {token.matchType === 'primary_admin' && token.matchedEntity === token.twitterHandle ? (
-                                                                    <span className="text-green-400 text-xs bg-green-900/20 px-2 py-1 rounded">✅ Primary Twitter Admin Match</span>
-                                                                ) : token.matchType === 'secondary_admin' && token.matchedEntity === token.twitterHandle ? (
-                                                                    <span className="text-yellow-400 text-xs bg-yellow-900/20 px-2 py-1 rounded">🔔 Secondary Twitter Admin Match</span>
-                                                                ) : (
-                                                                    <span className="text-gray-400 text-xs bg-gray-900/20 px-2 py-1 rounded">❌ Twitter Admin Not in Lists</span>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                        <div className="flex space-x-2">
-                                                            <button
-                                                                onClick={() => copyToClipboard(token.twitterHandle, 'Twitter handle')}
-                                                                className="text-blue-400 hover:text-blue-300 px-2 py-1 text-xs"
-                                                            >
-                                                                📋
-                                                            </button>
-                                                            <button
-                                                                onClick={() => copyToClipboard(token.twitter || '', 'Tweet URL')}
-                                                                className="text-blue-400 hover:text-blue-300 px-2 py-1 text-xs"
-                                                            >
-                                                                🔗
-                                                            </button>
-                                                            <button
-                                                                onClick={() => {
-                                                                    if (token.twitter && window.electronAPI && window.electronAPI.openExternalURL) {
-                                                                        window.electronAPI.openExternalURL(token.twitter);
-                                                                    } else if (token.twitter) {
-                                                                        window.open(token.twitter, '_blank');
-                                                                    } else {
-                                                                        addNotification('error', 'No tweet URL available');
-                                                                    }
-                                                                    addNotification('success', `🌐 Opening tweet from @${token.twitterHandle}`);
-                                                                }}
-                                                                className="text-blue-400 hover:text-blue-300 px-2 py-1 text-xs"
-                                                            >
-                                                                🐦
-                                                            </button>
-                                                        </div>
-                                                    </div>
-                                                )}
                                             </div>
                                         )}
 
+                                        {/* Action Buttons */}
+                                        {/* Action Buttons */}
                                         <div className="flex flex-col md:flex-row gap-3 mt-4">
                                             {/* View Token Page Button */}
                                             <button
@@ -4579,7 +4531,7 @@ function App() {
 
     const AddFormModal = ({ listType, onClose, onAdd }) => {
         // ✅ Use local state for form data within modal
-
+  
         const [localFormData, setLocalFormData] = useState({
             address: '',
             username: '',
