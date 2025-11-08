@@ -2542,7 +2542,7 @@ function App() {
                                     className="mt-1"
                                 />
                                 <div>
-                                    <span className="text-sm text-white">Only newly added admins</span>
+                                    <span className="text-sm text-white">Only newly adding admins</span>
                                     <p className="text-xs text-gray-400">Existing admin amounts won't change</p>
                                 </div>
                             </label>
