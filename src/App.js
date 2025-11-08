@@ -3824,7 +3824,7 @@ function App() {
                                             </h4>
 
                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                {/* Market Cap */}
+                                                {/* Market Cap 
                                                 <div className="bg-gray-600/50 rounded-lg p-3">
                                                     <div className="flex items-center justify-between">
                                                         <span className="text-gray-400 text-sm">💰 Market Cap</span>
@@ -3836,8 +3836,9 @@ function App() {
                                                         ~${(token.marketCapSol * 180).toFixed(2)} USD
                                                     </div>
                                                 </div>
+*/}
 
-                                                {/* Sol Amount */}
+                                                {/* Sol Amount 
                                                 <div className="bg-gray-600/50 rounded-lg p-3">
                                                     <div className="flex items-center justify-between">
                                                         <span className="text-gray-400 text-sm">💎 Sol Amount</span>
@@ -3849,7 +3850,7 @@ function App() {
                                                         Initial liquidity
                                                     </div>
                                                 </div>
-
+*/}
                                                 {/* Token Address - COPYABLE */}
                                                 <div className="bg-gray-600/50 rounded-lg p-3">
                                                     <div className="flex items-center justify-between mb-2">
@@ -4531,7 +4532,7 @@ function App() {
 
     const AddFormModal = ({ listType, onClose, onAdd }) => {
         // ✅ Use local state for form data within modal
-  
+
         const [localFormData, setLocalFormData] = useState({
             address: '',
             username: '',
