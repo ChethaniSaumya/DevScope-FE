@@ -2,8 +2,10 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
     Play,
     Square,
+    Settings,
     Plus,
     Trash2,
+    Wallet,
     Users,
     Bell,
     Target,
@@ -14,12 +16,15 @@ import {
     Copy,
     ExternalLink,
     Coins,
-    TrendingUp
+    TrendingUp,
+    Clock
 } from 'lucide-react';
 import './App.css';
 
 const API_BASE = 'https://devscope.fun:3002/api';
 //const API_BASE = 'https://devscope.fun:3002/api';
+
+const openedTokens = new Set();
 
 function App() {
     // State management
@@ -73,9 +78,11 @@ function App() {
     const [usedCommunities, setUsedCommunities] = useState([]);
     const [usedTweets, setUsedTweets] = useState([]);
     const [customTweet, setCustomTweet] = useState('');
+    const [showCommunityModal, setShowCommunityModal] = useState(false);
     const [customCommunity, setCustomCommunity] = useState('');
     const [soundFiles, setSoundFiles] = useState([]);
     const [uploadingSound, setUploadingSound] = useState(false);
+    const [isCommunity, setIsCommunity] = useState(false);
     const [twitterSessionStatus, setTwitterSessionStatus] = useState({
         initialized: false,
         loggedIn: false,
@@ -442,6 +449,44 @@ function App() {
         }
     };
 
+    const openTokenPageWithTiming = async (tokenAddress, url, source) => {
+        const browserOpenStart = performance.now();
+
+        // Get timing data from backend response
+        const response = await apiCall(`/pair-address/${tokenAddress}`);
+        const backendTiming = response.timing;
+
+        if (window.electronAPI && window.electronAPI.openExternalURL) {
+            window.electronAPI.openExternalURL(url);
+        } else {
+            window.open(url, '_blank');
+        }
+
+        const browserOpenEnd = performance.now();
+        const browserOpenTime = browserOpenEnd - browserOpenStart;
+
+        // Calculate total time from initial detection to browser open
+        const totalTime = backendTiming?.totalFromDetection + browserOpenTime;
+
+        console.log(`⏱️ COMPLETE END-TO-END TIMING:`);
+        console.log(`   - Token Detection to Processing: ${backendTiming?.detectionToProcessing}ms`);
+        console.log(`   - Token Processing Duration: ${backendTiming?.processingTime}ms`);
+        console.log(`   - API Request Duration: ${backendTiming?.requestDuration}ms`);
+        console.log(`   - Browser Open Duration: ${browserOpenTime.toFixed(2)}ms`);
+        console.log(`   - TOTAL: Token Detection to Axiom Open: ${totalTime?.toFixed(2)}ms`);
+
+        return {
+            totalTime,
+            breakdown: {
+                detectionToProcessing: backendTiming?.detectionToProcessing,
+                processingTime: backendTiming?.processingTime,
+                apiRequestTime: backendTiming?.requestDuration,
+                browserOpenTime,
+                source
+            }
+        };
+    };
+
     // WebSocket connection
     const connectWebSocket = useCallback(() => {
         try {
@@ -676,6 +721,15 @@ function App() {
             addNotification('success', `🗑️ Community ${communityId} removed from Firebase`);
         } catch (error) {
             addNotification('error', '❌ Failed to remove community');
+        }
+    };
+
+    const testFirebaseConnection = async () => {
+        try {
+            const data = await apiCall('/test-firebase');
+            addNotification('success', '✅ Firebase connection successful!');
+        } catch (error) {
+            addNotification('error', '❌ Firebase connection failed');
         }
     };
 
@@ -1255,6 +1309,41 @@ function App() {
         addNotification('success', `🌐 Opening token page: ${url}`);
     };
 
+    const viewTokenPageFromPopup = async (token) => {
+        console.log('🌐 Opening token page from popup for:', token.tokenAddress);
+
+        let url;
+
+        if (settings.tokenPageDestination === 'axiom') {
+            // Use stored bonding curve directly
+            if (token.bondingCurveAddress) {
+                url = `https://axiom.trade/meme/${token.bondingCurveAddress}`;
+                console.log(`✅ Using bonding curve: ${token.bondingCurveAddress}`);
+            } else {
+                url = `https://axiom.trade/meme/${token.tokenAddress}`;
+                console.log(`⚠️ Using token address (no bonding curve)`);
+            }
+        } else {
+            url = `https://neo.bullx.io/terminal?chainId=1399811149&address=${token.tokenAddress}`;
+        }
+
+        // Platform-specific overrides
+        if (token.pool === 'bonk' && settings.tokenPageDestination !== 'axiom') {
+            url = `https://letsbonk.fun/token/${token.tokenAddress}`;
+        } else if (token.pool === 'pump' && settings.tokenPageDestination !== 'axiom') {
+            url = `https://pump.fun/${token.tokenAddress}`;
+        }
+
+        // Open URL
+        if (window.electronAPI && window.electronAPI.openExternalURL) {
+            window.electronAPI.openExternalURL(url);
+        } else {
+            window.open(url, '_blank');
+        }
+
+        addNotification('success', `🌐 Token page opened: ${url}`);
+    };
+
     // Format numbers for display
     const formatNumber = (num) => {
         if (!num || num === 0) return '0';
@@ -1268,6 +1357,11 @@ function App() {
             return num.toFixed(6);
         }
         return num.toFixed(2);
+    };
+
+    const formatSol = (amount) => {
+        if (!amount || amount === 0) return '0.0000';
+        return parseFloat(amount).toFixed(4);
     };
 
     // API calls
@@ -1345,6 +1439,16 @@ function App() {
             addNotification('error', '❌ Failed to clear detected tokens');
         }
     };
+
+    const snipeDetectedToken = async (tokenAddress) => {
+        try {
+            await apiCall(`/detected-tokens/${tokenAddress}/snipe`, { method: 'POST' });
+            addNotification('success', `🎯 Manually sniped token: ${tokenAddress.substring(0, 8)}...`);
+        } catch (error) {
+            addNotification('error', `❌ Failed to snipe token: ${error.message}`);
+        }
+    };
+    // App.js - Part 4: Settings and Bot Control Functions
 
     const hasBasicSettingsChanged = () => {
         return settings.privateKey !== originalSettings.privateKey ||
@@ -2438,7 +2542,7 @@ function App() {
                                     className="mt-1"
                                 />
                                 <div>
-                                    <span className="text-sm text-white">Only newly adding admins</span>
+                                    <span className="text-sm text-white">Only newly added admins</span>
                                     <p className="text-xs text-gray-400">Existing admin amounts won't change</p>
                                 </div>
                             </label>
@@ -3156,6 +3260,85 @@ function App() {
         );
     };
 
+    // 3. COUNTDOWN TIMER COMPONENT
+    const PairDetectionCountdown = ({ tokenAddress, onRetry }) => {
+        const [countdown, setCountdown] = useState(3);
+        const [isActive, setIsActive] = useState(true);
+
+        useEffect(() => {
+            if (!isActive) return;
+
+            const timer = setInterval(() => {
+                setCountdown(prev => {
+                    if (prev <= 1) {
+                        setIsActive(false);
+                        onRetry();
+                        return 0;
+                    }
+                    return prev - 1;
+                });
+            }, 1000);
+
+            return () => clearInterval(timer);
+        }, [isActive, onRetry]);
+
+        if (!isActive) {
+            return (
+                <div className="flex items-center space-x-2 text-blue-400">
+                    <div className="animate-spin w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full"></div>
+                    <span className="text-sm">🔄 Retrying pair detection...</span>
+                </div>
+            );
+        }
+
+        return (
+            <div className="flex items-center space-x-2 text-blue-400">
+                <div className="w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center">
+                    <span className="text-white text-xs">{countdown}</span>
+                </div>
+                <span className="text-sm">⏰ Auto-retry in {countdown} seconds...</span>
+            </div>
+        );
+    };
+
+    // 5. AUTO-OPEN WITH ADDRESS (Updated for bonding curves)
+    const autoOpenTokenPageWithAddress = async (tokenAddress, url, addressType) => {
+        console.log(`🚀 AUTO-OPENING TOKEN PAGE WITH ${addressType.toUpperCase()}`);
+        console.log(`🔗 URL: ${url}`);
+        console.log(`🎯 Token: ${tokenAddress}`);
+
+        try {
+            const popupResult = await attemptPopupWithDetection(url, tokenAddress, `auto-open-with-${addressType}`);
+
+            if (popupResult.success) {
+                console.log(`✅ AUTO-OPEN WITH ${addressType.toUpperCase()} SUCCEEDED`);
+                addNotification('success', `🚀 Token page auto-opened with ${addressType === 'bonding_curve' ? 'bonding curve' : 'pair address'}!`);
+
+                // Close the popup since we successfully opened the page
+                setSecondaryPopup({ show: false, tokenData: null });
+
+            } else {
+                console.error(`❌ AUTO-OPEN WITH ${addressType.toUpperCase()} FAILED:`, popupResult.reason);
+                addNotification('warning', '🚫 Auto-open blocked - use "View Token Page" button');
+                handlePopupBlockedScenario(url, tokenAddress, popupResult.reason, `auto-open-with-${addressType}`);
+            }
+        } catch (error) {
+            console.error(`❌ Error in auto-open with ${addressType}:`, error);
+            addNotification('error', `❌ Auto-open error: ${error.message}`);
+        }
+    };
+
+    // Simple bonding curve status check (no auto-retry, no auto-open)
+    const checkBondingCurveStatus = (token) => {
+        if (token.bondingCurveAddress) {
+            console.log(`✅ Bonding curve available: ${token.bondingCurveAddress}`);
+            return 'found';
+        } else {
+            console.log(`⚠️ No bonding curve stored for token`);
+            return 'not_found';
+        }
+    };
+
     const reopenTwitterBrowser = async () => {
         try {
             setTwitterSessionStatus(prev => ({ ...prev, checking: true }));
@@ -3268,6 +3451,33 @@ function App() {
         });
 
         console.log('📱 Popup blocker guidance modal triggered');
+    };
+
+    // 5. AUTO-OPEN WITH PAIR ADDRESS
+    const autoOpenTokenPageWithPairAddress = async (tokenAddress, url) => {
+        console.log(`🚀 AUTO-OPENING TOKEN PAGE WITH PAIR ADDRESS`);
+        console.log(`🔗 URL: ${url}`);
+        console.log(`🎯 Token: ${tokenAddress}`);
+
+        try {
+            const popupResult = await attemptPopupWithDetection(url, tokenAddress, 'auto-open-with-pair');
+
+            if (popupResult.success) {
+                console.log('✅ AUTO-OPEN WITH PAIR SUCCEEDED');
+                addNotification('success', '🚀 Token page auto-opened with pair address!');
+
+                // Close the popup since we successfully opened the page
+                setSecondaryPopup({ show: false, tokenData: null });
+
+            } else {
+                console.error('❌ AUTO-OPEN WITH PAIR FAILED:', popupResult.reason);
+                addNotification('warning', '🚫 Auto-open blocked - use "View Token Page" button');
+                handlePopupBlockedScenario(url, tokenAddress, popupResult.reason, 'auto-open-with-pair');
+            }
+        } catch (error) {
+            console.error('❌ Error in auto-open with pair:', error);
+            addNotification('error', `❌ Auto-open error: ${error.message}`);
+        }
     };
 
     // Render components
