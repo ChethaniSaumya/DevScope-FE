@@ -2,8 +2,10 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
     Play,
     Square,
+    Settings,
     Plus,
     Trash2,
+    Wallet,
     Users,
     Bell,
     Target,
@@ -14,11 +16,15 @@ import {
     Copy,
     ExternalLink,
     Coins,
-    TrendingUp
+    TrendingUp,
+    Clock
 } from 'lucide-react';
 import './App.css';
 
 const API_BASE = 'https://devscope.fun:3002/api';
+//const API_BASE = 'https://devscope.fun:3002/api';
+
+const openedTokens = new Set();
 
 function App() {
     // State management
@@ -26,10 +32,10 @@ function App() {
         isRunning: false,
         stats: {
             primaryAdmins: 0,
-            secondaryAdmins: 0,
+            secondaryAdmins: 0, // ADD THIS LINE
             usedCommunities: 0,
             processedTokens: 0,
-            isFirebaseLoaded: false
+            isFirebaseLoaded: false // ADD THIS LINE
         }
     });
 
@@ -72,17 +78,19 @@ function App() {
     const [usedCommunities, setUsedCommunities] = useState([]);
     const [usedTweets, setUsedTweets] = useState([]);
     const [customTweet, setCustomTweet] = useState('');
+    const [showCommunityModal, setShowCommunityModal] = useState(false);
     const [customCommunity, setCustomCommunity] = useState('');
     const [soundFiles, setSoundFiles] = useState([]);
     const [uploadingSound, setUploadingSound] = useState(false);
+    const [isCommunity, setIsCommunity] = useState(false);
     const [twitterSessionStatus, setTwitterSessionStatus] = useState({
         initialized: false,
         loggedIn: false,
         url: '',
         error: null,
         checking: false,
-        apiCreditsExhausted: false,
-        apiError: null,
+        apiCreditsExhausted: false, // NEW
+        apiError: null,             // NEW
         lastApiError: null
     });
 
@@ -92,18 +100,6 @@ function App() {
         tokenAddress: '',
         reason: ''
     });
-
-    const [secondaryPopup, setSecondaryPopup] = useState({
-        show: false,
-        tokenData: null
-    });
-
-    const [lists, setLists] = useState({
-        primary_admins: [],
-        secondary_admins: []
-    });
-
-    const [showAddForm, setShowAddForm] = useState({ type: null, show: false });
 
     const STORAGE_KEYS = {
         SETTINGS: 'devscope_settings',
@@ -125,7 +121,9 @@ function App() {
         return defaultValue;
     };
 
+
     const [settings, setSettings] = useState(() => {
+        // Load settings from localStorage on app start
         const savedSettings = loadFromLocalStorage(STORAGE_KEYS.SETTINGS, {
             privateKey: '',
             tokenPageDestination: 'neo_bullx',
@@ -144,6 +142,7 @@ function App() {
             }
         });
 
+        // Load global snipe settings separately for better organization
         const savedGlobalSnipe = loadFromLocalStorage(STORAGE_KEYS.GLOBAL_SNIPE);
         if (savedGlobalSnipe) {
             savedSettings.globalSnipeSettings = savedGlobalSnipe;
@@ -158,6 +157,7 @@ function App() {
         { value: 'alert.wav', label: '⚠️ Alert Tone', file: 'alert.wav' },
         { value: 'chime.wav', label: '🔔 Chime Tone', file: 'chime.wav' },
         { value: 'none', label: '🔇 No Sound', file: null },
+        // Add uploaded sounds
         ...soundFiles.map(file => ({
             value: file.filename,
             label: `🎵 ${file.originalName || file.filename}`,
@@ -166,8 +166,14 @@ function App() {
         }))
     ];
 
-    const previewSound = useCallback((soundFile) => {
+    const previewSound = (soundFile) => {
         console.log('🔊 previewSound called with:', soundFile);
+        console.log('🔊 Function parameters check:', {
+            soundFile,
+            type: typeof soundFile,
+            isNone: soundFile === 'none',
+            isEmpty: !soundFile
+        });
 
         if (soundFile === 'none' || !soundFile) {
             console.log('🔇 No sound or none selected, returning early');
@@ -181,6 +187,7 @@ function App() {
             console.log('🔊 Checking for Electron API...');
             console.log('🔊 window.electronAPI exists:', !!window.electronAPI);
 
+            // For Electron app - use electronAPI if available
             if (window.electronAPI && window.electronAPI.playSound) {
                 console.log('🔊 Using Electron API to play sound');
                 window.electronAPI.playSound(soundFile);
@@ -191,9 +198,11 @@ function App() {
             console.log('🔊 Using web browser audio...');
             console.log('🔊 Sound file to play:', soundFile);
 
+            // For web browser - use system notification sound or beep
             if (soundFile === 'default.wav') {
                 console.log('🔊 Playing default system beep...');
 
+                // Check AudioContext support
                 const AudioContextClass = window.AudioContext || window.webkitAudioContext;
                 console.log('🔊 AudioContext support:', !!AudioContextClass);
 
@@ -203,10 +212,12 @@ function App() {
                     return;
                 }
 
+                // Use system beep for default
                 const context = new AudioContextClass();
                 console.log('🔊 AudioContext created:', context);
                 console.log('🔊 AudioContext state:', context.state);
 
+                // Resume context if suspended (required by some browsers)
                 if (context.state === 'suspended') {
                     console.log('🔊 Resuming suspended AudioContext...');
                     context.resume().then(() => {
@@ -249,8 +260,10 @@ function App() {
             } else {
                 console.log('🔊 Attempting to play HTML5 audio file:', soundFile);
 
+                // Determine the correct URL path for the audio file
                 let audioUrl;
 
+                // Check if it's an uploaded custom sound (contains 'sound-' prefix)
                 if (soundFile.includes('sound-')) {
                     console.log('🔊 Playing uploaded custom sound');
                     audioUrl = `${API_BASE}/sounds/${soundFile}`;
@@ -261,12 +274,14 @@ function App() {
 
                 console.log('🔊 Audio file URL:', audioUrl);
 
+                // Try to play HTML5 audio
                 const audio = new Audio(audioUrl);
                 console.log('🔊 Audio element created:', audio);
 
                 audio.volume = 0.5;
                 console.log('🔊 Audio volume set to:', audio.volume);
 
+                // Add event listeners for debugging
                 audio.addEventListener('loadstart', () => console.log('🔊 Audio: loadstart'));
                 audio.addEventListener('loadeddata', () => console.log('🔊 Audio: loadeddata'));
                 audio.addEventListener('canplay', () => console.log('🔊 Audio: canplay'));
@@ -293,6 +308,7 @@ function App() {
                     console.error('❌ Audio.play() promise rejected:', error);
                     console.log('🔊 Falling back to system beep...');
 
+                    // Fallback to system beep for both built-in and custom sounds
                     try {
                         const AudioContextClass = window.AudioContext || window.webkitAudioContext;
                         if (!AudioContextClass) {
@@ -323,20 +339,21 @@ function App() {
                             oscillator.connect(gainNode);
                             gainNode.connect(ctx.destination);
 
+                            // Different tones for different sound types
                             if (originalSoundFile.includes('success')) {
-                                oscillator.frequency.value = 800;
+                                oscillator.frequency.value = 800; // Higher pitch for success
                                 gainNode.gain.setValueAtTime(0.3, ctx.currentTime);
                             } else if (originalSoundFile.includes('alert')) {
-                                oscillator.frequency.value = 400;
+                                oscillator.frequency.value = 400; // Lower pitch for alerts
                                 gainNode.gain.setValueAtTime(0.4, ctx.currentTime);
                             } else if (originalSoundFile.includes('chime')) {
-                                oscillator.frequency.value = 1000;
+                                oscillator.frequency.value = 1000; // Even higher for chimes
                                 gainNode.gain.setValueAtTime(0.2, ctx.currentTime);
                             } else if (originalSoundFile.includes('sound-')) {
-                                oscillator.frequency.value = 600;
+                                oscillator.frequency.value = 600; // Custom sound fallback
                                 gainNode.gain.setValueAtTime(0.3, ctx.currentTime);
                             } else {
-                                oscillator.frequency.value = 600;
+                                oscillator.frequency.value = 600; // Default fallback
                                 gainNode.gain.setValueAtTime(0.2, ctx.currentTime);
                             }
 
@@ -365,7 +382,7 @@ function App() {
             console.error('❌ Error stack:', error.stack);
             addNotification('error', '❌ Failed to preview sound');
         }
-    }, []);
+    };
 
     const saveToLocalStorage = (key, data) => {
         try {
@@ -388,7 +405,8 @@ function App() {
         }
     };
 
-    const checkTwitterSession = useCallback(async () => {
+    // Twitter session management functions
+    const checkTwitterSession = async () => {
         try {
             setTwitterSessionStatus(prev => ({ ...prev, checking: true }));
             const response = await apiCall('/twitter-session-status');
@@ -410,16 +428,17 @@ function App() {
             }));
             addNotification('error', 'Failed to check Twitter session status');
         }
-    }, []);
+    };
 
     const openTwitterLogin = async () => {
         try {
             setTwitterSessionStatus(prev => ({ ...prev, checking: true }));
 
-            await apiCall('/twitter-open-login', { method: 'POST' });
+            const response = await apiCall('/twitter-open-login', { method: 'POST' });
 
             addNotification('success', '🔐 Automatic Twitter login successful');
 
+            // Check session status immediately
             setTimeout(() => {
                 checkTwitterSession();
             }, 2000);
@@ -430,14 +449,114 @@ function App() {
         }
     };
 
-    const fetchDemoTemplates = useCallback(async () => {
+    const openTokenPageWithTiming = async (tokenAddress, url, source) => {
+        const browserOpenStart = performance.now();
+
+        // Get timing data from backend response
+        const response = await apiCall(`/pair-address/${tokenAddress}`);
+        const backendTiming = response.timing;
+
+        if (window.electronAPI && window.electronAPI.openExternalURL) {
+            window.electronAPI.openExternalURL(url);
+        } else {
+            window.open(url, '_blank');
+        }
+
+        const browserOpenEnd = performance.now();
+        const browserOpenTime = browserOpenEnd - browserOpenStart;
+
+        // Calculate total time from initial detection to browser open
+        const totalTime = backendTiming?.totalFromDetection + browserOpenTime;
+
+        console.log(`⏱️ COMPLETE END-TO-END TIMING:`);
+        console.log(`   - Token Detection to Processing: ${backendTiming?.detectionToProcessing}ms`);
+        console.log(`   - Token Processing Duration: ${backendTiming?.processingTime}ms`);
+        console.log(`   - API Request Duration: ${backendTiming?.requestDuration}ms`);
+        console.log(`   - Browser Open Duration: ${browserOpenTime.toFixed(2)}ms`);
+        console.log(`   - TOTAL: Token Detection to Axiom Open: ${totalTime?.toFixed(2)}ms`);
+
+        return {
+            totalTime,
+            breakdown: {
+                detectionToProcessing: backendTiming?.detectionToProcessing,
+                processingTime: backendTiming?.processingTime,
+                apiRequestTime: backendTiming?.requestDuration,
+                browserOpenTime,
+                source
+            }
+        };
+    };
+
+    // WebSocket connection
+    const connectWebSocket = useCallback(() => {
+        try {
+            const ws = new WebSocket('wss://devscope.fun:3002');
+            //const ws = new WebSocket('wss://devscope.fun:3002');
+
+            ws.onopen = () => {
+                console.log('WebSocket connected');
+                setConnectionStatus('connected');
+                setWebsocket(ws);
+            };
+
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                handleWebSocketMessage(data);
+            };
+
+            ws.onclose = () => {
+                console.log('WebSocket disconnected');
+                setConnectionStatus('disconnected');
+                setWebsocket(null);
+                setTimeout(connectWebSocket, 3000);
+            };
+
+            ws.onerror = (error) => {
+                console.error('WebSocket error:', error);
+                setConnectionStatus('error');
+            };
+
+        } catch (error) {
+            console.error('Failed to connect WebSocket:', error);
+            setConnectionStatus('error');
+        }
+    }, []);
+
+
+    // Add this useEffect to fetch demo templates
+    useEffect(() => {
+        fetchDemoTemplates();
+    }, []);
+
+    useEffect(() => {
+        checkTwitterSession();
+    }, []);
+
+    useEffect(() => {
+        fetchStatus();
+        fetchLists();
+        fetchDetectedTokens();
+        fetchUsedCommunities();
+        fetchUsedTweets();
+        fetchSoundFiles();
+        connectWebSocket();
+
+        return () => {
+            if (websocket) {
+                websocket.close();
+            }
+        };
+    }, []);
+
+    // Add these functions to your App component
+    const fetchDemoTemplates = async () => {
         try {
             const data = await apiCall('/demo/templates');
             setDemoTemplates(data.templates);
         } catch (error) {
             console.error('Failed to fetch demo templates');
         }
-    }, []);
+    };
 
     const injectDemoToken = async (customData = {}) => {
         try {
@@ -446,7 +565,7 @@ function App() {
                 customWallet: customWallet || null,
                 customTwitter: customTwitter || null,
                 customCommunity: customCommunity || null,
-                customTweet: customTweet || null,
+                customTweet: customTweet || null, // ADD THIS LINE
             };
 
             if (customData && typeof customData === 'object' && !customData.target) {
@@ -493,6 +612,55 @@ function App() {
             addNotification('error', `❌ Failed to inject from ${listType}`);
         }
     };
+
+    // Lists state
+    const [lists, setLists] = useState({
+        primary_admins: [],
+        secondary_admins: []
+    });
+
+    // Form states
+    const [showAddForm, setShowAddForm] = useState({ type: null, show: false });
+
+    const [formData, setFormData] = useState(() => ({
+        address: '',
+        username: '',
+        amount: settings.globalSnipeSettings.amount,
+        fees: settings.globalSnipeSettings.fees,
+        mevProtection: settings.globalSnipeSettings.mevProtection,
+        soundNotification: settings.globalSnipeSettings.soundNotification
+    }));
+    // App.js - Part 2: WebSocket and Message Handling
+
+
+    const [secondaryPopup, setSecondaryPopup] = useState({
+        show: false,
+        tokenData: null
+    });
+
+
+    // Auto-play sound when secondary popup appears
+    useEffect(() => {
+        if (secondaryPopup.show && secondaryPopup.tokenData) {
+            console.log('🔔 Secondary popup opened, auto-playing notification sound...');
+            console.log('🔔 Token data:', secondaryPopup.tokenData);
+            console.log('🔔 Token config:', secondaryPopup.tokenData.config);
+            console.log('🔔 Global sound setting:', settings.globalSnipeSettings.soundNotification);
+
+            // Use the token's specific sound notification or fall back to global setting
+            const soundToPlay = secondaryPopup.tokenData.config?.soundNotification || settings.globalSnipeSettings.soundNotification;
+            console.log('🔔 Sound selected to auto-play:', soundToPlay);
+
+            // Small delay to ensure popup is fully rendered
+            const timeoutId = setTimeout(() => {
+                console.log('🔔 Calling previewSound with:', soundToPlay);
+                previewSound(soundToPlay);
+            }, 300);
+
+            // Cleanup timeout on unmount
+            return () => clearTimeout(timeoutId);
+        }
+    }, [secondaryPopup.show, secondaryPopup.tokenData?.tokenAddress, settings.globalSnipeSettings.soundNotification]);
 
     const fetchUsedCommunities = async () => {
         try {
@@ -556,7 +724,16 @@ function App() {
         }
     };
 
-    const handleWebSocketMessage = useCallback((data) => {
+    const testFirebaseConnection = async () => {
+        try {
+            const data = await apiCall('/test-firebase');
+            addNotification('success', '✅ Firebase connection successful!');
+        } catch (error) {
+            addNotification('error', '❌ Firebase connection failed');
+        }
+    };
+
+    const handleWebSocketMessage = (data) => {
         console.log('📨 WebSocket message received:', data.type, data);
 
         switch (data.type) {
@@ -572,9 +749,35 @@ function App() {
                 addNotification('error', `❌ Snipe failed: ${data.data.error}`);
                 break;
 
+            case 'open_dual_windows':
+                console.log('🚀 DUAL WINDOW OPEN COMMAND RECEIVED');
+                /*const window1Url = data.data.window1.url;
+                const window2Url = data.data.window2.url;
+
+                // Open first window
+                if (window.electronAPI && window.electronAPI.openExternalURL) {
+                    window.electronAPI.openExternalURL(window1Url);
+                } else {
+                    window.open(window1Url, '_blank');
+                }
+
+                // Wait 100ms, then open second window
+                setTimeout(() => {
+                    if (window.electronAPI && window.electronAPI.openExternalURL) {
+                        window.electronAPI.openExternalURL(window2Url);
+                    } else {
+                        window.open(window2Url, '_blank');
+                    }
+                }, 100);
+
+                console.log('✅ Both windows opened');*/
+                break;
+
             case 'pair_address_not_found':
                 console.log('❌ Pair address not found after retries');
                 addNotification('error', `❌ Could not find pair address for token after ${data.data.attempts} attempts`);
+
+                // Optionally show a modal or alert
                 alert(`Failed to find pair address for token ${data.data.tokenAddress.substring(0, 8)}... after ${data.data.attempts} attempts`);
                 break;
 
@@ -592,12 +795,14 @@ function App() {
 
                 const tokenPageUrl = data.data.tokenPageUrl;
 
+                // Check if URL is valid
                 if (!tokenPageUrl || !tokenPageUrl.startsWith('http')) {
                     console.error('❌ Invalid URL received:', tokenPageUrl);
                     addNotification('error', '❌ Invalid token page URL received');
                     break;
                 }
 
+                // Check if electronAPI exists
                 console.log('🔍 Checking for Electron API...');
                 console.log('   window.electronAPI exists:', !!window.electronAPI);
                 console.log('   window.electronAPI.openExternalURL exists:', !!(window.electronAPI?.openExternalURL));
@@ -664,8 +869,10 @@ function App() {
                 console.log('Description:', data.data.description);
                 console.log('================================================');
 
+                // ✅ CRITICAL FIX: Ensure config is properly included
                 const tokenDataWithConfig = {
                     ...data.data,
+                    // Make sure config is included and has all required fields
                     config: data.data.config || {
                         amount: settings.globalSnipeSettings.amount,
                         fees: settings.globalSnipeSettings.fees,
@@ -705,6 +912,7 @@ function App() {
                     window.electronAPI.playSound(data.data.config.soundNotification);
                 }
 
+                // ✅ PRIMARY MATCH HANDLING - Ensure config is passed correctly
                 if (data.data.matchType === 'primary_wallet' || data.data.matchType === 'primary_admin') {
                     console.log('🎯 PRIMARY MATCH DETECTED - SHOWING POPUP + AUTO-OPENING WINDOW');
 
@@ -719,15 +927,18 @@ function App() {
                         }
                     };
 
+                    // Show popup for ALL primary matches (demo and real)
                     setSecondaryPopup({
                         show: true,
-                        tokenData: tokenData,
+                        tokenData: tokenData, // ✅ Use tokenData with config
                         globalSettings: settings.globalSnipeSettings,
                         isPrimary: true
                     });
 
                     addNotification('info', `🎯 Primary match: ${tokenData.tokenAddress.substring(0, 8)}...`);
 
+
+                    // For DEMO tokens: Trigger manual snipe
                     if (tokenData.isDemo) {
                         console.log('🧪 DEMO PRIMARY - Triggering snipe');
                         setTimeout(async () => {
@@ -740,15 +951,19 @@ function App() {
                         }, 100);
                     }
 
+                    // Auto-open window after 500ms (for both demo and real)
                     setTimeout(async () => {
                         let autoOpenUrl;
                         const token = tokenData;
 
+                        // Determine URL based on user's tokenPageDestination setting
                         if (settings.tokenPageDestination === 'axiom') {
+                            // For demo tokens, just use token address
                             if (token.isDemo) {
                                 autoOpenUrl = `https://axiom.trade/meme/${token.tokenAddress}`;
                                 console.log(`🧪 Demo Primary: Opening Axiom with token address`);
                             } else {
+                                // For real tokens, fetch bonding curve/pair
                                 try {
                                     const response = await fetch(`${API_BASE}/pair-address/${token.tokenAddress}`);
                                     const addressData = await response.json();
@@ -773,12 +988,14 @@ function App() {
                                 }
                             }
                         } else {
+                            // Neo BullX destination
                             autoOpenUrl = `https://neo.bullx.io/terminal?chainId=1399811149&address=${token.tokenAddress}`;
                             console.log(`✅ Primary: Opening Neo BullX`);
                         }
 
                         console.log(`🔗 PRIMARY AUTO-OPEN URL: ${autoOpenUrl}`);
 
+                        // Open the URL
                         if (window.electronAPI && window.electronAPI.openExternalURL) {
                             window.electronAPI.openExternalURL(autoOpenUrl);
                             console.log('🖥️ Primary: Opened via Electron');
@@ -801,6 +1018,7 @@ function App() {
                 console.log('🔔 SECONDARY ADMIN MATCH DETECTED');
                 console.log('📊 Token data:', data.data.tokenData);
 
+                // ✅ CRITICAL FIX: Ensure config is included
                 const tokenData = {
                     ...data.data.tokenData,
                     config: data.data.tokenData.config || {
@@ -814,7 +1032,7 @@ function App() {
 
                 setSecondaryPopup({
                     show: true,
-                    tokenData: tokenData,
+                    tokenData: tokenData, // ✅ Use tokenData with config
                     globalSettings: data.data.globalSnipeSettings
                 });
 
@@ -824,8 +1042,12 @@ function App() {
                     let autoOpenUrl;
                     const token = tokenData;
 
+                    // Determine URL based on user's tokenPageDestination setting
                     if (settings.tokenPageDestination === 'axiom') {
+
+                        // Check if it's a Pump.fun token
                         if (token.platform === 'pumpfun' || token.pool === 'pump') {
+                            // Use bonding curve for Pump.fun
                             if (token.bondingCurveAddress) {
                                 autoOpenUrl = `https://axiom.trade/meme/${token.bondingCurveAddress}`;
                                 console.log(`✅ SECONDARY: Using bonding curve: ${token.bondingCurveAddress}`);
@@ -834,16 +1056,17 @@ function App() {
                                 console.log(`⚠️ SECONDARY: No bonding curve, using token address`);
                             }
                         }
+                        // Check if it's a Let's Bonk token
                         else if (token.platform === 'letsbonk' || token.pool === 'bonk') {
                             console.log(`🦎 SECONDARY: Let's Bonk token, fetching pair address...`);
 
                             try {
                                 const response = await fetch(`${API_BASE}/pair-address/${token.tokenAddress}`);
-                                const pairData = await response.json();
+                                const data = await response.json();
 
-                                if (pairData.success && pairData.pairData?.pairAddress) {
-                                    autoOpenUrl = `https://axiom.trade/meme/${pairData.pairData.pairAddress}`;
-                                    console.log(`✅ SECONDARY: Using pair address: ${pairData.pairData.pairAddress}`);
+                                if (data.success && data.pairData?.pairAddress) {
+                                    autoOpenUrl = `https://axiom.trade/meme/${data.pairData.pairAddress}`;
+                                    console.log(`✅ SECONDARY: Using pair address: ${data.pairData.pairAddress}`);
                                 } else {
                                     autoOpenUrl = `https://axiom.trade/meme/${token.tokenAddress}`;
                                     console.log(`⚠️ SECONDARY: No pair found, using token address`);
@@ -854,16 +1077,19 @@ function App() {
                             }
                         }
                         else {
+                            // Unknown platform - use token address
                             autoOpenUrl = `https://axiom.trade/meme/${token.tokenAddress}`;
                             console.log(`⚠️ SECONDARY: Unknown platform, using token address`);
                         }
                     } else {
+                        // Neo BullX destination
                         autoOpenUrl = `https://neo.bullx.io/terminal?chainId=1399811149&address=${token.tokenAddress}`;
                         console.log(`✅ SECONDARY: Opening Neo BullX`);
                     }
 
                     console.log(`🔗 SECONDARY AUTO-OPEN URL: ${autoOpenUrl}`);
 
+                    // Open the URL
                     if (window.electronAPI && window.electronAPI.openExternalURL) {
                         window.electronAPI.openExternalURL(autoOpenUrl);
                         console.log('🖥️ SECONDARY: Opened via Electron');
@@ -884,12 +1110,15 @@ function App() {
 
             case 'community_admin_match_found':
                 console.log('🎯 COMMUNITY ADMIN MATCH FOUND!', data.data);
+
                 const matchTypeIcon = data.data.matchType === 'primary' ? '🎯' : '🔔';
                 addNotification('info', `${matchTypeIcon} Community admin match: ${data.data.matchedAdmin.username} in ${data.data.communityId}`);
+
                 break;
 
             case 'community_scraping_error':
                 console.log('❌ COMMUNITY SCRAPING ERROR:', data.data);
+
                 if (data.data.reason === 'session_expired') {
                     addNotification('warning', '🔑 Twitter session expired - please login again');
                 } else {
@@ -958,115 +1187,7 @@ function App() {
             default:
                 console.log('Unknown WebSocket message type:', data.type);
         }
-    }, [settings.globalSnipeSettings]);
-
-    const connectWebSocket = useCallback(() => {
-        try {
-            const ws = new WebSocket('wss://devscope.fun:3002');
-
-            ws.onopen = () => {
-                console.log('WebSocket connected');
-                setConnectionStatus('connected');
-                setWebsocket(ws);
-            };
-
-            ws.onmessage = (event) => {
-                const data = JSON.parse(event.data);
-                handleWebSocketMessage(data);
-            };
-
-            ws.onclose = () => {
-                console.log('WebSocket disconnected');
-                setConnectionStatus('disconnected');
-                setWebsocket(null);
-                setTimeout(connectWebSocket, 3000);
-            };
-
-            ws.onerror = (error) => {
-                console.error('WebSocket error:', error);
-                setConnectionStatus('error');
-            };
-
-        } catch (error) {
-            console.error('Failed to connect WebSocket:', error);
-            setConnectionStatus('error');
-        }
-    }, [handleWebSocketMessage]);
-
-    useEffect(() => {
-        fetchDemoTemplates();
-    }, [fetchDemoTemplates]);
-
-    useEffect(() => {
-        checkTwitterSession();
-    }, [checkTwitterSession]);
-
-    const fetchStatus = useCallback(async () => {
-        try {
-            const data = await apiCall('/status');
-            setBotStatus(data);
-            setSettings(data.settings);
-            setOriginalSettings(data.settings);
-
-            if (data.settings.globalSnipeSettings) {
-                setServerGlobalSettings(data.settings.globalSnipeSettings);
-            }
-        } catch (error) {
-            console.error('Failed to fetch status');
-        }
-    }, []);
-
-    const fetchLists = useCallback(async () => {
-        try {
-            const listTypes = ['primary_admins', 'secondary_admins'];
-            const listData = {};
-
-            for (const listType of listTypes) {
-                const data = await apiCall(`/lists/${listType}`);
-                listData[listType] = data.list || [];
-            }
-
-            setLists(listData);
-        } catch (error) {
-            console.error('Failed to fetch lists');
-        }
-    }, []);
-
-    const fetchDetectedTokens = useCallback(async () => {
-        try {
-            const data = await apiCall('/detected-tokens');
-            setDetectedTokens(data.tokens || []);
-            addNotification('info', '🔄 Detected tokens refreshed');
-        } catch (error) {
-            console.error('Failed to fetch detected tokens');
-            addNotification('error', '❌ Failed to refresh detected tokens');
-        }
-    }, []);
-
-    const fetchSoundFiles = useCallback(async () => {
-        try {
-            const data = await apiCall('/sound-files');
-            setSoundFiles(data.files || []);
-        } catch (error) {
-            console.error('Failed to fetch sound files');
-        }
-    }, []);
-
-    useEffect(() => {
-        fetchStatus();
-        fetchLists();
-        fetchDetectedTokens();
-        fetchUsedCommunities();
-        fetchUsedTweets();
-        fetchSoundFiles();
-        connectWebSocket();
-
-        return () => {
-            if (websocket) {
-                websocket.close();
-            }
-        };
-    }, [fetchStatus, fetchLists, fetchDetectedTokens, fetchSoundFiles, connectWebSocket, websocket]);
+    };
 
     const clearGlobalSettingsMessage = (delay = 3000) => {
         setTimeout(() => {
@@ -1086,7 +1207,7 @@ function App() {
     const clearAdminListFromFirebase = async (listType) => {
         try {
             await apiCall(`/firebase/admin-lists/${listType}`, { method: 'DELETE' });
-            await fetchLists();
+            await fetchLists(); // Refresh the lists
             addNotification('success', `🗑️ All ${listType.replace('_', ' ')} cleared from Firebase`);
         } catch (error) {
             addNotification('error', `❌ Failed to clear ${listType} from Firebase`);
@@ -1112,13 +1233,18 @@ function App() {
         };
         setNotifications(prev => [notification, ...prev.slice(0, 49)]);
     };
+    // App.js - Part 3: Utility Functions and API Calls
+
+    // Enhanced utility functions with notifications
 
     const copyToClipboard = (text, label = 'Text', itemId = null) => {
         try {
             navigator.clipboard.writeText(text);
 
+            // Show success notification with custom message
             addNotification('success', `📋 ${label} copied to clipboard`);
 
+            // Handle visual feedback for specific items
             if (itemId) {
                 setCopiedStates(prev => ({ ...prev, [itemId]: true }));
                 setTimeout(() => {
@@ -1137,7 +1263,9 @@ function App() {
 
         let url;
 
+        // Check user's preference for token page destination
         if (settings.tokenPageDestination === 'axiom') {
+            // 🔥 OPTIMIZED: Use stored bonding curve directly (no backend call)
             if (token.bondingCurveAddress) {
                 console.log(`✅ Using stored bonding curve: ${token.bondingCurveAddress}`);
                 url = `https://axiom.trade/meme/${token.bondingCurveAddress}`;
@@ -1145,13 +1273,16 @@ function App() {
                 const urlGenerationTime = performance.now() - viewTokenStart;
                 console.log(`⚡ INSTANT URL GENERATION: ${urlGenerationTime.toFixed(2)}ms (from stored bonding curve)`);
             } else {
+                // Fallback: use token address directly
                 console.log(`⚠️ No stored bonding curve, using token address`);
                 url = `https://axiom.trade/meme/${token.tokenAddress}`;
             }
         } else {
+            // Neo BullX
             url = `https://neo.bullx.io/terminal?chainId=1399811149&address=${token.tokenAddress}`;
         }
 
+        // Platform-specific overrides
         if (token.pool === 'bonk' && settings.tokenPageDestination !== 'axiom') {
             url = `https://letsbonk.fun/token/${token.tokenAddress}`;
         } else if (token.pool === 'pump' && settings.tokenPageDestination !== 'axiom') {
@@ -1160,6 +1291,7 @@ function App() {
 
         const browserOpenStart = performance.now();
 
+        // Open the URL
         if (window.electronAPI && window.electronAPI.openExternalURL) {
             window.electronAPI.openExternalURL(url);
         } else {
@@ -1177,6 +1309,42 @@ function App() {
         addNotification('success', `🌐 Opening token page: ${url}`);
     };
 
+    const viewTokenPageFromPopup = async (token) => {
+        console.log('🌐 Opening token page from popup for:', token.tokenAddress);
+
+        let url;
+
+        if (settings.tokenPageDestination === 'axiom') {
+            // Use stored bonding curve directly
+            if (token.bondingCurveAddress) {
+                url = `https://axiom.trade/meme/${token.bondingCurveAddress}`;
+                console.log(`✅ Using bonding curve: ${token.bondingCurveAddress}`);
+            } else {
+                url = `https://axiom.trade/meme/${token.tokenAddress}`;
+                console.log(`⚠️ Using token address (no bonding curve)`);
+            }
+        } else {
+            url = `https://neo.bullx.io/terminal?chainId=1399811149&address=${token.tokenAddress}`;
+        }
+
+        // Platform-specific overrides
+        if (token.pool === 'bonk' && settings.tokenPageDestination !== 'axiom') {
+            url = `https://letsbonk.fun/token/${token.tokenAddress}`;
+        } else if (token.pool === 'pump' && settings.tokenPageDestination !== 'axiom') {
+            url = `https://pump.fun/${token.tokenAddress}`;
+        }
+
+        // Open URL
+        if (window.electronAPI && window.electronAPI.openExternalURL) {
+            window.electronAPI.openExternalURL(url);
+        } else {
+            window.open(url, '_blank');
+        }
+
+        addNotification('success', `🌐 Token page opened: ${url}`);
+    };
+
+    // Format numbers for display
     const formatNumber = (num) => {
         if (!num || num === 0) return '0';
         if (num >= 1000000000) {
@@ -1196,6 +1364,7 @@ function App() {
         return parseFloat(amount).toFixed(4);
     };
 
+    // API calls
     const apiCall = async (endpoint, options = {}) => {
         try {
             const response = await fetch(`${API_BASE}${endpoint}`, {
@@ -1218,6 +1387,49 @@ function App() {
         }
     };
 
+    const fetchStatus = async () => {
+        try {
+            const data = await apiCall('/status');
+            setBotStatus(data);
+            setSettings(data.settings);
+            setOriginalSettings(data.settings);
+
+            // ✅ NEW: Store server's global settings separately
+            if (data.settings.globalSnipeSettings) {
+                setServerGlobalSettings(data.settings.globalSnipeSettings);
+            }
+        } catch (error) {
+            console.error('Failed to fetch status');
+        }
+    };
+
+    const fetchLists = async () => {
+        try {
+            const listTypes = ['primary_admins', 'secondary_admins'];
+            const listData = {};
+
+            for (const listType of listTypes) {
+                const data = await apiCall(`/lists/${listType}`);
+                listData[listType] = data.list || [];
+            }
+
+            setLists(listData);
+        } catch (error) {
+            console.error('Failed to fetch lists');
+        }
+    };
+
+    const fetchDetectedTokens = async () => {
+        try {
+            const data = await apiCall('/detected-tokens');
+            setDetectedTokens(data.tokens || []);
+            addNotification('info', '🔄 Detected tokens refreshed');
+        } catch (error) {
+            console.error('Failed to fetch detected tokens');
+            addNotification('error', '❌ Failed to refresh detected tokens');
+        }
+    };
+
     const clearDetectedTokens = async () => {
         try {
             await apiCall('/detected-tokens', { method: 'DELETE' });
@@ -1228,6 +1440,16 @@ function App() {
         }
     };
 
+    const snipeDetectedToken = async (tokenAddress) => {
+        try {
+            await apiCall(`/detected-tokens/${tokenAddress}/snipe`, { method: 'POST' });
+            addNotification('success', `🎯 Manually sniped token: ${tokenAddress.substring(0, 8)}...`);
+        } catch (error) {
+            addNotification('error', `❌ Failed to snipe token: ${error.message}`);
+        }
+    };
+    // App.js - Part 4: Settings and Bot Control Functions
+
     const hasBasicSettingsChanged = () => {
         return settings.privateKey !== originalSettings.privateKey ||
             settings.tokenPageDestination !== originalSettings.tokenPageDestination;
@@ -1237,7 +1459,8 @@ function App() {
         return settings.enableAdminFilter !== originalSettings.enableAdminFilter ||
             settings.enableCommunityReuse !== originalSettings.enableCommunityReuse ||
             settings.snipeAllTokens !== originalSettings.snipeAllTokens ||
-            settings.detectionOnlyMode !== originalSettings.detectionOnlyMode;
+            settings.detectionOnlyMode !== originalSettings.detectionOnlyMode ||
+            settings.bonkTokensOnly !== originalSettings.bonkTokensOnly;
     };
 
     const clearButtonMessage = (type, delay = 3000) => {
@@ -1274,6 +1497,7 @@ function App() {
             const updatedSettings = { ...settings, ...newSettings };
             setSettings(updatedSettings);
 
+            // Save to localStorage
             saveToLocalStorage(STORAGE_KEYS.SETTINGS, updatedSettings);
 
             addNotification('success', '✅ Settings updated and saved locally');
@@ -1296,9 +1520,12 @@ function App() {
             const updatedSettings = { ...settings, ...filterSettings };
             setSettings(updatedSettings);
 
+            // Save filter settings separately
             saveToLocalStorage(STORAGE_KEYS.FILTER_SETTINGS, filterSettings);
+            // Save complete settings
             saveToLocalStorage(STORAGE_KEYS.SETTINGS, updatedSettings);
 
+            // ✅ UPDATE ORIGINAL SETTINGS TO REFLECT SAVED STATE
             setOriginalSettings(prev => ({
                 ...prev,
                 ...filterSettings
@@ -1323,6 +1550,7 @@ function App() {
             await fetchLists();
             addNotification('success', '✅ Item added to list');
             setShowAddForm({ type: null, show: false });
+            resetForm();
         } catch (error) {
             addNotification('error', '❌ Failed to add item');
         }
@@ -1338,6 +1566,34 @@ function App() {
         }
     };
 
+    const resetForm = () => {
+        setFormData({
+            address: '',
+            username: '',
+            amount: settings.globalSnipeSettings.amount,
+            fees: settings.globalSnipeSettings.fees,
+            mevProtection: settings.globalSnipeSettings.mevProtection,
+            soundNotification: settings.globalSnipeSettings.soundNotification,
+            priorityFee: settings.globalSnipeSettings.priorityFee
+        });
+    };
+
+    // Effects
+    useEffect(() => {
+        fetchStatus();
+        fetchLists();
+        fetchDetectedTokens();
+        // connectWebSocket();
+
+        return () => {
+            if (websocket) {
+                websocket.close();
+            }
+        };
+    }, [connectWebSocket]);
+    // App.js - Part 5: Render Functions - Status and Dashboard
+
+    // 4. Add global settings API calls
     const updateGlobalSnipeSettings = async (newSettings) => {
         console.log('🔧 Sending to server:', newSettings);
 
@@ -1355,13 +1611,16 @@ function App() {
 
             setSettings(updatedSettings);
 
+            // Save global snipe settings separately
             saveToLocalStorage(STORAGE_KEYS.GLOBAL_SNIPE, updatedGlobalSettings);
             saveToLocalStorage(STORAGE_KEYS.SETTINGS, updatedSettings);
 
+            // ✅ NEW: Update server settings display from response
             if (response.globalSnipeSettings) {
                 setServerGlobalSettings(response.globalSnipeSettings);
             }
 
+            // ✅ ADD THIS: Refresh the admin lists to show updated values
             await fetchLists();
 
             addNotification('success', '✅ Global snipe settings updated and saved locally');
@@ -1370,12 +1629,15 @@ function App() {
         }
     };
 
+    // In App.js - Replace your existing snipeWithGlobalSettings function
     const snipeWithGlobalSettings = async (tokenAddress) => {
         const snipeStart = performance.now();
 
         try {
+            // Get the token data from detectedTokens state
             const tokenData = detectedTokens.find(token => token.tokenAddress === tokenAddress);
 
+            // ✅ CRITICAL FIX: Use individual config if available
             const configToUse = tokenData?.config || settings.globalSnipeSettings;
 
             console.log('🎯 SNIPE CONFIG DEBUG:');
@@ -1387,7 +1649,7 @@ function App() {
             console.log('   Priority Fee:', configToUse.priorityFee, 'SOL');
             console.log('   MEV Protection:', configToUse.mevProtection);
 
-            await apiCall(`/snipe-with-global-settings/${tokenAddress}`, {
+            const response = await apiCall(`/snipe-with-global-settings/${tokenAddress}`, {
                 method: 'POST',
                 body: JSON.stringify({
                     amount: configToUse.amount,
@@ -1405,7 +1667,13 @@ function App() {
 
             setSecondaryPopup({ show: false, tokenData: null });
 
+
+            // ✅ AUTOMATICALLY OPEN TOKEN PAGE AFTER SECONDARY SNIPE
+            console.log('🌐 Auto-opening token page after secondary snipe...');
+
+            // Use a small delay
             setTimeout(async () => {
+                // ⏱️ START BROWSER TIMING FOR SECONDARY SNIPE
                 const secondaryBrowserStart = performance.now();
 
                 if (settings.tokenPageDestination === 'axiom') {
@@ -1424,6 +1692,7 @@ function App() {
                                 }
                             }
 
+                            // ⏱️ LOG SECONDARY SNIPE BROWSER TIMING
                             const browserOpenTime = performance.now() - secondaryBrowserStart;
                             console.log(`⏱️ SECONDARY SNIPE BROWSER TIMING: ${browserOpenTime.toFixed(2)}ms`);
                             console.log(`   Total Snipe Time: ${(performance.now() - snipeStart).toFixed(2)}ms`);
@@ -1440,6 +1709,7 @@ function App() {
                                 }
                             }
 
+                            // ⏱️ LOG FALLBACK BROWSER TIMING
                             const browserOpenTime = performance.now() - secondaryBrowserStart;
                             console.log(`⏱️ SECONDARY SNIPE FALLBACK BROWSER TIMING: ${browserOpenTime.toFixed(2)}ms`);
 
@@ -1450,6 +1720,7 @@ function App() {
                         addNotification('error', '❌ Error opening token page');
                     }
                 } else {
+                    // Neo BullX
                     const neoBullxUrl = `https://neo.bullx.io/terminal?chainId=1399811149&address=${tokenAddress}`;
                     if (window.electronAPI && window.electronAPI.openExternalURL) {
                         window.electronAPI.openExternalURL(neoBullxUrl);
@@ -1460,14 +1731,16 @@ function App() {
                         }
                     }
 
+                    // ⏱️ LOG NEO BULLX BROWSER TIMING
                     const browserOpenTime = performance.now() - secondaryBrowserStart;
                     console.log(`⏱️ SECONDARY SNIPE NEO BULLX BROWSER TIMING: ${browserOpenTime.toFixed(2)}ms`);
 
                     addNotification('success', `🌐 Neo BullX opened automatically`);
                 }
-            }, 1000);
+            }, 1000); // 1 second delay for secondary snipes
 
         } catch (error) {
+            // ⏱️ LOG ERROR TIMING - NOW snipeStart IS ACCESSIBLE
             const errorTime = performance.now() - snipeStart;
             console.log(`⏱️ SECONDARY SNIPE ERROR TIME: ${errorTime.toFixed(2)}ms`);
 
@@ -1478,40 +1751,50 @@ function App() {
     const uploadSoundFile = async (file) => {
         if (!file) return;
 
-        console.log('🔧 uploadSoundFile called with:', file.name);
+        console.log('🔧 uploadSoundFile called with:', file.name); // ADD THIS
 
         const formData = new FormData();
         formData.append('soundFile', file);
 
         try {
             setUploadingSound(true);
-            console.log('🔧 Making API call to upload sound...');
+            console.log('🔧 Making API call to upload sound...'); // ADD THIS
 
             const response = await fetch(`${API_BASE}/upload-sound`, {
                 method: 'POST',
                 body: formData
             });
 
-            console.log('🔧 API response status:', response.status);
+            console.log('🔧 API response status:', response.status); // ADD THIS
 
             if (!response.ok) {
                 throw new Error('Upload failed');
             }
 
             const result = await response.json();
-            console.log('🔧 API response data:', result);
+            console.log('🔧 API response data:', result); // ADD THIS
 
-            console.log('🔧 Calling fetchSoundFiles...');
+            // Refresh sound files list
+            console.log('🔧 Calling fetchSoundFiles...'); // ADD THIS
             await fetchSoundFiles();
 
             addNotification('success', `🔊 Sound uploaded: ${result.filename}`);
             return result;
         } catch (error) {
-            console.log('🔧 Upload error occurred:', error);
+            console.log('🔧 Upload error occurred:', error); // ADD THIS
             addNotification('error', `❌ Upload failed: ${error.message}`);
             throw error;
         } finally {
             setUploadingSound(false);
+        }
+    };
+
+    const fetchSoundFiles = async () => {
+        try {
+            const data = await apiCall('/sound-files');
+            setSoundFiles(data.files || []);
+        } catch (error) {
+            console.error('Failed to fetch sound files');
         }
     };
 
@@ -1525,610 +1808,9 @@ function App() {
         }
     };
 
-    const performTwitterLogout = async () => {
-        try {
-            setTwitterSessionStatus(prev => ({ ...prev, checking: true }));
-
-            const response = await apiCall('/twitter-logout', { method: 'POST' });
-
-            setTwitterSessionStatus(prev => ({
-                ...prev,
-                loggedIn: false,
-                checking: false,
-                lastChecked: new Date().toISOString()
-            }));
-
-            if (response.loggedOut) {
-                addNotification('success', '✅ Successfully logged out from Twitter');
-            } else {
-                addNotification('warning', '⚠️ Please complete logout manually in browser window');
-            }
-
-            setTimeout(() => {
-                checkTwitterSession();
-            }, 3000);
-
-        } catch (error) {
-            setTwitterSessionStatus(prev => ({ ...prev, checking: false, error: error.message }));
-            addNotification('error', '❌ Failed to logout from Twitter');
-        }
-    };
-
-    const reopenTwitterBrowser = async () => {
-        try {
-            setTwitterSessionStatus(prev => ({ ...prev, checking: true }));
-
-            await apiCall('/twitter-reopen-browser', { method: 'POST' });
-
-            setTwitterSessionStatus({
-                initialized: true,
-                loggedIn: false,
-                url: 'https://twitter.com/login',
-                error: null,
-                checking: false
-            });
-
-            addNotification('success', '🔄 Browser reopened - login page ready');
-        } catch (error) {
-            setTwitterSessionStatus(prev => ({ ...prev, checking: false, error: error.message }));
-            addNotification('error', '❌ Failed to reopen browser');
-        }
-    };
-
-    const attemptPopupWithDetection = async (url, tokenAddress, openType) => {
-        console.log(`🚀 ATTEMPTING POPUP OPENING (${openType.toUpperCase()})`);
-
-        try {
-            if (window.electronAPI && window.electronAPI.openExternalURL) {
-                console.log('🖥️ USING ELECTRON API METHOD');
-                window.electronAPI.openExternalURL(url);
-                return {
-                    success: true,
-                    method: 'electron',
-                    reason: 'Opened via Electron API'
-                };
-            }
-
-            console.log('🌐 USING BROWSER WINDOW.OPEN() METHOD');
-            const newWindow = window.open(url, '_blank');
-
-            if (!newWindow) {
-                console.error('❌ POPUP BLOCKED - window.open returned null');
-                return {
-                    success: false,
-                    method: 'browser_blocked',
-                    reason: 'Popup blocked by browser'
-                };
-            }
-
-            console.log('✅ POPUP OPENED SUCCESSFULLY');
-            return {
-                success: true,
-                method: 'browser_success',
-                reason: 'Opened successfully'
-            };
-
-        } catch (openError) {
-            console.error('❌ EXCEPTION DURING POPUP ATTEMPT:', openError);
-            return {
-                success: false,
-                method: 'exception',
-                reason: `Exception occurred: ${openError.message}`
-            };
-        }
-    };
-
-    const handlePopupBlockedScenario = (url, tokenAddress, reason, openType) => {
-        console.error('🚫 POPUP BLOCKED - HANDLING SCENARIO');
-        console.error('🔗 Blocked URL:', url);
-        console.error('💬 Block reason:', reason);
-        console.error('🎯 Open type:', openType);
-
-        let userMessage = '';
-        let technicalReason = '';
-
-        if (reason.includes('immediately')) {
-            userMessage = 'Chrome blocked the popup immediately';
-            technicalReason = 'Browser popup blocker is active';
-        } else if (reason.includes('closed immediately')) {
-            userMessage = 'Popup was closed right after opening';
-            technicalReason = 'Browser detected and closed popup automatically';
-        } else if (reason.includes('Exception')) {
-            userMessage = 'Browser security prevented opening';
-            technicalReason = reason;
-        } else {
-            userMessage = 'Browser blocked the popup';
-            technicalReason = reason;
-        }
-
-        if (openType === 'auto-open') {
-            addNotification('warning', '🚫 Auto-open blocked by Chrome - Click "View Token Page" in popup');
-            addNotification('info', '💡 Or allow popups for this site to enable auto-opening');
-        } else {
-            addNotification('error', '🚫 Chrome blocked the popup - Please allow popups for this site');
-        }
-
-        setPopupBlockerModal({
-            show: true,
-            tokenUrl: url,
-            tokenAddress: tokenAddress,
-            reason: userMessage,
-            technicalReason: technicalReason,
-            openType: openType
-        });
-
-        console.log('📱 Popup blocker guidance modal triggered');
-    };
-
-    // Render functions
-    const renderStatusIndicator = () => (
-        <div className="flex items-center space-x-2">
-            <div className={`w-3 h-3 rounded-full ${connectionStatus === 'connected' ? 'bg-green-500' :
-                connectionStatus === 'error' ? 'bg-red-500' : 'bg-yellow-500'
-                }`} />
-            <span className="text-xs md:text-sm text-gray-400">
-                {connectionStatus === 'connected' ? 'Connected' :
-                    connectionStatus === 'error' ? 'Connection Error' : 'Connecting...'}
-            </span>
-        </div>
-    );
-
-    const renderDashboard = () => (
-        <div className="space-y-4 md:space-y-6">
-            {/* Control Panel */}
-            <div className="bg-gray-800 rounded-lg p-4 md:p-6">
-                <div className="flex flex-col space-y-4 md:flex-row md:items-center md:justify-between md:space-y-0 mb-4">
-                    <h2 className="text-lg md:text-xl font-semibold text-white">Bot Control</h2>
-                    {renderStatusIndicator()}
-                </div>
-
-                <div className="flex flex-col space-y-2 md:flex-row md:space-y-0 md:space-x-4">
-                    <button
-                        onClick={startBot}
-                        disabled={botStatus.isRunning}
-                        className="flex items-center justify-center space-x-2 px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white rounded-lg transition-colors"
-                    >
-                        <Play size={16} />
-                        <span>Start Bot</span>
-                    </button>
-
-                    <button
-                        onClick={stopBot}
-                        disabled={!botStatus.isRunning}
-                        className="flex items-center justify-center space-x-2 px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-gray-600 text-white rounded-lg transition-colors"
-                    >
-                        <Square size={16} />
-                        <span>Stop Bot</span>
-                    </button>
-                </div>
-
-                <div className="mt-4 flex items-center space-x-4">
-                    <div className={`flex items-center space-x-2 ${botStatus.isRunning ? 'text-green-400' : 'text-gray-400'}`}>
-                        <Activity size={16} />
-                        <span>{botStatus.isRunning ? 'Running' : 'Stopped'}</span>
-                    </div>
-                    <div className={`flex items-center space-x-2 ${botStatus.stats.isFirebaseLoaded ? 'text-green-400' : 'text-yellow-400'}`}>
-                        <span className="text-xs">🔥 Firebase:</span>
-                        <span className="text-xs">{botStatus.stats.isFirebaseLoaded ? 'Connected' : 'Loading...'}</span>
-                    </div>
-                </div>
-            </div>
-
-            {/* Enhanced Statistics with Secondary Admins */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="bg-gray-800 rounded-lg p-4">
-                    <div className="flex items-center space-x-2">
-                        <Users className="text-purple-400" size={20} />
-                        <div>
-                            <p className="text-sm text-gray-400">Primary Admins</p>
-                            <p className="text-xl font-semibold text-white">{botStatus.stats.primaryAdmins}</p>
-                        </div>
-                    </div>
-                </div>
-
-                <div className="bg-gray-800 rounded-lg p-4">
-                    <div className="flex items-center space-x-2">
-                        <Bell className="text-orange-400" size={20} />
-                        <div>
-                            <p className="text-sm text-gray-400">Secondary Admins</p>
-                            <p className="text-xl font-semibold text-white">{botStatus.stats.secondaryAdmins}</p>
-                        </div>
-                    </div>
-                </div>
-
-                <div className="bg-gray-800 rounded-lg p-4">
-                    <div className="flex items-center space-x-2">
-                        <Target className="text-green-400" size={20} />
-                        <div>
-                            <p className="text-sm text-gray-400">Processed Tokens</p>
-                            <p className="text-xl font-semibold text-white">{botStatus.stats.processedTokens}</p>
-                        </div>
-                    </div>
-                </div>
-
-                <div className="bg-gray-800 rounded-lg p-4">
-                    <div className="flex items-center space-x-2">
-                        <div className={`w-5 h-5 rounded-full ${botStatus.stats.isFirebaseLoaded ? 'bg-green-500' : 'bg-yellow-500'}`}></div>
-                        <div>
-                            <p className="text-sm text-gray-400">Firebase Status</p>
-                            <p className={`text-sm font-semibold ${botStatus.stats.isFirebaseLoaded ? 'text-green-400' : 'text-yellow-400'}`}>
-                                {botStatus.stats.isFirebaseLoaded ? 'Connected' : 'Syncing...'}
-                            </p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            {/* Recent Notifications */}
-            <div className="bg-gray-800 rounded-lg p-4 md:p-6">
-                <h3 className="text-lg font-semibold text-white mb-4">Recent Activity</h3>
-                <div className="space-y-2 max-h-64 overflow-y-auto">
-                    {notifications.length === 0 ? (
-                        <p className="text-gray-400">No recent activity</p>
-                    ) : (
-                        notifications.map(notification => (
-                            <div key={notification.id} className="flex items-center space-x-3 p-2 bg-gray-700 rounded">
-                                {notification.type === 'success' && <CheckCircle className="text-green-400" size={16} />}
-                                {notification.type === 'error' && <XCircle className="text-red-400" size={16} />}
-                                {notification.type === 'info' && <AlertTriangle className="text-blue-400" size={16} />}
-                                <div className="flex-1">
-                                    <p className="text-white text-sm">{notification.message}</p>
-                                    <p className="text-gray-400 text-xs">{notification.timestamp}</p>
-                                </div>
-                            </div>
-                        ))
-                    )}
-                </div>
-            </div>
-        </div>
-    );
-
-    const renderDetectedTokens = () => (
-        <div className="space-y-4 md:space-y-6">
-            {/* Header with enhanced filters */}
-            <div className="bg-gray-800 rounded-lg p-4 md:p-6">
-                <div className="flex flex-col space-y-4 md:flex-row md:items-center md:justify-between md:space-y-0 mb-4">
-                    <div>
-                        <h2 className="text-lg md:text-xl font-semibold text-white">Enhanced Detected Tokens</h2>
-                        <p className="text-sm text-gray-400">Tokens with advanced Twitter detection and community tracking</p>
-                    </div>
-                    <div className="flex flex-col space-y-2 md:flex-row md:space-y-0 md:space-x-4">
-                        <button
-                            onClick={fetchDetectedTokens}
-                            className="w-full md:w-auto px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm"
-                        >
-                            🔄 Refresh
-                        </button>
-                        <button
-                            onClick={clearDetectedTokens}
-                            className="w-full md:w-auto px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors text-sm"
-                        >
-                            🗑️ Clear All
-                        </button>
-                    </div>
-                </div>
-
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                    <div className="text-center">
-                        <div className="text-white font-semibold">{detectedTokens.length}</div>
-                        <div className="text-gray-400">Total Detected</div>
-                    </div>
-                    <div className="text-center">
-                        <div className="text-green-400 font-semibold">
-                            {detectedTokens.filter(t => t.twitterType === 'community').length}
-                        </div>
-                        <div className="text-gray-400">Communities</div>
-                    </div>
-                    <div className="text-center">
-                        <div className="text-blue-400 font-semibold">
-                            {detectedTokens.filter(t => t.twitterType === 'individual').length}
-                        </div>
-                        <div className="text-gray-400">Individuals</div>
-                    </div>
-                    <div className="text-center">
-                        <div className="text-purple-400 font-semibold">
-                            {detectedTokens.filter(t => t.matchType.includes('primary')).length}
-                        </div>
-                        <div className="text-gray-400">Auto-Sniped</div>
-                    </div>
-                </div>
-            </div>
-
-            {/* Enhanced token cards */}
-            <div className="space-y-3 md:space-y-4">
-                {detectedTokens.length === 0 ? (
-                    <div className="bg-gray-800 rounded-lg p-6 md:p-8 text-center">
-                        <Target className="mx-auto text-gray-400 mb-4" size={36} />
-                        <h3 className="text-base md:text-lg font-semibold text-white mb-2">No Enhanced Tokens Detected</h3>
-                        <p className="text-sm text-gray-400">Start the bot to detect tokens with advanced Twitter analysis</p>
-                    </div>
-                ) : (
-                    detectedTokens.map((token, index) => (
-                        <div key={`token_${index}`} className="bg-gray-800 rounded-lg overflow-hidden shadow-lg border border-gray-700">
-                            <div className="bg-gradient-to-r from-gray-750 to-gray-800 p-4 md:p-6">
-                                <div className="flex flex-col md:flex-row md:items-start space-y-4 md:space-y-0 md:space-x-4">
-                                    <div className="flex-shrink-0 self-center md:self-start">
-                                        <div className="w-16 h-16 md:w-20 md:h-20 rounded-full overflow-hidden bg-gray-600 border-2 border-gray-500 shadow-lg">
-                                            {token.uri ? (
-                                                <img
-                                                    src={token.uri}
-                                                    alt={token.name || 'Token'}
-                                                    className="w-full h-full object-cover"
-                                                    onError={(e) => {
-                                                        e.target.style.display = 'none';
-                                                    }}
-                                                />
-                                            ) : (
-                                                <div className="w-full h-full flex items-center justify-center bg-gray-600">
-                                                    <Coins className="text-gray-400" size={24} />
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-
-                                    <div className="flex-1 text-center md:text-left space-y-2">
-                                        <div className="flex flex-col md:flex-row md:items-center md:justify-between space-y-2 md:space-y-0">
-                                            <div>
-                                                <h3 className="text-xl md:text-2xl font-bold text-white">
-                                                    {token.name || 'Unknown Token'}
-                                                </h3>
-                                                <p className="text-lg text-gray-300 font-mono">
-                                                    ${token.symbol || 'UNKNOWN'}
-                                                </p>
-                                            </div>
-
-                                            <div className="flex flex-wrap justify-center md:justify-end gap-2">
-                                                {token.twitterType && (
-                                                    <div className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${token.twitterType === 'community'
-                                                        ? 'bg-green-600 text-white'
-                                                        : 'bg-blue-600 text-white'
-                                                        }`}>
-                                                        {token.twitterType === 'community' ? '🏘️ COMMUNITY' : '👤 INDIVIDUAL'}
-                                                    </div>
-                                                )}
-
-                                                <div className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${token.matchType === 'primary_wallet' || token.matchType === 'primary_admin'
-                                                    ? 'bg-green-600 text-white'
-                                                    : token.matchType === 'secondary_wallet' || token.matchType === 'secondary_admin'
-                                                        ? 'bg-yellow-600 text-white'
-                                                        : 'bg-purple-600 text-white'
-                                                    }`}>
-                                                    {token.matchType.replace('_', ' ')}
-                                                </div>
-
-                                                <div className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${token.pool === 'pump' ? 'bg-purple-600 text-white' : 'bg-orange-600 text-white'
-                                                    }`}>
-                                                    {token.pool === 'pump' ? 'PUMP.FUN' : 'LETSBONK.FUN'}
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        <div className="bg-gray-700/50 rounded-lg p-4 mt-4">
-                                            <h4 className="text-white font-semibold mb-3 flex items-center">
-                                                <TrendingUp className="mr-2" size={16} />
-                                                Token Details
-                                            </h4>
-
-                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                <div className="bg-gray-600/50 rounded-lg p-3">
-                                                    <div className="flex items-center justify-between">
-                                                        <span className="text-gray-400 text-sm">💰 Market Cap</span>
-                                                        <span className="text-green-400 font-bold">
-                                                            {formatNumber(token.marketCapSol)} SOL
-                                                        </span>
-                                                    </div>
-                                                    <div className="text-xs text-gray-500 mt-1">
-                                                        ~${(token.marketCapSol * 180).toFixed(2)} USD
-                                                    </div>
-                                                </div>
-
-                                                <div className="bg-gray-600/50 rounded-lg p-3">
-                                                    <div className="flex items-center justify-between">
-                                                        <span className="text-gray-400 text-sm">💎 Sol Amount</span>
-                                                        <span className="text-blue-400 font-bold">
-                                                            {formatSol(token.solAmount)} SOL
-                                                        </span>
-                                                    </div>
-                                                    <div className="text-xs text-gray-500 mt-1">
-                                                        Initial liquidity
-                                                    </div>
-                                                </div>
-
-                                                <div className="bg-gray-600/50 rounded-lg p-3">
-                                                    <div className="flex items-center justify-between mb-2">
-                                                        <span className="text-gray-400 text-sm">🏷️ Token Address</span>
-                                                        <button
-                                                            onClick={() => copyToClipboard(token.tokenAddress, 'Token address', `token_${token.tokenAddress}`)}
-                                                            className="text-blue-400 hover:text-blue-300 px-2 py-1 rounded bg-blue-900/20 hover:bg-blue-900/40 transition-colors text-xs"
-                                                        >
-                                                            {copiedStates[`token_${token.tokenAddress}`] ? '✅ Copied!' : '📋 Copy'}
-                                                        </button>
-                                                    </div>
-                                                    <code className="text-xs text-white bg-gray-800 px-2 py-1 rounded block truncate">
-                                                        {token.tokenAddress}
-                                                    </code>
-                                                </div>
-
-                                                <div className="bg-gray-600/50 rounded-lg p-3">
-                                                    <div className="flex items-center justify-between mb-2">
-                                                        <span className="text-gray-400 text-sm">👤 Creator Address</span>
-                                                        <button
-                                                            onClick={() => copyToClipboard(token.creatorWallet, 'Creator address', `creator_${token.tokenAddress}`)}
-                                                            className="text-blue-400 hover:text-blue-300 px-2 py-1 rounded bg-blue-900/20 hover:bg-blue-900/40 transition-colors text-xs"
-                                                        >
-                                                            {copiedStates[`creator_${token.tokenAddress}`] ? '✅ Copied!' : '📋 Copy'}
-                                                        </button>
-                                                    </div>
-                                                    <code className="text-xs text-white bg-gray-800 px-2 py-1 rounded block truncate">
-                                                        {token.creatorWallet || 'Unknown'}
-                                                    </code>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        {(token.twitterHandle || token.twitterCommunityId) && (
-                                            <div className="bg-gray-700/50 rounded-lg p-3 mt-4">
-                                                <div className="flex items-center space-x-2 mb-2">
-                                                    <span className="text-blue-400 font-medium">🐦 Twitter Detection:</span>
-                                                </div>
-
-                                                {token.twitterType === 'community' && token.twitterCommunityId && (
-                                                    <div className="flex items-center justify-between">
-                                                        <div>
-                                                            <p className="text-sm text-white">Community ID: {token.twitterCommunityId}</p>
-                                                            <p className="text-xs text-gray-400">Tracked in Firebase for duplicate prevention</p>
-                                                        </div>
-                                                        <div className="flex space-x-2">
-                                                            <button
-                                                                onClick={() => copyToClipboard(token.twitterCommunityId, 'Community ID')}
-                                                                className="text-blue-400 hover:text-blue-300 px-2 py-1 text-xs"
-                                                            >
-                                                                📋
-                                                            </button>
-                                                            <button
-                                                                onClick={() => {
-                                                                    const communityUrl = `https://x.com/i/communities/${token.twitterCommunityId}`;
-                                                                    if (window.electronAPI && window.electronAPI.openExternalURL) {
-                                                                        window.electronAPI.openExternalURL(communityUrl);
-                                                                    } else {
-                                                                        window.open(communityUrl, '_blank');
-                                                                    }
-                                                                    addNotification('success', `🌐 Opening community ${token.twitterCommunityId}`);
-                                                                }}
-                                                                className="text-blue-400 hover:text-blue-300 px-2 py-1 text-xs"
-                                                            >
-                                                                🔗
-                                                            </button>
-                                                        </div>
-                                                    </div>
-                                                )}
-
-                                                {token.twitterType === 'individual' && token.twitterHandle && (
-                                                    <div className="flex items-center justify-between">
-                                                        <div>
-                                                            <p className="text-sm text-white">@{token.twitterHandle}</p>
-                                                            <p className="text-xs text-gray-400">Individual Twitter account</p>
-                                                        </div>
-                                                        <div className="flex space-x-2">
-                                                            <button
-                                                                onClick={() => copyToClipboard(token.twitterHandle, 'Twitter handle')}
-                                                                className="text-blue-400 hover:text-blue-300 px-2 py-1 text-xs"
-                                                            >
-                                                                📋
-                                                            </button>
-                                                            <button
-                                                                onClick={() => {
-                                                                    const twitterUrl = `https://twitter.com/${token.twitterHandle}`;
-                                                                    if (window.electronAPI && window.electronAPI.openExternalURL) {
-                                                                        window.electronAPI.openExternalURL(twitterUrl);
-                                                                    } else {
-                                                                        window.open(twitterUrl, '_blank');
-                                                                    }
-                                                                    addNotification('success', `🌐 Opening Twitter: @${token.twitterHandle}`);
-                                                                }}
-                                                                className="text-blue-400 hover:text-blue-300 px-2 py-1 text-xs"
-                                                            >
-                                                                🔗
-                                                            </button>
-                                                        </div>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        )}
-
-                                        <div className="flex flex-col md:flex-row gap-3 mt-4">
-                                            <button
-                                                onClick={() => viewToken(token)}
-                                                className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center justify-center space-x-2"
-                                            >
-                                                <ExternalLink size={16} />
-                                                <span>
-                                                    {settings.tokenPageDestination === 'axiom'
-                                                        ? 'View on Axiom'
-                                                        : token.pool === 'bonk'
-                                                            ? 'View on LetsBonk.fun'
-                                                            : 'View on Neo BullX'}
-                                                </span>
-                                            </button>
-
-                                            <button
-                                                onClick={async () => {
-                                                    let axiomUrl;
-
-                                                    if (token.bondingCurveAddress) {
-                                                        axiomUrl = `https://axiom.trade/meme/${token.bondingCurveAddress}`;
-                                                        console.log(`✅ Using stored bonding curve: ${token.bondingCurveAddress}`);
-                                                    } else {
-                                                        console.log(`🔍 No stored bonding curve, fetching from backend...`);
-                                                        try {
-                                                            const response = await fetch(`${API_BASE}/pair-address/${token.tokenAddress}`);
-                                                            const data = await response.json();
-
-                                                            if (data.success) {
-                                                                if (data.bondingCurveData?.bondingCurveAddress) {
-                                                                    axiomUrl = `https://axiom.trade/meme/${data.bondingCurveData.bondingCurveAddress}`;
-                                                                    console.log(`✅ Got bonding curve from backend: ${data.bondingCurveData.bondingCurveAddress}`);
-                                                                } else if (data.pairData?.pairAddress) {
-                                                                    axiomUrl = `https://axiom.trade/meme/${data.pairData.pairAddress}`;
-                                                                    console.log(`✅ Got pair address from DexScreener: ${data.pairData.pairAddress}`);
-                                                                } else {
-                                                                    axiomUrl = `https://axiom.trade/meme/${token.tokenAddress}`;
-                                                                    console.log(`⚠️ No bonding curve or pair found, using token address`);
-                                                                }
-                                                            } else {
-                                                                axiomUrl = `https://axiom.trade/meme/${token.tokenAddress}`;
-                                                                console.log(`⚠️ Backend fetch failed, using token address`);
-                                                            }
-                                                        } catch (error) {
-                                                            console.error(`❌ Error fetching address:`, error);
-                                                            axiomUrl = `https://axiom.trade/meme/${token.tokenAddress}`;
-                                                        }
-                                                    }
-
-                                                    if (window.electronAPI && window.electronAPI.openExternalURL) {
-                                                        window.electronAPI.openExternalURL(axiomUrl);
-                                                    } else {
-                                                        window.open(axiomUrl, '_blank');
-                                                    }
-
-                                                    addNotification('success', `📊 Opening Axiom: ${axiomUrl}`);
-                                                }}
-                                                className="flex-1 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors flex items-center justify-center space-x-2"
-                                                title="Open in Axiom (uses bonding curve or pair address)"
-                                            >
-                                                <ExternalLink size={16} />
-                                                <span>📊 Axiom</span>
-                                            </button>
-
-                                            <button
-                                                onClick={() => copyToClipboard(token.tokenAddress, 'Token address', `copy_${token.tokenAddress}`)}
-                                                className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors flex items-center justify-center space-x-2"
-                                            >
-                                                {copiedStates[`copy_${token.tokenAddress}`] ? (
-                                                    <>
-                                                        <span>✅</span>
-                                                        <span className="hidden md:inline">Copied</span>
-                                                    </>
-                                                ) : (
-                                                    <>
-                                                        <Copy size={16} />
-                                                        <span className="hidden md:inline">Copy Address</span>
-                                                    </>
-                                                )}
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    ))
-                )}
-            </div>
-        </div>
-    );
-
     const renderCommunityManagement = () => (
         <div className="space-y-4 md:space-y-6">
+            {/* Firebase Status & Controls */}
             <div className="bg-gray-800 rounded-lg p-4 md:p-6">
                 <div className="flex flex-col space-y-4 md:flex-row md:items-center md:justify-between md:space-y-0 mb-4">
                     <div>
@@ -2156,6 +1838,7 @@ function App() {
                 </div>
             </div>
 
+            {/* Used Communities List */}
             <div className="bg-gray-800 rounded-lg p-4 md:p-6">
                 <h3 className="text-lg font-semibold text-white mb-4">Used Communities</h3>
 
@@ -2198,15 +1881,19 @@ function App() {
                                                     {(() => {
                                                         if (community.firstUsedAt) {
                                                             try {
+                                                                // Handle Firebase Timestamp
                                                                 if (community.firstUsedAt.toDate) {
                                                                     return community.firstUsedAt.toDate().toLocaleString();
                                                                 }
+                                                                // Handle regular Date object
                                                                 if (community.firstUsedAt instanceof Date) {
                                                                     return community.firstUsedAt.toLocaleString();
                                                                 }
+                                                                // Handle timestamp number
                                                                 if (typeof community.firstUsedAt === 'number') {
                                                                     return new Date(community.firstUsedAt).toLocaleString();
                                                                 }
+                                                                // Handle ISO string
                                                                 if (typeof community.firstUsedAt === 'string') {
                                                                     return new Date(community.firstUsedAt).toLocaleString();
                                                                 }
@@ -2265,6 +1952,7 @@ function App() {
                 )}
             </div>
 
+            {/* Community Detection Stats */}
             <div className="bg-gray-800 rounded-lg p-4 md:p-6">
                 <h3 className="text-lg font-semibold text-white mb-4">Detection Statistics</h3>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -2286,11 +1974,47 @@ function App() {
                     </div>
                 </div>
             </div>
+
+            {/* Twitter Detection Help */}
+            <div className="bg-gray-800 rounded-lg p-4 md:p-6">
+                <h3 className="text-lg font-semibold text-white mb-4">🔍 Twitter Detection Guide</h3>
+                <div className="space-y-4">
+                    <div className="bg-gray-700 rounded-lg p-4">
+                        <h4 className="text-white font-medium mb-2">✅ Individual Twitter Accounts</h4>
+                        <div className="text-sm text-gray-300 space-y-1">
+                            <p>• <code className="bg-gray-600 px-1 rounded">https://x.com/username</code></p>
+                            <p>• <code className="bg-gray-600 px-1 rounded">https://twitter.com/username</code></p>
+                            <p>• <code className="bg-gray-600 px-1 rounded">@username</code></p>
+                            <p>• <code className="bg-gray-600 px-1 rounded">username</code></p>
+                        </div>
+                    </div>
+
+                    <div className="bg-gray-700 rounded-lg p-4">
+                        <h4 className="text-white font-medium mb-2">🏘️ Twitter Communities</h4>
+                        <div className="text-sm text-gray-300 space-y-1">
+                            <p>• <code className="bg-gray-600 px-1 rounded">https://x.com/i/communities/1864891560858468809</code></p>
+                            <p>• <code className="bg-gray-600 px-1 rounded">https://twitter.com/i/communities/1234567890</code></p>
+                            <p className="text-yellow-400 mt-2">⚠️ Community IDs are tracked in Firebase to prevent duplicates</p>
+                        </div>
+                    </div>
+
+                    <div className="bg-blue-900/20 border border-blue-500/30 rounded-lg p-4">
+                        <h4 className="text-blue-400 font-medium mb-2">💡 Tips for List Management</h4>
+                        <div className="text-sm text-blue-300 space-y-1">
+                            <p>• For individual accounts, add the username to your admin lists</p>
+                            <p>• For communities, add the community ID (numbers) to your admin lists</p>
+                            <p>• Primary lists = Auto-snipe | Secondary lists = Notification popup</p>
+                            <p>• Enable "Community Reuse Prevention" to avoid duplicate community sniping</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
     );
 
     const renderTweetManagement = () => (
         <div className="space-y-4 md:space-y-6">
+            {/* Firebase Status & Controls */}
             <div className="bg-gray-800 rounded-lg p-4 md:p-6">
                 <div className="flex flex-col space-y-4 md:flex-row md:items-center md:justify-between md:space-y-0 mb-4">
                     <div>
@@ -2318,6 +2042,7 @@ function App() {
                 </div>
             </div>
 
+            {/* Used Tweets List */}
             <div className="bg-gray-800 rounded-lg p-4 md:p-6">
                 <h3 className="text-lg font-semibold text-white mb-4">Used Tweets</h3>
 
@@ -2431,11 +2156,81 @@ function App() {
                     </div>
                 )}
             </div>
+
+            {/* Tweet Detection Stats */}
+            <div className="bg-gray-800 rounded-lg p-4 md:p-6">
+                <h3 className="text-lg font-semibold text-white mb-4">Tweet Detection Statistics</h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="bg-gray-700 rounded-lg p-4 text-center">
+                        <div className="text-2xl font-bold text-blue-400">{usedTweets.length}</div>
+                        <div className="text-sm text-gray-400">Used Tweets</div>
+                    </div>
+                    <div className="bg-gray-700 rounded-lg p-4 text-center">
+                        <div className="text-2xl font-bold text-green-400">
+                            {detectedTokens.filter(t => t.twitterType === 'tweet').length}
+                        </div>
+                        <div className="text-sm text-gray-400">Tweet-based Tokens</div>
+                    </div>
+                    <div className="bg-gray-700 rounded-lg p-4 text-center">
+                        <div className="text-2xl font-bold text-purple-400">
+                            {usedTweets.filter(t => t.platform === 'pumpfun').length}
+                        </div>
+                        <div className="text-sm text-gray-400">Pump.fun Tweet Tokens</div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Twitter Detection Guide - Updated */}
+            <div className="bg-gray-800 rounded-lg p-4 md:p-6">
+                <h3 className="text-lg font-semibold text-white mb-4">🔍 Twitter Detection Guide</h3>
+                <div className="space-y-4">
+                    <div className="bg-gray-700 rounded-lg p-4">
+                        <h4 className="text-white font-medium mb-2">📱 Twitter Tweets/Status URLs</h4>
+                        <div className="text-sm text-gray-300 space-y-1">
+                            <p>• <code className="bg-gray-600 px-1 rounded">https://x.com/username/status/1234567890</code></p>
+                            <p>• <code className="bg-gray-600 px-1 rounded">https://twitter.com/username/status/1234567890</code></p>
+                            <p className="text-yellow-400 mt-2">⚠️ Tweet IDs are tracked in Firebase to prevent duplicates</p>
+                            <p className="text-green-400">✅ Tweet authors are checked against admin lists for matching</p>
+                        </div>
+                    </div>
+
+                    <div className="bg-gray-700 rounded-lg p-4">
+                        <h4 className="text-white font-medium mb-2">✅ Individual Twitter Accounts</h4>
+                        <div className="text-sm text-gray-300 space-y-1">
+                            <p>• <code className="bg-gray-600 px-1 rounded">https://x.com/username</code></p>
+                            <p>• <code className="bg-gray-600 px-1 rounded">https://twitter.com/username</code></p>
+                            <p>• <code className="bg-gray-600 px-1 rounded">@username</code></p>
+                            <p>• <code className="bg-gray-600 px-1 rounded">username</code></p>
+                        </div>
+                    </div>
+
+                    <div className="bg-gray-700 rounded-lg p-4">
+                        <h4 className="text-white font-medium mb-2">🏘️ Twitter Communities</h4>
+                        <div className="text-sm text-gray-300 space-y-1">
+                            <p>• <code className="bg-gray-600 px-1 rounded">https://x.com/i/communities/1864891560858468809</code></p>
+                            <p>• <code className="bg-gray-600 px-1 rounded">https://twitter.com/i/communities/1234567890</code></p>
+                            <p className="text-yellow-400 mt-2">⚠️ Community IDs are tracked in Firebase to prevent duplicates</p>
+                        </div>
+                    </div>
+
+                    <div className="bg-blue-900/20 border border-blue-500/30 rounded-lg p-4">
+                        <h4 className="text-blue-400 font-medium mb-2">💡 How Tweet Detection Works</h4>
+                        <div className="text-sm text-blue-300 space-y-1">
+                            <p>1️⃣ When a token has a tweet URL, the tweet ID is extracted</p>
+                            <p>2️⃣ System checks if tweet was already used (prevents duplicates)</p>
+                            <p>3️⃣ The tweet author's username is checked against admin lists</p>
+                            <p>4️⃣ If author matches primary list = Auto-snipe | Secondary = Notify</p>
+                            <p>5️⃣ Tweet ID is saved to Firebase for future duplicate prevention</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
     );
 
     const renderDemoTab = () => (
         <div className="space-y-4 md:space-y-6">
+            {/* Demo Control Panel */}
             <div className="bg-gray-800 rounded-lg p-4 md:p-6">
                 <div className="flex items-center space-x-2 mb-4">
                     <h2 className="text-lg md:text-xl font-semibold text-white">🧪 Demo Token Injection</h2>
@@ -2447,6 +2242,13 @@ function App() {
                     Inject fake tokens to test your filtering and sniping logic without waiting for real tokens.
                 </p>
 
+                {/*{!botStatus.isRunning && (
+                    <div className="bg-red-900/20 border border-red-500/30 rounded-lg p-4 mb-6">
+                        <p className="text-red-400">⚠️ Bot will be running to inject demo tokens</p>
+                    </div>
+                )}*/}
+
+                {/* Template Selection */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
                         <label className="block text-sm font-medium text-gray-300 mb-2">
@@ -2456,6 +2258,7 @@ function App() {
                             value={selectedTemplate}
                             onChange={(e) => setSelectedTemplate(parseInt(e.target.value))}
                             className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
+                        //disabled={!botStatus.isRunning}
                         >
                             {demoTemplates.map((template, index) => (
                                 <option key={index} value={index}>
@@ -2475,8 +2278,10 @@ function App() {
                             onChange={(e) => setCustomWallet(e.target.value)}
                             className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
                             placeholder="Override creator wallet"
+                        //disabled={!botStatus.isRunning}
                         />
                     </div>
+
 
                     <div>
                         <label className="block text-sm font-medium text-gray-300 mb-2">
@@ -2485,9 +2290,10 @@ function App() {
                         <input
                             type="text"
                             value={customTwitter}
-                            onChange={(e) => setCustomTwitter(e.target.value)}
+                            onChange={(e) => setCustomTwitter(e.target.value)} // UNCOMMENT THIS LINE
                             className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
                             placeholder="Override Twitter handle"
+                        // disabled={!botStatus.isRunning} // COMMENT OR REMOVE THIS LINE
                         />
                     </div>
 
@@ -2501,6 +2307,7 @@ function App() {
                             onChange={(e) => setCustomCommunity(e.target.value)}
                             className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
                             placeholder="Community ID (e.g., 1234567890)"
+                        // disabled={!botStatus.isRunning}
                         />
                     </div>
 
@@ -2514,14 +2321,18 @@ function App() {
                             onChange={(e) => setCustomTweet(e.target.value)}
                             className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
                             placeholder="Tweet URL (e.g., x.com/user/status/123...)"
+                        // disabled={!botStatus.isRunning}
                         />
                     </div>
+
                 </div>
 
+                {/* Quick Action Buttons */}
                 <div className="mt-6 grid grid-cols-2 md:grid-cols-4 gap-3">
                     <button
-                        onClick={() => injectDemoToken()}
-                        className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors text-sm"
+                        onClick={() => injectDemoToken()}  // <-- Add empty parentheses
+                        // disabled={!botStatus.isRunning}
+                        className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white rounded-lg transition-colors text-sm"
                     >
                         🧪 Inject Single
                     </button>
@@ -2552,6 +2363,7 @@ function App() {
                 </div>
             </div>
 
+            {/* Test With Your Lists */}
             <div className="bg-gray-800 rounded-lg p-4 md:p-6">
                 <h3 className="text-lg font-semibold text-white mb-4">Test With Your Lists</h3>
                 <p className="text-sm text-gray-400 mb-4">
@@ -2596,6 +2408,78 @@ function App() {
                     </button>
                 </div>
             </div>
+
+            {/* Demo Templates Info */}
+            <div className="bg-gray-800 rounded-lg p-4 md:p-6">
+                <h3 className="text-lg font-semibold text-white mb-4">Available Demo Templates</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {demoTemplates.map((template, index) => (
+                        <div
+                            key={index}
+                            className={`p-3 rounded-lg border-2 transition-colors cursor-pointer ${selectedTemplate === index
+                                ? 'border-blue-500 bg-blue-900/20'
+                                : 'border-gray-600 bg-gray-700 hover:border-gray-500'
+                                }`}
+                            onClick={() => setSelectedTemplate(index)}
+                        >
+                            <div className="flex items-center space-x-2 mb-2">
+                                <h4 className="font-semibold text-white">{template.name}</h4>
+                                <span className="text-xs px-2 py-1 bg-gray-600 text-white rounded">
+                                    {template.symbol}
+                                </span>
+                            </div>
+                            <div className="text-xs text-gray-400 space-y-1">
+                                <p>Platform: {template.platform}</p>
+                                <p>Twitter: @{template.twitterHandle}</p>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+
+            {/* Speed Test Section */}
+            <div className="bg-gray-800 rounded-lg p-4 md:p-6">
+                <h3 className="text-lg font-semibold text-white mb-4">⚡ Speed Testing</h3>
+                <p className="text-sm text-gray-400 mb-4">
+                    Test the speed of your detection and sniping logic
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <button
+                        onClick={() => injectDemoBatch()}
+                        disabled={!botStatus.isRunning}
+                        className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-gray-600 text-white rounded-lg transition-colors text-sm"
+                    >
+                        🔥 Rapid Fire (5 tokens)
+                    </button>
+                    <button
+                        onClick={async () => {
+                            for (let i = 0; i < 10; i++) {
+                                await injectDemoToken();
+                                await new Promise(resolve => setTimeout(resolve, 100));
+                            }
+                        }}
+                        disabled={!botStatus.isRunning}
+                        className="px-4 py-2 bg-red-700 hover:bg-red-800 disabled:bg-gray-600 text-white rounded-lg transition-colors text-sm"
+                    >
+                        ⚡ Lightning (10 tokens)
+                    </button>
+                    <button
+                        onClick={() => {
+                            // Inject one token that should match primary list immediately
+                            if (lists.primary_admins.length > 0) {
+                                injectFromList('primary_admins');
+                                addNotification('info', '🏁 Speed test: Primary wallet token injected!');
+                            } else {
+                                addNotification('warning', '⚠️ Add wallets to primary list first');
+                            }
+                        }}
+                        disabled={!botStatus.isRunning}
+                        className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white rounded-lg transition-colors text-sm"
+                    >
+                        🏁 Speed Test Snipe
+                    </button>
+                </div>
+            </div>
         </div>
     );
 
@@ -2614,6 +2498,7 @@ function App() {
                 </p>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* Amount Input with Radio Buttons */}
                     <div className="md:col-span-2">
                         <label className="block text-sm font-medium text-gray-300 mb-2">Amount (SOL)</label>
                         <input
@@ -2631,12 +2516,14 @@ function App() {
                                 }));
                                 setHasGlobalSettingsChanged(true);
 
+                                // Auto-save to localStorage
                                 const updatedGlobalSettings = { ...settings.globalSnipeSettings, amount: newAmount };
                                 saveToLocalStorage(STORAGE_KEYS.GLOBAL_SNIPE, updatedGlobalSettings);
                             }}
                             className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
                         />
 
+                        {/* Radio Buttons for Amount Update Mode */}
                         <div className="mt-3 space-y-2 bg-gray-700/50 rounded-lg p-3">
                             <label className="text-xs text-gray-400 block mb-1">
                                 ⚙️ When changing amount, apply to:
@@ -2650,7 +2537,7 @@ function App() {
                                     checked={amountUpdateMode === 'new_only'}
                                     onChange={(e) => {
                                         setAmountUpdateMode(e.target.value);
-                                        setHasGlobalSettingsChanged(true);
+                                        setHasGlobalSettingsChanged(true); // ✅ TRIGGER SAVE BUTTON
                                     }}
                                     className="mt-1"
                                 />
@@ -2668,7 +2555,7 @@ function App() {
                                     checked={amountUpdateMode === 'all_existing'}
                                     onChange={(e) => {
                                         setAmountUpdateMode(e.target.value);
-                                        setHasGlobalSettingsChanged(true);
+                                        setHasGlobalSettingsChanged(true); // ✅ TRIGGER SAVE BUTTON
                                     }}
                                     className="mt-1"
                                 />
@@ -2680,6 +2567,9 @@ function App() {
                                 </div>
                             </label>
                         </div>
+
+
+
                     </div>
 
                     <div>
@@ -2791,14 +2681,16 @@ function App() {
                         <button
                             onClick={async () => {
                                 try {
+                                    // Save global settings
                                     await updateGlobalSnipeSettings(settings.globalSnipeSettings);
 
+                                    // If "all_existing" mode, update all admin amounts
                                     if (amountUpdateMode === 'all_existing') {
                                         const response = await apiCall('/update-existing-admins-amounts', {
                                             method: 'POST',
                                             body: JSON.stringify({
                                                 amount: settings.globalSnipeSettings.amount,
-                                                fees: settings.globalSnipeSettings.fees
+                                                fees: settings.globalSnipeSettings.fees  // ✅ ADD THIS
                                             })
                                         });
 
@@ -2806,6 +2698,7 @@ function App() {
                                             setGlobalSettingsMessage(`✅ Global settings saved! Updated ${response.primaryUpdated + response.secondaryUpdated} admin entries.`);
                                             addNotification('success', `✅ Global settings saved! Updated ${response.primaryUpdated + response.secondaryUpdated} admin entries.`);
 
+                                            // ✅ ADD THIS: Refresh the lists to show updated values
                                             await fetchLists();
                                         }
                                     } else {
@@ -2843,6 +2736,7 @@ function App() {
                         </button>
                     </div>
 
+                    {/* Save Status Indicator */}
                     <div className="flex items-center justify-between text-sm">
                         <div className="flex items-center space-x-2">
                             <div className={`w-2 h-2 rounded-full ${hasGlobalSettingsChanged ? 'bg-yellow-500 animate-pulse' : 'bg-green-500'}`}></div>
@@ -2858,6 +2752,7 @@ function App() {
                         )}
                     </div>
 
+                    {/* Message display */}
                     {globalSettingsMessage && (
                         <div className={`text-sm px-3 py-2 rounded ${globalSettingsMessage.includes('✅')
                             ? 'bg-green-900/20 text-green-400 border border-green-500/30'
@@ -2870,6 +2765,7 @@ function App() {
                     )}
                 </div>
 
+                {/* Local Storage Status */}
                 <div className="mt-4 p-3 bg-gray-700/50 rounded-lg">
                     <h4 className="text-sm font-semibold text-white mb-2">💾 Local Storage Status</h4>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
@@ -2888,6 +2784,7 @@ function App() {
                     </div>
                 </div>
 
+                {/* Current Settings Preview */}
                 <div className="mt-4 p-3 bg-blue-900/20 border border-blue-500/30 rounded-lg">
                     <h4 className="text-sm font-semibold text-blue-400 mb-2">📊 Current Global Settings (Server)</h4>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
@@ -2909,6 +2806,7 @@ function App() {
                         </div>
                     </div>
 
+                    {/* Show last update time */}
                     <div className="mt-2 text-xs text-gray-400 text-center">
                         💾 Synced with server
                     </div>
@@ -2916,7 +2814,7 @@ function App() {
             </div>
         );
     };
-
+    // Add this new function after renderGlobalSnipeSettings()
     const renderSoundManagement = () => (
         <div className="bg-gray-800 rounded-lg p-4 md:p-6">
             <h2 className="text-lg md:text-xl font-semibold text-white mb-4">🔊 Sound Management</h2>
@@ -2924,6 +2822,7 @@ function App() {
                 Upload custom notification sounds for your snipe alerts
             </p>
 
+            {/* Upload Section */}
             <div className="bg-gray-700 rounded-lg p-4 mb-6">
                 <h3 className="text-lg font-semibold text-white mb-3">Upload New Sound</h3>
 
@@ -2937,18 +2836,18 @@ function App() {
                             accept="audio/*,.wav,.mp3,.ogg,.m4a"
                             onChange={async (e) => {
                                 const file = e.target.files[0];
-                                console.log('🔧 File selected:', file);
+                                console.log('🔧 File selected:', file); // ADD THIS LINE
                                 if (file) {
                                     console.log('🔧 File details:', {
                                         name: file.name,
                                         size: file.size,
                                         type: file.type
-                                    });
+                                    }); // ADD THIS LINE
                                     try {
-                                        console.log('🔧 Starting upload...');
+                                        console.log('🔧 Starting upload...'); // ADD THIS LINE
                                         await uploadSoundFile(file);
-                                        e.target.value = '';
-                                        console.log('🔧 Upload completed successfully');
+                                        e.target.value = ''; // Clear input
+                                        console.log('🔧 Upload completed successfully'); // ADD THIS LINE
                                     } catch (error) {
                                         console.error('🔧 Upload error:', error);
                                     }
@@ -2971,6 +2870,7 @@ function App() {
                 </div>
             </div>
 
+            {/* Uploaded Sounds List */}
             <div className="bg-gray-700 rounded-lg p-4">
                 <h3 className="text-lg font-semibold text-white mb-3">
                     Uploaded Sounds ({soundFiles.length})
@@ -3020,8 +2920,62 @@ function App() {
                     </div>
                 )}
             </div>
+
+            {/* Default Sounds */}
+            <div className="bg-gray-700 rounded-lg p-4 mt-4">
+                <h3 className="text-lg font-semibold text-white mb-3">Built-in Sounds</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {[
+                        { value: 'default.wav', label: '🔊 System Beep' },
+                        { value: 'success.wav', label: '✅ Success Tone' },
+                        { value: 'alert.wav', label: '⚠️ Alert Tone' },
+                        { value: 'chime.wav', label: '🔔 Chime Tone' }
+                    ].map(sound => (
+                        <div key={sound.value} className="flex items-center justify-between p-2 bg-gray-600 rounded">
+                            <span className="text-white text-sm">{sound.label}</span>
+                            <button
+                                onClick={() => previewSound(sound.value)}
+                                className="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs"
+                            >
+                                🔊 Play
+                            </button>
+                        </div>
+                    ))}
+                </div>
+            </div>
         </div>
     );
+
+    const performTwitterLogout = async () => {
+        try {
+            setTwitterSessionStatus(prev => ({ ...prev, checking: true }));
+
+            const response = await apiCall('/twitter-logout', { method: 'POST' });
+
+            // Update status based on actual logout result
+            setTwitterSessionStatus(prev => ({
+                ...prev,
+                loggedIn: false, // Always set to false after logout attempt
+                checking: false,
+                lastChecked: new Date().toISOString()
+            }));
+
+            if (response.loggedOut) {
+                addNotification('success', '✅ Successfully logged out from Twitter');
+            } else {
+                addNotification('warning', '⚠️ Please complete logout manually in browser window');
+            }
+
+            // Auto-check status after 3 seconds to confirm
+            setTimeout(() => {
+                checkTwitterSession();
+            }, 3000);
+
+        } catch (error) {
+            setTwitterSessionStatus(prev => ({ ...prev, checking: false, error: error.message }));
+            addNotification('error', '❌ Failed to logout from Twitter');
+        }
+    };
 
     const renderDetectionSettings = () => (
         <div className="bg-gray-800 rounded-lg p-4 md:p-6">
@@ -3031,6 +2985,7 @@ function App() {
             </p>
 
             <div className="space-y-4">
+                {/* Primary Detection Toggle */}
                 <div className="flex flex-col space-y-3 md:flex-row md:items-center md:justify-between md:space-y-0 p-4 bg-gray-700 rounded-lg">
                     <div>
                         <h3 className="text-base md:text-lg font-medium text-purple-400">🎯 Primary Admin Detection</h3>
@@ -3049,6 +3004,7 @@ function App() {
                     </label>
                 </div>
 
+                {/* Secondary Detection Toggle */}
                 <div className="flex flex-col space-y-3 md:flex-row md:items-center md:justify-between md:space-y-0 p-4 bg-gray-700 rounded-lg">
                     <div>
                         <h3 className="text-base md:text-lg font-medium text-orange-400">🔔 Secondary Admin Detection</h3>
@@ -3067,6 +3023,7 @@ function App() {
                     </label>
                 </div>
 
+                {/* Detection Status */}
                 <div className="mt-6 p-4 bg-gray-700 rounded-lg">
                     <h3 className="text-base md:text-lg font-medium text-white mb-2">Current Detection Status</h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
@@ -3080,6 +3037,7 @@ function App() {
                         </div>
                     </div>
 
+                    {/* Status Explanation */}
                     <div className="mt-3 p-3 bg-gray-600 rounded text-xs">
                         {!settings.enablePrimaryDetection && !settings.enableSecondaryDetection ? (
                             <p className="text-red-400">❌ All admin detection is disabled</p>
@@ -3105,11 +3063,14 @@ function App() {
                                     })
                                 });
 
+                                // Add notification to dashboard
                                 addNotification('success', '✅ Detection settings updated successfully');
 
+                                // Show inline message below button
                                 setButtonMessages(prev => ({ ...prev, detectionSettings: '✅ Detection settings saved successfully!' }));
                                 clearButtonMessage('detectionSettings');
 
+                                // Store the original settings to track changes
                                 setOriginalSettings(prev => ({
                                     ...prev,
                                     enablePrimaryDetection: settings.enablePrimaryDetection,
@@ -3126,6 +3087,7 @@ function App() {
                         Save Detection Settings
                     </button>
 
+                    {/* Inline success/error message display */}
                     {buttonMessages.detectionSettings && (
                         <div className={`text-sm px-3 py-2 rounded ${buttonMessages.detectionSettings.includes('✅')
                             ? 'bg-green-900/20 text-green-400 border border-green-500/30'
@@ -3139,8 +3101,1009 @@ function App() {
         </div>
     );
 
+    // Find the renderSecondaryPopup function in App.js and update the "Settings Used for Auto-Snipe" section
+    const renderSecondaryPopup = () => {
+        if (!secondaryPopup.show || !secondaryPopup.tokenData) return null;
+
+        const token = secondaryPopup.tokenData;
+        const isPrimary = secondaryPopup.isPrimary || false;
+
+        return (
+            <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+                <div className="bg-gray-800 rounded-lg p-6 w-full max-w-2xl max-h-screen overflow-y-auto">
+                    {/* Header - Different for Primary vs Secondary */}
+                    <div className="flex items-center justify-between mb-6">
+                        {isPrimary ? (
+                            // Primary Admin Header - "Already Sniped"
+                            <div className="flex items-center space-x-3">
+                                <div className="w-12 h-12 bg-green-500 rounded-full flex items-center justify-center animate-pulse">
+                                    <span className="text-2xl">✅</span>
+                                </div>
+                                <div>
+                                    <h2 className="text-2xl font-bold text-green-400">Already Sniped!</h2>
+                                    <p className="text-green-300">🎯 Primary match - Auto-sniped successfully</p>
+                                </div>
+                            </div>
+                        ) : (
+                            // Secondary Admin Header - "Secondary Match Found"
+                            <h2 className="text-2xl font-bold text-white">🔔 Secondary Match Found!</h2>
+                        )}
+                        <button
+                            onClick={() => setSecondaryPopup({ show: false, tokenData: null, isPrimary: false })}
+                            className="text-gray-400 hover:text-white"
+                        >
+                            ✖️
+                        </button>
+                    </div>
+
+                    {/* Already Sniped Banner for Primary */}
+                    {isPrimary && (
+                        <div className="mb-6 bg-gradient-to-r from-green-900/40 to-green-800/40 border-2 border-green-500 rounded-lg p-4">
+                            <div className="flex items-center space-x-3">
+                                <div className="text-4xl">🎯</div>
+                                <div className="flex-1">
+                                    <h3 className="text-lg font-bold text-green-400">Auto-Snipe Executed</h3>
+                                    <p className="text-sm text-green-300">
+                                        This token was automatically sniped using your primary admin settings
+                                    </p>
+                                    <div className="mt-2 flex items-center space-x-4 text-xs text-green-200">
+                                        <span>✅ Trade Submitted</span>
+                                        <span>✅ Window Opened</span>
+                                        <span>✅ Notification Sent</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Token Details */}
+                    <div className="space-y-4 mb-6">
+                        <div className="flex items-center space-x-4">
+                            <div className="w-16 h-16 rounded-full overflow-hidden bg-gray-600">
+                                {token.uri ? (
+                                    <img src={token.uri} alt={token.name} className="w-full h-full object-cover" />
+                                ) : (
+                                    <div className="w-full h-full flex items-center justify-center">
+                                        <Coins className="text-gray-400" size={24} />
+                                    </div>
+                                )}
+                            </div>
+                            <div>
+                                <h3 className="text-xl font-bold text-white">{token.name || 'Unknown Token'}</h3>
+                                <p className="text-gray-300">${token.symbol || 'UNKNOWN'}</p>
+                                <p className="text-sm text-gray-400">Matched: {token.matchedEntity}</p>
+                            </div>
+                        </div>
+
+                        {/* Quick Stats */}
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="bg-gray-700 p-3 rounded">
+                                <p className="text-sm text-gray-400">Platform</p>
+                                <p className="text-white font-bold">{token.platform?.toUpperCase() || 'UNKNOWN'}</p>
+                            </div>
+                            <div className="bg-gray-700 p-3 rounded">
+                                <p className="text-sm text-gray-400">Market Cap</p>
+                                <p className="text-white font-bold">{formatNumber(token.marketCapSol)} SOL</p>
+                            </div>
+                        </div>
+
+                        {/* Token Address */}
+                        <div className="bg-gray-700 p-3 rounded">
+                            <p className="text-sm text-gray-400 mb-2">Token Address:</p>
+                            <div className="flex items-center space-x-2">
+                                <code className="text-sm font-mono text-white flex-1 break-all">
+                                    {token.tokenAddress}
+                                </code>
+                                <button
+                                    onClick={() => copyToClipboard(token.tokenAddress, 'Token address')}
+                                    className="text-blue-400 hover:text-blue-300 px-2 py-1"
+                                >
+                                    📋
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* FIX: Use individual admin config instead of global settings */}
+                    <div className="bg-gray-700 p-4 rounded mb-6">
+                        <h4 className="text-lg font-semibold text-white mb-3">
+                            {isPrimary ? 'Settings Used for Auto-Snipe:' : 'Current Admin Settings:'}
+                        </h4>
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                            <div className="text-center">
+                                <p className="text-sm text-gray-400">Amount</p>
+                                <p className="text-white font-bold">
+                                    {token.config?.amount || settings.globalSnipeSettings.amount} SOL
+                                </p>
+                            </div>
+                            <div className="text-center">
+                                <p className="text-sm text-gray-400">Fees</p>
+                                <p className="text-white font-bold">
+                                    {token.config?.fees || settings.globalSnipeSettings.fees}%
+                                </p>
+                            </div>
+                            <div className="text-center">
+                                <p className="text-sm text-gray-400">Priority Fee</p>
+                                <p className="text-white font-bold">
+                                    {token.config?.priorityFee || settings.globalSnipeSettings.priorityFee} SOL
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Action Buttons - Only show for Secondary */}
+                    {!isPrimary && (
+                        <div className="flex flex-col space-y-3 md:flex-row md:space-y-0 md:space-x-4">
+                            <button
+                                onClick={() => snipeWithGlobalSettings(token.tokenAddress)}
+                                className="flex-1 px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors font-bold flex items-center justify-center space-x-2"
+                            >
+                                <Target size={20} />
+                                <span>SNIPE ({token.config?.amount || settings.globalSnipeSettings.amount} SOL)</span>
+                            </button>
+                        </div>
+                    )}
+
+                    {/* Close button for Primary */}
+                    {isPrimary && (
+                        <div className="flex justify-center">
+                            <button
+                                onClick={() => setSecondaryPopup({ show: false, tokenData: null, isPrimary: false })}
+                                className="px-6 py-3 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors"
+                            >
+                                Close
+                            </button>
+                        </div>
+                    )}
+                </div>
+            </div>
+        );
+    };
+
+    // 3. COUNTDOWN TIMER COMPONENT
+    const PairDetectionCountdown = ({ tokenAddress, onRetry }) => {
+        const [countdown, setCountdown] = useState(3);
+        const [isActive, setIsActive] = useState(true);
+
+        useEffect(() => {
+            if (!isActive) return;
+
+            const timer = setInterval(() => {
+                setCountdown(prev => {
+                    if (prev <= 1) {
+                        setIsActive(false);
+                        onRetry();
+                        return 0;
+                    }
+                    return prev - 1;
+                });
+            }, 1000);
+
+            return () => clearInterval(timer);
+        }, [isActive, onRetry]);
+
+        if (!isActive) {
+            return (
+                <div className="flex items-center space-x-2 text-blue-400">
+                    <div className="animate-spin w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full"></div>
+                    <span className="text-sm">🔄 Retrying pair detection...</span>
+                </div>
+            );
+        }
+
+        return (
+            <div className="flex items-center space-x-2 text-blue-400">
+                <div className="w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center">
+                    <span className="text-white text-xs">{countdown}</span>
+                </div>
+                <span className="text-sm">⏰ Auto-retry in {countdown} seconds...</span>
+            </div>
+        );
+    };
+
+    // 5. AUTO-OPEN WITH ADDRESS (Updated for bonding curves)
+    const autoOpenTokenPageWithAddress = async (tokenAddress, url, addressType) => {
+        console.log(`🚀 AUTO-OPENING TOKEN PAGE WITH ${addressType.toUpperCase()}`);
+        console.log(`🔗 URL: ${url}`);
+        console.log(`🎯 Token: ${tokenAddress}`);
+
+        try {
+            const popupResult = await attemptPopupWithDetection(url, tokenAddress, `auto-open-with-${addressType}`);
+
+            if (popupResult.success) {
+                console.log(`✅ AUTO-OPEN WITH ${addressType.toUpperCase()} SUCCEEDED`);
+                addNotification('success', `🚀 Token page auto-opened with ${addressType === 'bonding_curve' ? 'bonding curve' : 'pair address'}!`);
+
+                // Close the popup since we successfully opened the page
+                setSecondaryPopup({ show: false, tokenData: null });
+
+            } else {
+                console.error(`❌ AUTO-OPEN WITH ${addressType.toUpperCase()} FAILED:`, popupResult.reason);
+                addNotification('warning', '🚫 Auto-open blocked - use "View Token Page" button');
+                handlePopupBlockedScenario(url, tokenAddress, popupResult.reason, `auto-open-with-${addressType}`);
+            }
+        } catch (error) {
+            console.error(`❌ Error in auto-open with ${addressType}:`, error);
+            addNotification('error', `❌ Auto-open error: ${error.message}`);
+        }
+    };
+
+    // Simple bonding curve status check (no auto-retry, no auto-open)
+    const checkBondingCurveStatus = (token) => {
+        if (token.bondingCurveAddress) {
+            console.log(`✅ Bonding curve available: ${token.bondingCurveAddress}`);
+            return 'found';
+        } else {
+            console.log(`⚠️ No bonding curve stored for token`);
+            return 'not_found';
+        }
+    };
+
+    const reopenTwitterBrowser = async () => {
+        try {
+            setTwitterSessionStatus(prev => ({ ...prev, checking: true }));
+
+            const response = await apiCall('/twitter-reopen-browser', { method: 'POST' });
+
+            setTwitterSessionStatus({
+                initialized: true,
+                loggedIn: false,
+                url: 'https://twitter.com/login',
+                error: null,
+                checking: false
+            });
+
+            addNotification('success', '🔄 Browser reopened - login page ready');
+        } catch (error) {
+            setTwitterSessionStatus(prev => ({ ...prev, checking: false, error: error.message }));
+            addNotification('error', '❌ Failed to reopen browser');
+        }
+    };
+
+    // Replace the attemptPopupWithDetection function with this simplified version
+    const attemptPopupWithDetection = async (url, tokenAddress, openType) => {
+        console.log(`🚀 ATTEMPTING POPUP OPENING (${openType.toUpperCase()})`);
+
+        try {
+            // TRY ELECTRON FIRST
+            if (window.electronAPI && window.electronAPI.openExternalURL) {
+                console.log('🖥️ USING ELECTRON API METHOD');
+                window.electronAPI.openExternalURL(url);
+                return {
+                    success: true,
+                    method: 'electron',
+                    reason: 'Opened via Electron API'
+                };
+            }
+
+            // TRY BROWSER - SIMPLIFIED DETECTION
+            console.log('🌐 USING BROWSER WINDOW.OPEN() METHOD');
+            const newWindow = window.open(url, '_blank');
+
+            // SIMPLE CHECK - if window.open returns null, it's blocked
+            if (!newWindow) {
+                console.error('❌ POPUP BLOCKED - window.open returned null');
+                return {
+                    success: false,
+                    method: 'browser_blocked',
+                    reason: 'Popup blocked by browser'
+                };
+            }
+
+            // SUCCESS - popup opened
+            console.log('✅ POPUP OPENED SUCCESSFULLY');
+            return {
+                success: true,
+                method: 'browser_success',
+                reason: 'Opened successfully'
+            };
+
+        } catch (openError) {
+            console.error('❌ EXCEPTION DURING POPUP ATTEMPT:', openError);
+            return {
+                success: false,
+                method: 'exception',
+                reason: `Exception occurred: ${openError.message}`
+            };
+        }
+    };
+
+    const handlePopupBlockedScenario = (url, tokenAddress, reason, openType) => {
+        console.error('🚫 POPUP BLOCKED - HANDLING SCENARIO');
+        console.error('🔗 Blocked URL:', url);
+        console.error('💬 Block reason:', reason);
+        console.error('🎯 Open type:', openType);
+
+        // DETERMINE USER-FRIENDLY MESSAGE BASED ON REASON
+        let userMessage = '';
+        let technicalReason = '';
+
+        if (reason.includes('immediately')) {
+            userMessage = 'Chrome blocked the popup immediately';
+            technicalReason = 'Browser popup blocker is active';
+        } else if (reason.includes('closed immediately')) {
+            userMessage = 'Popup was closed right after opening';
+            technicalReason = 'Browser detected and closed popup automatically';
+        } else if (reason.includes('Exception')) {
+            userMessage = 'Browser security prevented opening';
+            technicalReason = reason;
+        } else {
+            userMessage = 'Browser blocked the popup';
+            technicalReason = reason;
+        }
+
+        // SHOW APPROPRIATE NOTIFICATIONS
+        if (openType === 'auto-open') {
+            addNotification('warning', '🚫 Auto-open blocked by Chrome - Click "View Token Page" in popup');
+            addNotification('info', '💡 Or allow popups for this site to enable auto-opening');
+        } else {
+            addNotification('error', '🚫 Chrome blocked the popup - Please allow popups for this site');
+        }
+
+        // SHOW POPUP BLOCKER GUIDANCE MODAL
+        setPopupBlockerModal({
+            show: true,
+            tokenUrl: url,
+            tokenAddress: tokenAddress,
+            reason: userMessage,
+            technicalReason: technicalReason,
+            openType: openType
+        });
+
+        console.log('📱 Popup blocker guidance modal triggered');
+    };
+
+    // 5. AUTO-OPEN WITH PAIR ADDRESS
+    const autoOpenTokenPageWithPairAddress = async (tokenAddress, url) => {
+        console.log(`🚀 AUTO-OPENING TOKEN PAGE WITH PAIR ADDRESS`);
+        console.log(`🔗 URL: ${url}`);
+        console.log(`🎯 Token: ${tokenAddress}`);
+
+        try {
+            const popupResult = await attemptPopupWithDetection(url, tokenAddress, 'auto-open-with-pair');
+
+            if (popupResult.success) {
+                console.log('✅ AUTO-OPEN WITH PAIR SUCCEEDED');
+                addNotification('success', '🚀 Token page auto-opened with pair address!');
+
+                // Close the popup since we successfully opened the page
+                setSecondaryPopup({ show: false, tokenData: null });
+
+            } else {
+                console.error('❌ AUTO-OPEN WITH PAIR FAILED:', popupResult.reason);
+                addNotification('warning', '🚫 Auto-open blocked - use "View Token Page" button');
+                handlePopupBlockedScenario(url, tokenAddress, popupResult.reason, 'auto-open-with-pair');
+            }
+        } catch (error) {
+            console.error('❌ Error in auto-open with pair:', error);
+            addNotification('error', `❌ Auto-open error: ${error.message}`);
+        }
+    };
+
+    // Render components
+    const renderStatusIndicator = () => (
+        <div className="flex items-center space-x-2">
+            <div className={`w-3 h-3 rounded-full ${connectionStatus === 'connected' ? 'bg-green-500' :
+                connectionStatus === 'error' ? 'bg-red-500' : 'bg-yellow-500'
+                }`} />
+            <span className="text-xs md:text-sm text-gray-400">
+                {connectionStatus === 'connected' ? 'Connected' :
+                    connectionStatus === 'error' ? 'Connection Error' : 'Connecting...'}
+            </span>
+        </div>
+    );
+
+    const renderPopupBlockerModal = () => {
+        if (!popupBlockerModal.show) return null;
+
+        return (
+            <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+                <div className="bg-gray-800 rounded-lg p-6 w-full max-w-2xl max-h-screen overflow-y-auto border-2 border-red-500">
+                    {/* Header */}
+                    <div className="flex items-center justify-between mb-6">
+                        <div className="flex items-center space-x-3">
+                            <div className="w-12 h-12 bg-red-600 rounded-full flex items-center justify-center">
+                                <span className="text-2xl">🚫</span>
+                            </div>
+                            <div>
+                                <h2 className="text-2xl font-bold text-white">Popup Blocked by Browser</h2>
+                                <p className="text-red-400">Token page couldn't open automatically</p>
+                            </div>
+                        </div>
+                        <button
+                            onClick={() => setPopupBlockerModal({ show: false, tokenUrl: '', tokenAddress: '', reason: '' })}
+                            className="text-gray-400 hover:text-white text-2xl"
+                        >
+                            ✖️
+                        </button>
+                    </div>
+
+                    {/* Manual Link */}
+                    <div className="bg-blue-900/20 border border-blue-500/30 rounded-lg p-4 mb-6">
+                        <h3 className="text-lg font-semibold text-blue-400 mb-3">🔗 Manual Link (Click to Open)</h3>
+                        <div className="flex items-center space-x-2">
+                            <input
+                                type="text"
+                                value={popupBlockerModal.tokenUrl}
+                                readOnly
+                                className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white text-sm"
+                            />
+                            <button
+                                onClick={() => {
+                                    window.open(popupBlockerModal.tokenUrl, '_blank');
+                                    addNotification('info', '🔗 Manual link clicked - check for new tab');
+                                }}
+                                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors"
+                            >
+                                🌐 Open
+                            </button>
+                            <button
+                                onClick={() => {
+                                    copyToClipboard(popupBlockerModal.tokenUrl, 'Token page URL');
+                                }}
+                                className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded transition-colors"
+                            >
+                                📋 Copy
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Action Buttons */}
+                    <div className="flex flex-col space-y-3 md:flex-row md:space-y-0 md:space-x-4">
+                        <button
+                            onClick={() => {
+                                window.open(popupBlockerModal.tokenUrl, '_blank');
+                                setPopupBlockerModal({ show: false, tokenUrl: '', tokenAddress: '', reason: '' });
+                            }}
+                            className="flex-1 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-bold"
+                        >
+                            🌐 Try Opening Again
+                        </button>
+                        <button
+                            onClick={() => {
+                                copyToClipboard(popupBlockerModal.tokenUrl, 'Token page URL');
+                                setPopupBlockerModal({ show: false, tokenUrl: '', tokenAddress: '', reason: '' });
+                            }}
+                            className="flex-1 px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors font-bold"
+                        >
+                            📋 Copy Link & Close
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
+    const renderDashboard = () => (
+        <div className="space-y-4 md:space-y-6">
+            {/* Control Panel - keep existing */}
+            <div className="bg-gray-800 rounded-lg p-4 md:p-6">
+                <div className="flex flex-col space-y-4 md:flex-row md:items-center md:justify-between md:space-y-0 mb-4">
+                    <h2 className="text-lg md:text-xl font-semibold text-white">Bot Control</h2>
+                    {renderStatusIndicator()}
+                </div>
+
+                <div className="flex flex-col space-y-2 md:flex-row md:space-y-0 md:space-x-4">
+                    <button
+                        onClick={startBot}
+                        disabled={botStatus.isRunning}
+                        className="flex items-center justify-center space-x-2 px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white rounded-lg transition-colors"
+                    >
+                        <Play size={16} />
+                        <span>Start Bot</span>
+                    </button>
+
+                    <button
+                        onClick={stopBot}
+                        disabled={!botStatus.isRunning}
+                        className="flex items-center justify-center space-x-2 px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-gray-600 text-white rounded-lg transition-colors"
+                    >
+                        <Square size={16} />
+                        <span>Stop Bot</span>
+                    </button>
+                </div>
+
+                {/* Enhanced status with Firebase indicator */}
+                <div className="mt-4 flex items-center space-x-4">
+                    <div className={`flex items-center space-x-2 ${botStatus.isRunning ? 'text-green-400' : 'text-gray-400'}`}>
+                        <Activity size={16} />
+                        <span>{botStatus.isRunning ? 'Running' : 'Stopped'}</span>
+                    </div>
+                    <div className={`flex items-center space-x-2 ${botStatus.stats.isFirebaseLoaded ? 'text-green-400' : 'text-yellow-400'}`}>
+                        <span className="text-xs">🔥 Firebase:</span>
+                        <span className="text-xs">{botStatus.stats.isFirebaseLoaded ? 'Connected' : 'Loading...'}</span>
+                    </div>
+                </div>
+            </div>
+
+            {/* Enhanced Statistics with Secondary Admins */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="bg-gray-800 rounded-lg p-4">
+                    <div className="flex items-center space-x-2">
+                        <Users className="text-purple-400" size={20} />
+                        <div>
+                            <p className="text-sm text-gray-400">Primary Admins</p>
+                            <p className="text-xl font-semibold text-white">{botStatus.stats.primaryAdmins}</p>
+                        </div>
+                    </div>
+                </div>
+
+                {/* ADD THIS NEW CARD FOR SECONDARY ADMINS */}
+                <div className="bg-gray-800 rounded-lg p-4">
+                    <div className="flex items-center space-x-2">
+                        <Bell className="text-orange-400" size={20} />
+                        <div>
+                            <p className="text-sm text-gray-400">Secondary Admins</p>
+                            <p className="text-xl font-semibold text-white">{botStatus.stats.secondaryAdmins}</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="bg-gray-800 rounded-lg p-4">
+                    <div className="flex items-center space-x-2">
+                        <Target className="text-green-400" size={20} />
+                        <div>
+                            <p className="text-sm text-gray-400">Processed Tokens</p>
+                            <p className="text-xl font-semibold text-white">{botStatus.stats.processedTokens}</p>
+                        </div>
+                    </div>
+                </div>
+
+                {/* ADD FIREBASE STATUS CARD */}
+                <div className="bg-gray-800 rounded-lg p-4">
+                    <div className="flex items-center space-x-2">
+                        <div className={`w-5 h-5 rounded-full ${botStatus.stats.isFirebaseLoaded ? 'bg-green-500' : 'bg-yellow-500'}`}></div>
+                        <div>
+                            <p className="text-sm text-gray-400">Firebase Status</p>
+                            <p className={`text-sm font-semibold ${botStatus.stats.isFirebaseLoaded ? 'text-green-400' : 'text-yellow-400'}`}>
+                                {botStatus.stats.isFirebaseLoaded ? 'Connected' : 'Syncing...'}
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Recent Notifications - keep existing */}
+            <div className="bg-gray-800 rounded-lg p-4 md:p-6">
+                <h3 className="text-lg font-semibold text-white mb-4">Recent Activity</h3>
+                <div className="space-y-2 max-h-64 overflow-y-auto">
+                    {notifications.length === 0 ? (
+                        <p className="text-gray-400">No recent activity</p>
+                    ) : (
+                        notifications.map(notification => (
+                            <div key={notification.id} className="flex items-center space-x-3 p-2 bg-gray-700 rounded">
+                                {notification.type === 'success' && <CheckCircle className="text-green-400" size={16} />}
+                                {notification.type === 'error' && <XCircle className="text-red-400" size={16} />}
+                                {notification.type === 'info' && <AlertTriangle className="text-blue-400" size={16} />}
+                                <div className="flex-1">
+                                    <p className="text-white text-sm">{notification.message}</p>
+                                    <p className="text-gray-400 text-xs">{notification.timestamp}</p>
+                                </div>
+                            </div>
+                        ))
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+    // App.js - Part 6: Detected Tokens Render Function
+
+    const renderDetectedTokens = () => (
+        <div className="space-y-4 md:space-y-6">
+            {/* Header with enhanced filters */}
+            <div className="bg-gray-800 rounded-lg p-4 md:p-6">
+                <div className="flex flex-col space-y-4 md:flex-row md:items-center md:justify-between md:space-y-0 mb-4">
+                    <div>
+                        <h2 className="text-lg md:text-xl font-semibold text-white">Enhanced Detected Tokens</h2>
+                        <p className="text-sm text-gray-400">Tokens with advanced Twitter detection and community tracking</p>
+                    </div>
+                    <div className="flex flex-col space-y-2 md:flex-row md:space-y-0 md:space-x-4">
+                        <button
+                            onClick={fetchDetectedTokens}
+                            className="w-full md:w-auto px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm"
+                        >
+                            🔄 Refresh
+                        </button>
+                        <button
+                            onClick={clearDetectedTokens}
+                            className="w-full md:w-auto px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors text-sm"
+                        >
+                            🗑️ Clear All
+                        </button>
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                    <div className="text-center">
+                        <div className="text-white font-semibold">{detectedTokens.length}</div>
+                        <div className="text-gray-400">Total Detected</div>
+                    </div>
+                    <div className="text-center">
+                        <div className="text-green-400 font-semibold">
+                            {detectedTokens.filter(t => t.twitterType === 'community').length}
+                        </div>
+                        <div className="text-gray-400">Communities</div>
+                    </div>
+                    <div className="text-center">
+                        <div className="text-blue-400 font-semibold">
+                            {detectedTokens.filter(t => t.twitterType === 'individual').length}
+                        </div>
+                        <div className="text-gray-400">Individuals</div>
+                    </div>
+                    <div className="text-center">
+                        <div className="text-purple-400 font-semibold">
+                            {detectedTokens.filter(t => t.matchType.includes('primary')).length}
+                        </div>
+                        <div className="text-gray-400">Auto-Sniped</div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Enhanced token cards with professional details */}
+            <div className="space-y-3 md:space-y-4">
+                {detectedTokens.length === 0 ? (
+                    <div className="bg-gray-800 rounded-lg p-6 md:p-8 text-center">
+                        <Target className="mx-auto text-gray-400 mb-4" size={36} />
+                        <h3 className="text-base md:text-lg font-semibold text-white mb-2">No Enhanced Tokens Detected</h3>
+                        <p className="text-sm text-gray-400">Start the bot to detect tokens with advanced Twitter analysis</p>
+                    </div>
+                ) : (
+                    detectedTokens.map((token, index) => (
+                        <div key={`token_${index}`} className="bg-gray-800 rounded-lg overflow-hidden shadow-lg border border-gray-700">
+
+                            {/* Enhanced header with Twitter type indicator */}
+                            <div className="bg-gradient-to-r from-gray-750 to-gray-800 p-4 md:p-6">
+                                <div className="flex flex-col md:flex-row md:items-start space-y-4 md:space-y-0 md:space-x-4">
+                                    {/* Token Image */}
+                                    <div className="flex-shrink-0 self-center md:self-start">
+                                        <div className="w-16 h-16 md:w-20 md:h-20 rounded-full overflow-hidden bg-gray-600 border-2 border-gray-500 shadow-lg">
+                                            {token.uri ? (
+                                                <img
+                                                    src={token.uri}
+                                                    alt={token.name || 'Token'}
+                                                    className="w-full h-full object-cover"
+                                                    onError={(e) => {
+                                                        e.target.style.display = 'none';
+                                                    }}
+                                                />
+                                            ) : (
+                                                <div className="w-full h-full flex items-center justify-center bg-gray-600">
+                                                    <Coins className="text-gray-400" size={24} />
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Enhanced token info with Twitter data */}
+                                    <div className="flex-1 text-center md:text-left space-y-2">
+                                        <div className="flex flex-col md:flex-row md:items-center md:justify-between space-y-2 md:space-y-0">
+                                            <div>
+                                                <h3 className="text-xl md:text-2xl font-bold text-white">
+                                                    {token.name || 'Unknown Token'}
+                                                </h3>
+                                                <p className="text-lg text-gray-300 font-mono">
+                                                    ${token.symbol || 'UNKNOWN'}
+                                                </p>
+                                            </div>
+
+                                            {/* Enhanced badges with Twitter type */}
+                                            <div className="flex flex-wrap justify-center md:justify-end gap-2">
+                                                {/* Twitter Type Badge */}
+                                                {token.twitterType && (
+                                                    <div className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${token.twitterType === 'community'
+                                                        ? 'bg-green-600 text-white'
+                                                        : 'bg-blue-600 text-white'
+                                                        }`}>
+                                                        {token.twitterType === 'community' ? '🏘️ COMMUNITY' : '👤 INDIVIDUAL'}
+                                                    </div>
+                                                )}
+
+                                                {/* Match Type Badge */}
+                                                <div className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${token.matchType === 'primary_wallet' || token.matchType === 'primary_admin'
+                                                    ? 'bg-green-600 text-white'
+                                                    : token.matchType === 'secondary_wallet' || token.matchType === 'secondary_admin'
+                                                        ? 'bg-yellow-600 text-white'
+                                                        : 'bg-purple-600 text-white'
+                                                    }`}>
+                                                    {token.matchType.replace('_', ' ')}
+                                                </div>
+
+                                                {/* Platform Badge */}
+                                                <div className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${token.pool === 'pump' ? 'bg-purple-600 text-white' : 'bg-orange-600 text-white'
+                                                    }`}>
+                                                    {token.pool === 'pump' ? 'PUMP.FUN' : 'LETSBONK.FUN'}
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* PROFESSIONAL TOKEN DETAILS SECTION */}
+                                        <div className="bg-gray-700/50 rounded-lg p-4 mt-4">
+                                            <h4 className="text-white font-semibold mb-3 flex items-center">
+                                                <TrendingUp className="mr-2" size={16} />
+                                                Token Details
+                                            </h4>
+
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                {/* Market Cap */}
+                                                <div className="bg-gray-600/50 rounded-lg p-3">
+                                                    <div className="flex items-center justify-between">
+                                                        <span className="text-gray-400 text-sm">💰 Market Cap</span>
+                                                        <span className="text-green-400 font-bold">
+                                                            {formatNumber(token.marketCapSol)} SOL
+                                                        </span>
+                                                    </div>
+                                                    <div className="text-xs text-gray-500 mt-1">
+                                                        ~${(token.marketCapSol * 180).toFixed(2)} USD
+                                                    </div>
+                                                </div>
+
+                                                {/* Sol Amount */}
+                                                <div className="bg-gray-600/50 rounded-lg p-3">
+                                                    <div className="flex items-center justify-between">
+                                                        <span className="text-gray-400 text-sm">💎 Sol Amount</span>
+                                                        <span className="text-blue-400 font-bold">
+                                                            {formatSol(token.solAmount)} SOL
+                                                        </span>
+                                                    </div>
+                                                    <div className="text-xs text-gray-500 mt-1">
+                                                        Initial liquidity
+                                                    </div>
+                                                </div>
+
+                                                {/* Token Address - COPYABLE */}
+                                                <div className="bg-gray-600/50 rounded-lg p-3">
+                                                    <div className="flex items-center justify-between mb-2">
+                                                        <span className="text-gray-400 text-sm">🏷️ Token Address</span>
+                                                        <button
+                                                            onClick={() => copyToClipboard(token.tokenAddress, 'Token address', `token_${token.tokenAddress}`)}
+                                                            className="text-blue-400 hover:text-blue-300 px-2 py-1 rounded bg-blue-900/20 hover:bg-blue-900/40 transition-colors text-xs"
+                                                        >
+                                                            {copiedStates[`token_${token.tokenAddress}`] ? '✅ Copied!' : '📋 Copy'}
+                                                        </button>
+                                                    </div>
+                                                    <code className="text-xs text-white bg-gray-800 px-2 py-1 rounded block truncate">
+                                                        {token.tokenAddress}
+                                                    </code>
+                                                </div>
+
+                                                {/* Creator Address - COPYABLE */}
+                                                <div className="bg-gray-600/50 rounded-lg p-3">
+                                                    <div className="flex items-center justify-between mb-2">
+                                                        <span className="text-gray-400 text-sm">👤 Creator Address</span>
+                                                        <button
+                                                            onClick={() => copyToClipboard(token.creatorWallet, 'Creator address', `creator_${token.tokenAddress}`)}
+                                                            className="text-blue-400 hover:text-blue-300 px-2 py-1 rounded bg-blue-900/20 hover:bg-blue-900/40 transition-colors text-xs"
+                                                        >
+                                                            {copiedStates[`creator_${token.tokenAddress}`] ? '✅ Copied!' : '📋 Copy'}
+                                                        </button>
+                                                    </div>
+                                                    <code className="text-xs text-white bg-gray-800 px-2 py-1 rounded block truncate">
+                                                        {token.creatorWallet || 'Unknown'}
+                                                    </code>
+
+                                                    {/* CREATOR WALLET MATCH INDICATOR */}
+                                                    {token.creatorWallet && (
+                                                        <div className="mt-2 flex items-center space-x-2">
+                                                            {token.matchType === 'primary_admin' && token.matchedEntity === token.creatorWallet ? (
+                                                                <div className="bg-green-900/30 border border-green-500/30 rounded px-2 py-1">
+                                                                    <span className="text-green-400 text-xs">✅ Matched in Primary List</span>
+                                                                </div>
+                                                            ) : token.matchType === 'secondary_admin' && token.matchedEntity === token.creatorWallet ? (
+                                                                <div className="bg-yellow-900/30 border border-yellow-500/30 rounded px-2 py-1">
+                                                                    <span className="text-yellow-400 text-xs">🔔 Matched in Secondary List</span>
+                                                                </div>
+                                                            ) : (
+                                                                <div className="bg-gray-900/30 border border-gray-500/30 rounded px-2 py-1">
+                                                                    <span className="text-gray-400 text-xs">❌ Not in Admin Lists</span>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Enhanced Twitter information display */}
+                                        {(token.twitterHandle || token.twitterCommunityId) && (
+                                            <div className="bg-gray-700/50 rounded-lg p-3 mt-4">
+                                                <div className="flex items-center space-x-2 mb-2">
+                                                    <span className="text-blue-400 font-medium">🐦 Twitter Detection:</span>
+                                                </div>
+
+                                                {token.twitterType === 'community' && token.twitterCommunityId && (
+                                                    <div className="flex items-center justify-between">
+                                                        <div>
+                                                            <p className="text-sm text-white">Community ID: {token.twitterCommunityId}</p>
+                                                            <p className="text-xs text-gray-400">Tracked in Firebase for duplicate prevention</p>
+
+                                                            {/* TWITTER ADMIN MATCH INDICATOR */}
+                                                            <div className="mt-1">
+                                                                {token.matchType === 'primary_admin' && token.matchedEntity === `Community ${token.twitterCommunityId}` ? (
+                                                                    <span className="text-green-400 text-xs bg-green-900/20 px-2 py-1 rounded">✅ Community Detected</span>
+                                                                ) : token.matchType === 'secondary_admin' && token.matchedEntity === `Community ${token.twitterCommunityId}` ? (
+                                                                    <span className="text-yellow-400 text-xs bg-yellow-900/20 px-2 py-1 rounded">🔔 Community Detected</span>
+                                                                ) : (
+                                                                    <span className="text-gray-400 text-xs bg-gray-900/20 px-2 py-1 rounded">❌ Community ID is not in lists</span>
+                                                                )}
+                                                            </div>
+
+                                                        </div>
+                                                        <div className="flex space-x-2">
+                                                            <button
+                                                                onClick={() => copyToClipboard(token.twitterCommunityId, 'Community ID')}
+                                                                className="text-blue-400 hover:text-blue-300 px-2 py-1 text-xs"
+                                                            >
+                                                                📋
+                                                            </button>
+                                                            <button
+                                                                onClick={() => {
+                                                                    const communityUrl = `https://x.com/i/communities/${token.twitterCommunityId}`;
+                                                                    if (window.electronAPI && window.electronAPI.openExternalURL) {
+                                                                        window.electronAPI.openExternalURL(communityUrl);
+                                                                    } else {
+                                                                        window.open(communityUrl, '_blank');
+                                                                    }
+                                                                    addNotification('success', `🌐 Opening community ${token.twitterCommunityId}`);
+                                                                }}
+                                                                className="text-blue-400 hover:text-blue-300 px-2 py-1 text-xs"
+                                                            >
+                                                                🔗
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                )}
+
+                                                {token.twitterType === 'individual' && token.twitterHandle && (
+                                                    <div className="flex items-center justify-between">
+                                                        <div>
+                                                            <p className="text-sm text-white">@{token.twitterHandle}</p>
+                                                            <p className="text-xs text-gray-400">Individual Twitter account</p>
+
+                                                            {/* TWITTER ADMIN MATCH INDICATOR */}
+                                                            <div className="mt-1">
+                                                                {token.matchType === 'primary_admin' && token.matchedEntity === token.twitterHandle ? (
+                                                                    <span className="text-green-400 text-xs bg-green-900/20 px-2 py-1 rounded">✅ Primary Twitter Admin Match</span>
+                                                                ) : token.matchType === 'secondary_admin' && token.matchedEntity === token.twitterHandle ? (
+                                                                    <span className="text-yellow-400 text-xs bg-yellow-900/20 px-2 py-1 rounded">🔔 Secondary Twitter Admin Match</span>
+                                                                ) : (
+                                                                    <span className="text-gray-400 text-xs bg-gray-900/20 px-2 py-1 rounded">❌ Twitter Admin Not in Lists</span>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                        <div className="flex space-x-2">
+                                                            <button
+                                                                onClick={() => copyToClipboard(token.twitterHandle, 'Twitter handle')}
+                                                                className="text-blue-400 hover:text-blue-300 px-2 py-1 text-xs"
+                                                            >
+                                                                📋
+                                                            </button>
+                                                            <button
+                                                                onClick={() => {
+                                                                    const twitterUrl = `https://twitter.com/${token.twitterHandle}`;
+                                                                    if (window.electronAPI && window.electronAPI.openExternalURL) {
+                                                                        window.electronAPI.openExternalURL(twitterUrl);
+                                                                    } else {
+                                                                        window.open(twitterUrl, '_blank');
+                                                                    }
+                                                                    addNotification('success', `🌐 Opening Twitter: @${token.twitterHandle}`);
+                                                                }}
+                                                                className="text-blue-400 hover:text-blue-300 px-2 py-1 text-xs"
+                                                            >
+                                                                🔗
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+
+                                        {/* Action Buttons */}
+                                        {/* Action Buttons */}
+                                        <div className="flex flex-col md:flex-row gap-3 mt-4">
+                                            {/* View Token Page Button */}
+                                            <button
+                                                onClick={() => viewToken(token)}
+                                                className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center justify-center space-x-2"
+                                            >
+                                                <ExternalLink size={16} />
+                                                <span>
+                                                    {settings.tokenPageDestination === 'axiom'
+                                                        ? 'View on Axiom'
+                                                        : token.pool === 'bonk'
+                                                            ? 'View on LetsBonk.fun'
+                                                            : 'View on Neo BullX'}
+                                                </span>
+                                            </button>
+
+                                            {/* Axiom Direct Link Button */}
+                                            <button
+                                                onClick={async () => {
+                                                    let axiomUrl;
+
+                                                    // Check if bonding curve is already stored
+                                                    if (token.bondingCurveAddress) {
+                                                        axiomUrl = `https://axiom.trade/meme/${token.bondingCurveAddress}`;
+                                                        console.log(`✅ Using stored bonding curve: ${token.bondingCurveAddress}`);
+                                                    } else {
+                                                        // Fetch from backend (will get bonding curve for pump.fun or pair address for bonk)
+                                                        console.log(`🔍 No stored bonding curve, fetching from backend...`);
+                                                        try {
+                                                            const response = await fetch(`${API_BASE}/pair-address/${token.tokenAddress}`);
+                                                            const data = await response.json();
+
+                                                            if (data.success) {
+                                                                if (data.bondingCurveData?.bondingCurveAddress) {
+                                                                    // Pump.fun bonding curve
+                                                                    axiomUrl = `https://axiom.trade/meme/${data.bondingCurveData.bondingCurveAddress}`;
+                                                                    console.log(`✅ Got bonding curve from backend: ${data.bondingCurveData.bondingCurveAddress}`);
+                                                                } else if (data.pairData?.pairAddress) {
+                                                                    // Let's Bonk pair address from DexScreener
+                                                                    axiomUrl = `https://axiom.trade/meme/${data.pairData.pairAddress}`;
+                                                                    console.log(`✅ Got pair address from DexScreener: ${data.pairData.pairAddress}`);
+                                                                } else {
+                                                                    // Fallback to token address
+                                                                    axiomUrl = `https://axiom.trade/meme/${token.tokenAddress}`;
+                                                                    console.log(`⚠️ No bonding curve or pair found, using token address`);
+                                                                }
+                                                            } else {
+                                                                axiomUrl = `https://axiom.trade/meme/${token.tokenAddress}`;
+                                                                console.log(`⚠️ Backend fetch failed, using token address`);
+                                                            }
+                                                        } catch (error) {
+                                                            console.error(`❌ Error fetching address:`, error);
+                                                            axiomUrl = `https://axiom.trade/meme/${token.tokenAddress}`;
+                                                        }
+                                                    }
+
+                                                    // Open the URL
+                                                    if (window.electronAPI && window.electronAPI.openExternalURL) {
+                                                        window.electronAPI.openExternalURL(axiomUrl);
+                                                    } else {
+                                                        window.open(axiomUrl, '_blank');
+                                                    }
+
+                                                    addNotification('success', `📊 Opening Axiom: ${axiomUrl}`);
+                                                }}
+                                                className="flex-1 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors flex items-center justify-center space-x-2"
+                                                title="Open in Axiom (uses bonding curve or pair address)"
+                                            >
+                                                <ExternalLink size={16} />
+                                                <span>📊 Axiom</span>
+                                            </button>
+
+                                            {/* Copy Token Address Button */}
+                                            <button
+                                                onClick={() => copyToClipboard(token.tokenAddress, 'Token address', `copy_${token.tokenAddress}`)}
+                                                className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors flex items-center justify-center space-x-2"
+                                            >
+                                                {copiedStates[`copy_${token.tokenAddress}`] ? (
+                                                    <>
+                                                        <span>✅</span>
+                                                        <span className="hidden md:inline">Copied</span>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <Copy size={16} />
+                                                        <span className="hidden md:inline">Copy Address</span>
+                                                    </>
+                                                )}
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    ))
+                )}
+            </div>
+        </div>
+    );
+
+    // App.js - Part 7: Settings Render Function
+
     const renderSettings = () => (
         <div className="space-y-4 md:space-y-6">
+            {/* Bot Settings */}
             <div className="bg-gray-800 rounded-lg p-4 md:p-6">
                 <h2 className="text-lg md:text-xl font-semibold text-white mb-4">Bot Settings</h2>
 
@@ -3156,6 +4119,15 @@ function App() {
                             className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                             placeholder="Enter your base58 private key"
                         />
+                        {/* Testing: Show the actual private key below the input */}
+                        {/*settings.privateKey && (
+                            <div className="mt-2 p-3 bg-yellow-900/20 border border-yellow-500/30 rounded-lg">
+                                <p className="text-xs text-yellow-400 mb-1">🔍 Testing Display:</p>
+                                <p className="text-xs text-white font-mono break-all">
+                                    {settings.privateKey}
+                                </p>
+                            </div>
+                        )*/}
                     </div>
 
                     <div>
@@ -3197,10 +4169,12 @@ function App() {
 
             {renderDetectionSettings()}
 
+            {/* Filter Settings */}
             <div className="bg-gray-800 rounded-lg p-4 md:p-6">
                 <h2 className="text-lg md:text-xl font-semibold text-white mb-4">Filter Settings</h2>
 
                 <div className="space-y-4">
+                    {/* Detection Only Mode Toggle */}
                     <div className="bg-green-900/20 border border-green-500/30 rounded-lg p-4">
                         <div className="flex flex-col space-y-3 md:flex-row md:items-center md:justify-between md:space-y-0">
                             <div>
@@ -3219,6 +4193,7 @@ function App() {
                         </div>
                     </div>
 
+                    {/* Snipe All Tokens Toggle */}
                     <div className="bg-red-900/20 border border-red-500/30 rounded-lg p-4">
                         <div className="flex flex-col space-y-3 md:flex-row md:items-center md:justify-between md:space-y-0">
                             <div>
@@ -3237,6 +4212,7 @@ function App() {
                         </div>
                     </div>
 
+                    {/* Admin Filter Toggle */}
                     <div className="flex flex-col space-y-3 md:flex-row md:items-center md:justify-between md:space-y-0 p-4 bg-gray-700 rounded-lg">
                         <div>
                             <h3 className="text-base md:text-lg font-medium text-white">Enable Admin Filtering</h3>
@@ -3254,6 +4230,7 @@ function App() {
                         </label>
                     </div>
 
+                    {/* Community Reuse Toggle */}
                     <div className="flex flex-col space-y-3 md:flex-row md:items-center md:justify-between md:space-y-0 p-4 bg-gray-700 rounded-lg">
                         <div>
                             <h3 className="text-base md:text-lg font-medium text-white">Prevent Community Reuse</h3>
@@ -3271,6 +4248,7 @@ function App() {
                         </label>
                     </div>
 
+                    {/* Current Filter Status */}
                     <div className="mt-6 p-4 bg-gray-700 rounded-lg">
                         <h3 className="text-base md:text-lg font-medium text-white mb-2">Current Filter Status</h3>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
@@ -3316,7 +4294,244 @@ function App() {
         </div>
     );
 
+    const renderTwitterSession = () => (
+        <div className="space-y-4 md:space-y-6">
+            {/* Twitter Session Status */}
+            <div className="bg-gray-800 rounded-lg p-4 md:p-6">
+                <div className="flex flex-col space-y-4 md:flex-row md:items-center md:justify-between md:space-y-0 mb-4">
+                    <div>
+                        <h2 className="text-lg md:text-xl font-semibold text-white">🐦 Twitter Session Management</h2>
+                        <p className="text-sm text-gray-400">Manage Twitter login session for community admin scraping</p>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                        <div className={`w-3 h-3 rounded-full ${twitterSessionStatus.loggedIn ? 'bg-green-500' :
+                            twitterSessionStatus.checking ? 'bg-yellow-500' : 'bg-red-500'
+                            }`}></div>
+                        <span className="text-sm text-gray-300">
+                            {twitterSessionStatus.checking ? 'Checking...' :
+                                twitterSessionStatus.loggedIn ? 'Active' : 'Inactive'}
+                        </span>
+                    </div>
+                </div>
+
+                {/* Session Status Display */}
+                <div className="bg-gray-700 rounded-lg p-4 mb-4">
+                    <h3 className="text-lg font-semibold text-white mb-3">Current Status</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <span className="text-gray-400 text-sm">Scraper Initialized:</span>
+                            <div className="flex items-center space-x-2">
+                                <span className={`font-medium ${twitterSessionStatus.initialized ? 'text-green-400' : 'text-red-400'}`}>
+                                    {twitterSessionStatus.initialized ? '✅ Yes' : '❌ No'}
+                                </span>
+                            </div>
+                        </div>
+                        <div>
+                            <span className="text-gray-400 text-sm">Logged In:</span>
+                            <div className="flex items-center space-x-2">
+                                <span className={`font-medium ${twitterSessionStatus.loggedIn ? 'text-green-400' : 'text-red-400'}`}>
+                                    {twitterSessionStatus.loggedIn ? '✅ Yes' : '❌ No'}
+                                </span>
+                            </div>
+                        </div>
+                        {twitterSessionStatus.url && (
+                            <div className="md:col-span-2">
+                                <span className="text-gray-400 text-sm">Current URL:</span>
+                                <div className="mt-1">
+                                    <code className="text-xs bg-gray-600 px-2 py-1 rounded text-white">
+                                        {twitterSessionStatus.url}
+                                    </code>
+                                </div>
+                            </div>
+                        )}
+                        {twitterSessionStatus.error && (
+                            <div className="md:col-span-2">
+                                <span className="text-red-400 text-sm">Error:</span>
+                                <div className="mt-1">
+                                    <code className="text-xs bg-red-900/20 border border-red-500/30 px-2 py-1 rounded text-red-400">
+                                        {twitterSessionStatus.error}
+                                    </code>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                    <button
+                        onClick={checkTwitterSession}
+                        disabled={twitterSessionStatus.checking}
+                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white rounded-lg transition-colors"
+                    >
+                        {twitterSessionStatus.checking ? '🔄 Checking...' : '🔍 Check Status'}
+                    </button>
+
+                    <button
+                        onClick={openTwitterLogin}
+                        disabled={twitterSessionStatus.loggedIn}
+                        className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white rounded-lg transition-colors"
+                    >
+                        {twitterSessionStatus.loggedIn ? '✅ Logged In' : '🌐 Login'}
+                    </button>
+
+                    <button
+                        onClick={performTwitterLogout}
+                        disabled={!twitterSessionStatus.loggedIn || twitterSessionStatus.checking}
+                        className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-gray-600 text-white rounded-lg transition-colors"
+                    >
+                        {twitterSessionStatus.checking ? '🔄 Logging out...' : '🚪 Logout'}
+                    </button>
+
+                    <button
+                        onClick={reopenTwitterBrowser}
+                        disabled={twitterSessionStatus.checking}
+                        className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white rounded-lg transition-colors"
+                    >
+                        {twitterSessionStatus.checking ? '🔄 Opening...' : '🔄 Reopen Browser'}
+                    </button>
+                </div>
+            </div>
+
+            <div className="bg-gray-800 rounded-lg p-4 md:p-6">
+                <h3 className="text-lg font-semibold text-white mb-4">🎯 Twitter API Status</h3>
+
+                <div className="bg-gray-700 rounded-lg p-4 mb-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <span className="text-gray-400 text-sm">API Credits:</span>
+                            <div className="flex items-center space-x-2">
+                                <span className={`font-medium ${twitterSessionStatus.apiCreditsExhausted
+                                    ? 'text-red-400'
+                                    : twitterSessionStatus.apiError
+                                        ? 'text-yellow-400'
+                                        : 'text-green-400'
+                                    }`}>
+                                    {twitterSessionStatus.apiCreditsExhausted ? '❌ Exhausted' :
+                                        twitterSessionStatus.apiError ? '⚠️ Error' : '✅ Available'}
+                                </span>
+                            </div>
+                        </div>
+                        <div>
+                            <span className="text-gray-400 text-sm">API Status:</span>
+                            <div className="flex items-center space-x-2">
+                                <span className="text-white">
+                                    {twitterSessionStatus.apiCreditsExhausted ? 'Needs Recharge' :
+                                        twitterSessionStatus.apiError ? 'Has Issues' : 'Active'}
+                                </span>
+                            </div>
+                        </div>
+                        {twitterSessionStatus.lastApiError && (
+                            <div className="md:col-span-2">
+                                <span className="text-red-400 text-sm">Last API Error:</span>
+                                <div className="mt-1">
+                                    <code className="text-xs bg-red-900/20 border border-red-500/30 px-2 py-1 rounded text-red-400">
+                                        {twitterSessionStatus.lastApiError}
+                                    </code>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {twitterSessionStatus.apiCreditsExhausted && (
+                        <div className="mt-4 bg-red-900/20 border border-red-500/30 rounded-lg p-3">
+                            <h4 className="text-red-400 font-medium mb-2">💳 API Credits Exhausted</h4>
+                            <p className="text-red-300 text-sm mb-3">
+                                Your Twitter API credits are depleted. Community scraping will fail until you recharge your twitterapi.io account.
+                            </p>
+                            <button
+                                onClick={() => {
+                                    if (window.electronAPI && window.electronAPI.openExternalURL) {
+                                        window.electronAPI.openExternalURL('https://twitterapi.io/dashboard');
+                                    } else {
+                                        window.open('https://twitterapi.io/dashboard', '_blank');
+                                    }
+                                    addNotification('info', '🌐 Opening twitterapi.io dashboard for credit recharge');
+                                }}
+                                className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm"
+                            >
+                                💳 Recharge API Credits
+                            </button>
+                        </div>
+                    )}
+
+                    {twitterSessionStatus.apiError && !twitterSessionStatus.apiCreditsExhausted && (
+                        <div className="mt-4 bg-yellow-900/20 border border-yellow-500/30 rounded-lg p-3">
+                            <h4 className="text-yellow-400 font-medium mb-2">⚠️ API Error Detected</h4>
+                            <p className="text-yellow-300 text-sm mb-2">
+                                There was an issue with the Twitter API: {twitterSessionStatus.apiError}
+                            </p>
+                            <p className="text-yellow-300 text-sm">
+                                Community scraping may be affected. Check your API configuration or try again later.
+                            </p>
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            {/* Updated Instructions */}
+            <div className="bg-gray-800 rounded-lg p-4 md:p-6">
+                <h3 className="text-lg font-semibold text-white mb-4">📋 How to Setup Twitter Session</h3>
+                <div className="space-y-4">
+                    <div className="bg-gray-700 rounded-lg p-4">
+                        <h4 className="text-white font-medium mb-2">Step 1: Automatic Login</h4>
+                        <p className="text-sm text-gray-300 mb-2">
+                            Click the "🌐 Login" button. The system will automatically log you in using the credentials configured in the server environment variables.
+                        </p>
+                        <div className="text-xs text-yellow-400 bg-yellow-900/20 p-2 rounded mt-2">
+                            <strong>Note:</strong> Twitter credentials will be configured in the server's .env file (TWITTER_USERNAME and TWITTER_PASSWORD)
+                        </div>
+                    </div>
+
+                    <div className="bg-gray-700 rounded-lg p-4">
+                        <h4 className="text-white font-medium mb-2">Step 2: Verify Login Success</h4>
+                        <p className="text-sm text-gray-300 mb-2">
+                            After clicking login, the system will automatically attempt to log in. Check the status above - it should show "Logged In: ✅ Yes".
+                        </p>
+                        <p className="text-sm text-gray-400">
+                            If login fails, check that the correct credentials are set in the server environment.
+                        </p>
+                    </div>
+
+                    <div className="bg-gray-700 rounded-lg p-4">
+                        <h4 className="text-white font-medium mb-2">Step 3: Session Verification</h4>
+                        <p className="text-sm text-gray-300 mb-2">
+                            Use "🔍 Check Status" to verify your session is active at any time. The session persists automatically and is saved for future use.
+                        </p>
+                        <p className="text-sm text-gray-400">
+                            If session expires, simply click "🌐 Login" again for automatic re-authentication.
+                        </p>
+                    </div>
+
+                    <div className="bg-green-900/20 border border-green-500/30 rounded-lg p-4">
+                        <h4 className="text-green-400 font-medium mb-2">✅ When Session is Active</h4>
+                        <ul className="text-sm text-green-300 space-y-1">
+                            <li>• Community scraping will work automatically when tokens are detected</li>
+                            <li>• The system can access Twitter community moderator pages</li>
+                            <li>• Admin detection from communities will function properly</li>
+                            <li>• Session data is saved and persists across server restarts</li>
+                        </ul>
+                    </div>
+
+                    <div className="bg-blue-900/20 border border-blue-500/30 rounded-lg p-4">
+                        <h4 className="text-blue-400 font-medium mb-2">🔧 Troubleshooting</h4>
+                        <ul className="text-sm text-blue-300 space-y-1">
+                            <li>• If "🌐 Login" fails: Check server credentials in .env file</li>
+                            <li>• If session shows "Inactive": Click "🌐 Login" to re-authenticate</li>
+                            <li>• If browser crashes: Use "🔄 Reopen Browser" to restart</li>
+                            <li>• For manual logout: Use "🚪 Logout" button. Do not logout if it isn't needed (multiple logins logout might ban your account from twitter)</li>
+                        </ul>
+                    </div>
+
+                </div>
+            </div>
+
+
+        </div>
+    );
+
     const AddFormModal = ({ listType, onClose, onAdd }) => {
+        // ✅ Use local state for form data within modal
+  
         const [localFormData, setLocalFormData] = useState({
             address: '',
             username: '',
@@ -3324,9 +4539,10 @@ function App() {
             fees: settings.globalSnipeSettings.fees,
             mevProtection: settings.globalSnipeSettings.mevProtection,
             soundNotification: settings.globalSnipeSettings.soundNotification,
-            priorityFee: settings.globalSnipeSettings.priorityFee
+            priorityFee: settings.globalSnipeSettings.priorityFee  // ✅ ADD THIS LINE
         });
 
+        // ✅ Reset form when modal opens or listType changes
         useEffect(() => {
             setLocalFormData({
                 address: '',
@@ -3366,6 +4582,7 @@ function App() {
                     </div>
 
                     <div className="space-y-4">
+
                         <div>
                             <label className="block text-sm font-medium text-gray-300 mb-2">
                                 Wallet Address, Twitter Username, or Community ID
@@ -3431,6 +4648,7 @@ function App() {
                             />
                         </div>
 
+                        {/* ✅ MEV Protection - DISABLED (read-only) */}
                         <div>
                             <div className="flex items-center space-x-2">
                                 <input
@@ -3478,6 +4696,7 @@ function App() {
                             </div>
                         </div>
 
+                        {/* Firebase sync preview */}
                         <div className="bg-blue-900/20 border border-blue-500/30 rounded-lg p-3">
                             <div className="flex items-center space-x-2 mb-2">
                                 <div className="w-2 h-2 rounded-full bg-blue-500"></div>
@@ -3519,6 +4738,7 @@ function App() {
                     <span className="bg-gray-600 text-white text-xs px-2 py-1 rounded-full">
                         {lists[listType].length}
                     </span>
+                    {/* Firebase sync indicator */}
                     <div className={`w-2 h-2 rounded-full ${botStatus.stats.isFirebaseLoaded ? 'bg-green-500' : 'bg-yellow-500'}`} title="Firebase Sync Status"></div>
                 </div>
                 <div className="flex flex-col space-y-2 md:flex-row md:space-y-0 md:space-x-2">
@@ -3563,6 +4783,7 @@ function App() {
                                     >
                                         📋
                                     </button>
+                                    {/* Firebase sync indicator for individual items */}
                                     <div className="w-1.5 h-1.5 rounded-full bg-green-500" title="Synced to Firebase"></div>
                                 </div>
                                 <div className="flex flex-wrap gap-2 text-xs">
@@ -3594,6 +4815,7 @@ function App() {
                 )}
             </div>
 
+            {/* Enhanced list footer with Firebase info */}
             <div className="mt-4 pt-4 border-t border-gray-700">
                 <div className="flex items-center justify-between text-xs text-gray-400">
                     <span>
@@ -3609,8 +4831,10 @@ function App() {
         </div>
     );
 
+
     const renderLists = () => (
         <div className="space-y-4 md:space-y-6">
+            {/* Enhanced Firebase Controls */}
             <div className="bg-gray-800 rounded-lg p-4 md:p-6">
                 <div className="flex flex-col space-y-4 md:flex-row md:items-center md:justify-between md:space-y-0 mb-4">
                     <div>
@@ -3655,6 +4879,7 @@ function App() {
                 </div>
             </div>
 
+            {/* Enhanced List Sections with Firebase controls */}
             <div className="grid gap-4 md:gap-6">
                 {renderEnhancedListSection('primary_admins', 'Primary Admins (Auto-Snipe)', <Users className="text-purple-400" size={20} />)}
                 {renderEnhancedListSection('secondary_admins', 'Secondary Admins (Notify)', <Bell className="text-orange-400" size={20} />)}
@@ -3670,234 +4895,12 @@ function App() {
         </div>
     );
 
-    const renderSecondaryPopup = () => {
-        if (!secondaryPopup.show || !secondaryPopup.tokenData) return null;
-
-        const token = secondaryPopup.tokenData;
-        const isPrimary = secondaryPopup.isPrimary || false;
-
-        return (
-            <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
-                <div className="bg-gray-800 rounded-lg p-6 w-full max-w-2xl max-h-screen overflow-y-auto">
-                    <div className="flex items-center justify-between mb-6">
-                        {isPrimary ? (
-                            <div className="flex items-center space-x-3">
-                                <div className="w-12 h-12 bg-green-500 rounded-full flex items-center justify-center animate-pulse">
-                                    <span className="text-2xl">✅</span>
-                                </div>
-                                <div>
-                                    <h2 className="text-2xl font-bold text-green-400">Already Sniped!</h2>
-                                    <p className="text-green-300">🎯 Primary match - Auto-sniped successfully</p>
-                                </div>
-                            </div>
-                        ) : (
-                            <h2 className="text-2xl font-bold text-white">🔔 Secondary Match Found!</h2>
-                        )}
-                        <button
-                            onClick={() => setSecondaryPopup({ show: false, tokenData: null, isPrimary: false })}
-                            className="text-gray-400 hover:text-white"
-                        >
-                            ✖️
-                        </button>
-                    </div>
-
-                    {isPrimary && (
-                        <div className="mb-6 bg-gradient-to-r from-green-900/40 to-green-800/40 border-2 border-green-500 rounded-lg p-4">
-                            <div className="flex items-center space-x-3">
-                                <div className="text-4xl">🎯</div>
-                                <div className="flex-1">
-                                    <h3 className="text-lg font-bold text-green-400">Auto-Snipe Executed</h3>
-                                    <p className="text-sm text-green-300">
-                                        This token was automatically sniped using your primary admin settings
-                                    </p>
-                                    <div className="mt-2 flex items-center space-x-4 text-xs text-green-200">
-                                        <span>✅ Trade Submitted</span>
-                                        <span>✅ Window Opened</span>
-                                        <span>✅ Notification Sent</span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    <div className="space-y-4 mb-6">
-                        <div className="flex items-center space-x-4">
-                            <div className="w-16 h-16 rounded-full overflow-hidden bg-gray-600">
-                                {token.uri ? (
-                                    <img src={token.uri} alt={token.name} className="w-full h-full object-cover" />
-                                ) : (
-                                    <div className="w-full h-full flex items-center justify-center">
-                                        <Coins className="text-gray-400" size={24} />
-                                    </div>
-                                )}
-                            </div>
-                            <div>
-                                <h3 className="text-xl font-bold text-white">{token.name || 'Unknown Token'}</h3>
-                                <p className="text-gray-300">${token.symbol || 'UNKNOWN'}</p>
-                                <p className="text-sm text-gray-400">Matched: {token.matchedEntity}</p>
-                            </div>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="bg-gray-700 p-3 rounded">
-                                <p className="text-sm text-gray-400">Platform</p>
-                                <p className="text-white font-bold">{token.platform?.toUpperCase() || 'UNKNOWN'}</p>
-                            </div>
-                            <div className="bg-gray-700 p-3 rounded">
-                                <p className="text-sm text-gray-400">Market Cap</p>
-                                <p className="text-white font-bold">{formatNumber(token.marketCapSol)} SOL</p>
-                            </div>
-                        </div>
-
-                        <div className="bg-gray-700 p-3 rounded">
-                            <p className="text-sm text-gray-400 mb-2">Token Address:</p>
-                            <div className="flex items-center space-x-2">
-                                <code className="text-sm font-mono text-white flex-1 break-all">
-                                    {token.tokenAddress}
-                                </code>
-                                <button
-                                    onClick={() => copyToClipboard(token.tokenAddress, 'Token address')}
-                                    className="text-blue-400 hover:text-blue-300 px-2 py-1"
-                                >
-                                    📋
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="bg-gray-700 p-4 rounded mb-6">
-                        <h4 className="text-lg font-semibold text-white mb-3">
-                            {isPrimary ? 'Settings Used for Auto-Snipe:' : 'Current Admin Settings:'}
-                        </h4>
-                        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                            <div className="text-center">
-                                <p className="text-sm text-gray-400">Amount</p>
-                                <p className="text-white font-bold">
-                                    {token.config?.amount || settings.globalSnipeSettings.amount} SOL
-                                </p>
-                            </div>
-                            <div className="text-center">
-                                <p className="text-sm text-gray-400">Fees</p>
-                                <p className="text-white font-bold">
-                                    {token.config?.fees || settings.globalSnipeSettings.fees}%
-                                </p>
-                            </div>
-                            <div className="text-center">
-                                <p className="text-sm text-gray-400">Priority Fee</p>
-                                <p className="text-white font-bold">
-                                    {token.config?.priorityFee || settings.globalSnipeSettings.priorityFee} SOL
-                                </p>
-                            </div>
-                        </div>
-                    </div>
-
-                    {!isPrimary && (
-                        <div className="flex flex-col space-y-3 md:flex-row md:space-y-0 md:space-x-4">
-                            <button
-                                onClick={() => snipeWithGlobalSettings(token.tokenAddress)}
-                                className="flex-1 px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors font-bold flex items-center justify-center space-x-2"
-                            >
-                                <Target size={20} />
-                                <span>SNIPE ({token.config?.amount || settings.globalSnipeSettings.amount} SOL)</span>
-                            </button>
-                        </div>
-                    )}
-
-                    {isPrimary && (
-                        <div className="flex justify-center">
-                            <button
-                                onClick={() => setSecondaryPopup({ show: false, tokenData: null, isPrimary: false })}
-                                className="px-6 py-3 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors"
-                            >
-                                Close
-                            </button>
-                        </div>
-                    )}
-                </div>
-            </div>
-        );
-    };
-
-    const renderPopupBlockerModal = () => {
-        if (!popupBlockerModal.show) return null;
-
-        return (
-            <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
-                <div className="bg-gray-800 rounded-lg p-6 w-full max-w-2xl max-h-screen overflow-y-auto border-2 border-red-500">
-                    <div className="flex items-center justify-between mb-6">
-                        <div className="flex items-center space-x-3">
-                            <div className="w-12 h-12 bg-red-600 rounded-full flex items-center justify-center">
-                                <span className="text-2xl">🚫</span>
-                            </div>
-                            <div>
-                                <h2 className="text-2xl font-bold text-white">Popup Blocked by Browser</h2>
-                                <p className="text-red-400">Token page couldn't open automatically</p>
-                            </div>
-                        </div>
-                        <button
-                            onClick={() => setPopupBlockerModal({ show: false, tokenUrl: '', tokenAddress: '', reason: '' })}
-                            className="text-gray-400 hover:text-white text-2xl"
-                        >
-                            ✖️
-                        </button>
-                    </div>
-
-                    <div className="bg-blue-900/20 border border-blue-500/30 rounded-lg p-4 mb-6">
-                        <h3 className="text-lg font-semibold text-blue-400 mb-3">🔗 Manual Link (Click to Open)</h3>
-                        <div className="flex items-center space-x-2">
-                            <input
-                                type="text"
-                                value={popupBlockerModal.tokenUrl}
-                                readOnly
-                                className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white text-sm"
-                            />
-                            <button
-                                onClick={() => {
-                                    window.open(popupBlockerModal.tokenUrl, '_blank');
-                                    addNotification('info', '🔗 Manual link clicked - check for new tab');
-                                }}
-                                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors"
-                            >
-                                🌐 Open
-                            </button>
-                            <button
-                                onClick={() => {
-                                    copyToClipboard(popupBlockerModal.tokenUrl, 'Token page URL');
-                                }}
-                                className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded transition-colors"
-                            >
-                                📋 Copy
-                            </button>
-                        </div>
-                    </div>
-
-                    <div className="flex flex-col space-y-3 md:flex-row md:space-y-0 md:space-x-4">
-                        <button
-                            onClick={() => {
-                                window.open(popupBlockerModal.tokenUrl, '_blank');
-                                setPopupBlockerModal({ show: false, tokenUrl: '', tokenAddress: '', reason: '' });
-                            }}
-                            className="flex-1 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-bold"
-                        >
-                            🌐 Try Opening Again
-                        </button>
-                        <button
-                            onClick={() => {
-                                copyToClipboard(popupBlockerModal.tokenUrl, 'Token page URL');
-                                setPopupBlockerModal({ show: false, tokenUrl: '', tokenAddress: '', reason: '' });
-                            }}
-                            className="flex-1 px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors font-bold"
-                        >
-                            📋 Copy Link & Close
-                        </button>
-                    </div>
-                </div>
-            </div>
-        );
-    };
+    // === END OF PART 8 === //
+    // === START OF PART 9: MAIN APP COMPONENT === //
 
     return (
         <div className="min-h-screen bg-gray-900 text-white">
+            {/* Mobile-responsive Header */}
             <header className="bg-gray-800 border-b border-gray-700 px-4 md:px-6 py-3 md:py-4">
                 <div className="flex flex-col space-y-3 md:flex-row md:items-center md:justify-between md:space-y-0">
                     <h1 className="text-xl md:text-2xl font-bold text-white">DevScope Enhanced</h1>
@@ -3921,6 +4924,7 @@ function App() {
                 </div>
             </header>
 
+            {/* Enhanced Navigation */}
             <nav className="bg-gray-800 border-b border-gray-700 overflow-x-auto">
                 <div className="px-4 md:px-6">
                     <div className="flex space-x-4 md:space-x-8 min-w-max">
@@ -4003,10 +5007,21 @@ function App() {
                         >
                             🧪 Demo
                         </button>
+
+                        {/*<button
+                            onClick={() => setActiveTab('twitter')}
+                            className={`py-3 md:py-4 px-2 border-b-2 transition-colors whitespace-nowrap text-sm md:text-base ${activeTab === 'twitter'
+                                ? 'border-blue-500 text-blue-400'
+                                : 'border-transparent text-gray-400 hover:text-white'
+                                }`}
+                        >
+                            🐦 Twitter Session
+                        </button>*/}
                     </div>
                 </div>
             </nav>
 
+            {/* Main Content with mobile padding */}
             <main className="p-4 md:p-6">
                 {activeTab === 'dashboard' && renderDashboard()}
                 {activeTab === 'detected' && renderDetectedTokens()}
@@ -4014,6 +5029,7 @@ function App() {
                 {activeTab === 'communities' && renderCommunityManagement()}
                 {activeTab === 'tweets' && renderTweetManagement()}
                 {activeTab === 'demo' && renderDemoTab()}
+                {activeTab === 'twitter' && renderTwitterSession()}
                 {activeTab === 'settings' && (
                     <div className="space-y-6">
                         {renderSettings()}
@@ -4023,9 +5039,11 @@ function App() {
                 )}
             </main>
 
+            {/* Enhanced Popups */}
             {renderSecondaryPopup()}
             {renderPopupBlockerModal()}
 
+            {/* Footer Info */}
             <footer className="bg-gray-800 border-t border-gray-700 px-4 md:px-6 py-3">
                 <div className="flex flex-col md:flex-row md:items-center md:justify-between space-y-2 md:space-y-0">
                     <div className="text-xs text-gray-400">
