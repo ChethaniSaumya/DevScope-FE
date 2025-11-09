@@ -59,6 +59,7 @@ function App() {
 
     const [globalSettingsMessage, setGlobalSettingsMessage] = useState('');
     const [hasGlobalSettingsChanged, setHasGlobalSettingsChanged] = useState(false);
+    const [isSavingGlobalSettings, setIsSavingGlobalSettings] = useState(false);
 
     const [activeTab, setActiveTab] = useState('dashboard');
     const [websocket, setWebsocket] = useState(null);
@@ -2721,6 +2722,8 @@ function App() {
                         <button
                             onClick={async () => {
                                 try {
+                                    setIsSavingGlobalSettings(true); // START LOADING
+
                                     // Save global settings
                                     await updateGlobalSnipeSettings(settings.globalSnipeSettings);
 
@@ -2730,15 +2733,14 @@ function App() {
                                             method: 'POST',
                                             body: JSON.stringify({
                                                 amount: settings.globalSnipeSettings.amount,
-                                                fees: settings.globalSnipeSettings.fees  // ✅ ADD THIS
+                                                fees: settings.globalSnipeSettings.fees,
+                                                priorityFee: settings.globalSnipeSettings.priorityFee  // ✅ ADDED THIS
                                             })
                                         });
 
                                         if (response.success) {
                                             setGlobalSettingsMessage(`✅ Global settings saved! Updated ${response.primaryUpdated + response.secondaryUpdated} admin entries.`);
                                             addNotification('success', `✅ Global settings saved! Updated ${response.primaryUpdated + response.secondaryUpdated} admin entries.`);
-
-                                            // ✅ ADD THIS: Refresh the lists to show updated values
                                             await fetchLists();
                                         }
                                     } else {
@@ -2752,16 +2754,26 @@ function App() {
                                     setGlobalSettingsMessage('❌ Failed to save settings to server');
                                     addNotification('error', '❌ Failed to save global settings to server');
                                     clearGlobalSettingsMessage();
+                                } finally {
+                                    setIsSavingGlobalSettings(false); // END LOADING
                                 }
                             }}
-                            disabled={!hasGlobalSettingsChanged}
+                            disabled={!hasGlobalSettingsChanged || isSavingGlobalSettings}
                             className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors flex items-center justify-center space-x-2"
                         >
-                            <span>💾</span>
-                            <span>Save to Server</span>
-                            {amountUpdateMode === 'all_existing' && <span className="text-xs">(Update All Admins)</span>}
+                            {isSavingGlobalSettings ? (
+                                <>
+                                    <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full"></div>
+                                    <span>Saving...</span>
+                                </>
+                            ) : (
+                                <>
+                                    <span>💾</span>
+                                    <span>Save to Server</span>
+                                    {amountUpdateMode === 'all_existing' && <span className="text-xs">(Update All Admins)</span>}
+                                </>
+                            )}
                         </button>
-
                         <button
                             onClick={() => {
                                 clearLocalStorage();
@@ -3720,12 +3732,12 @@ function App() {
                             <div
                                 key={notification.id}
                                 className={`p-3 rounded-lg border-l-4 transition-all ${notification.type === 'success'
-                                        ? 'bg-green-900/20 border-green-500'
-                                        : notification.type === 'error'
-                                            ? 'bg-red-900/30 border-red-500'
-                                            : notification.type === 'warning'
-                                                ? 'bg-yellow-900/20 border-yellow-500'
-                                                : 'bg-blue-900/20 border-blue-500'
+                                    ? 'bg-green-900/20 border-green-500'
+                                    : notification.type === 'error'
+                                        ? 'bg-red-900/30 border-red-500'
+                                        : notification.type === 'warning'
+                                            ? 'bg-yellow-900/20 border-yellow-500'
+                                            : 'bg-blue-900/20 border-blue-500'
                                     }`}
                             >
                                 <div className="flex items-start gap-3">
@@ -3747,9 +3759,9 @@ function App() {
                                     <div className="flex-1 min-w-0">
                                         {/* ✅ IMPORTANT: whitespace-pre-line handles the \n newlines */}
                                         <p className={`text-sm whitespace-pre-line break-words ${notification.type === 'error' ? 'text-red-200 font-medium' :
-                                                notification.type === 'warning' ? 'text-yellow-200' :
-                                                    notification.type === 'success' ? 'text-green-200' :
-                                                        'text-gray-200'
+                                            notification.type === 'warning' ? 'text-yellow-200' :
+                                                notification.type === 'success' ? 'text-green-200' :
+                                                    'text-gray-200'
                                             }`}>
                                             {notification.message}
                                         </p>
