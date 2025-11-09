@@ -17,8 +17,12 @@ import {
     ExternalLink,
     Coins,
     TrendingUp,
-    Clock
+    Clock,
+    AlertCircle,
+    CheckCircle2,
+    Info
 } from 'lucide-react';
+
 import './App.css';
 
 const API_BASE = 'https://devscope.fun:3002/api';
@@ -733,6 +737,14 @@ function App() {
         }
     };
 
+    const [insufficientFundsModal, setInsufficientFundsModal] = useState({
+        show: false,
+        tokenAddress: '',
+        needed: 0,
+        available: 0,
+        shortfall: 0
+    });
+
     const handleWebSocketMessage = (data) => {
         console.log('📨 WebSocket message received:', data.type, data);
 
@@ -746,7 +758,28 @@ function App() {
                 break;
 
             case 'snipe_error':
-                addNotification('error', `❌ Snipe failed: ${data.data.error}`);
+                console.log('❌ Snipe error received:', data.data);
+
+                // Check error type for special handling
+                if (data.data.errorType === 'insufficient_funds') {
+                    // Show detailed insufficient funds notification in Recent Activity
+                    const details = data.data.details;
+                    addNotification('error',
+                        `💰 Insufficient Funds for ${data.data.tokenAddress.substring(0, 8)}...\n` +
+                        `Need: ${details.needed} SOL | Have: ${details.available} SOL | Short: ${details.shortfall} SOL`
+                    );
+
+                } else if (data.data.errorType === 'detection_only_mode') {
+                    // Handle detection only mode block
+                    addNotification('warning',
+                        `🛡️ Detection Only Mode Active - Transaction blocked for ${data.data.tokenAddress.substring(0, 8)}...`
+                    );
+                } else {
+                    // Generic error handling
+                    addNotification('error',
+                        `❌ Snipe failed: ${data.data.error}`
+                    );
+                }
                 break;
 
             case 'open_dual_windows':
@@ -1231,7 +1264,21 @@ function App() {
             message,
             timestamp: new Date().toLocaleTimeString()
         };
+
         setNotifications(prev => [notification, ...prev.slice(0, 49)]);
+
+        // Auto-remove after 30 seconds for success/info
+        if (type === 'success' || type === 'info') {
+            setTimeout(() => {
+                setNotifications(prev => prev.filter(n => n.id !== notification.id));
+            }, 30000);
+        }
+        // Keep errors and warnings longer (60 seconds)
+        if (type === 'error' || type === 'warning') {
+            setTimeout(() => {
+                setNotifications(prev => prev.filter(n => n.id !== notification.id));
+            }, 60000);
+        }
     };
     // App.js - Part 3: Utility Functions and API Calls
 
@@ -3663,26 +3710,65 @@ function App() {
                 </div>
             </div>
 
-            {/* Recent Notifications - keep existing */}
-            <div className="bg-gray-800 rounded-lg p-4 md:p-6">
-                <h3 className="text-lg font-semibold text-white mb-4">Recent Activity</h3>
-                <div className="space-y-2 max-h-64 overflow-y-auto">
-                    {notifications.length === 0 ? (
-                        <p className="text-gray-400">No recent activity</p>
-                    ) : (
-                        notifications.map(notification => (
-                            <div key={notification.id} className="flex items-center space-x-3 p-2 bg-gray-700 rounded">
-                                {notification.type === 'success' && <CheckCircle className="text-green-400" size={16} />}
-                                {notification.type === 'error' && <XCircle className="text-red-400" size={16} />}
-                                {notification.type === 'info' && <AlertTriangle className="text-blue-400" size={16} />}
-                                <div className="flex-1">
-                                    <p className="text-white text-sm">{notification.message}</p>
-                                    <p className="text-gray-400 text-xs">{notification.timestamp}</p>
+            <div className="bg-gray-800/50 rounded-lg p-4">
+                <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                    <Bell className="w-5 h-5" />
+                    Recent Activity
+                </h3>
+
+                {notifications.length === 0 ? (
+                    <div className="text-center py-8 text-gray-500">
+                        <Bell className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                        <p>No recent activity</p>
+                    </div>
+                ) : (
+                    <div className="space-y-2 max-h-96 overflow-y-auto">
+                        {notifications.map(notification => (
+                            <div
+                                key={notification.id}
+                                className={`p-3 rounded-lg border-l-4 transition-all ${notification.type === 'success'
+                                        ? 'bg-green-900/20 border-green-500'
+                                        : notification.type === 'error'
+                                            ? 'bg-red-900/30 border-red-500'
+                                            : notification.type === 'warning'
+                                                ? 'bg-yellow-900/20 border-yellow-500'
+                                                : 'bg-blue-900/20 border-blue-500'
+                                    }`}
+                            >
+                                <div className="flex items-start gap-3">
+                                    <div className="flex-shrink-0 mt-0.5">
+                                        {notification.type === 'success' && (
+                                            <CheckCircle2 className="w-5 h-5 text-green-500" />
+                                        )}
+                                        {notification.type === 'error' && (
+                                            <AlertCircle className="w-5 h-5 text-red-500" />
+                                        )}
+                                        {notification.type === 'warning' && (
+                                            <AlertTriangle className="w-5 h-5 text-yellow-500" />
+                                        )}
+                                        {notification.type === 'info' && (
+                                            <Info className="w-5 h-5 text-blue-500" />
+                                        )}
+                                    </div>
+
+                                    <div className="flex-1 min-w-0">
+                                        {/* ✅ IMPORTANT: whitespace-pre-line handles the \n newlines */}
+                                        <p className={`text-sm whitespace-pre-line break-words ${notification.type === 'error' ? 'text-red-200 font-medium' :
+                                                notification.type === 'warning' ? 'text-yellow-200' :
+                                                    notification.type === 'success' ? 'text-green-200' :
+                                                        'text-gray-200'
+                                            }`}>
+                                            {notification.message}
+                                        </p>
+                                        <p className="text-xs text-gray-500 mt-1">
+                                            {notification.timestamp}
+                                        </p>
+                                    </div>
                                 </div>
                             </div>
-                        ))
-                    )}
-                </div>
+                        ))}
+                    </div>
+                )}
             </div>
         </div>
     );
@@ -4531,7 +4617,7 @@ function App() {
 
     const AddFormModal = ({ listType, onClose, onAdd }) => {
         // ✅ Use local state for form data within modal
-  
+
         const [localFormData, setLocalFormData] = useState({
             address: '',
             username: '',
@@ -5042,6 +5128,7 @@ function App() {
             {/* Enhanced Popups */}
             {renderSecondaryPopup()}
             {renderPopupBlockerModal()}
+
 
             {/* Footer Info */}
             <footer className="bg-gray-800 border-t border-gray-700 px-4 md:px-6 py-3">
