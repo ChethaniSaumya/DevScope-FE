@@ -1267,19 +1267,12 @@ function App() {
 
         setNotifications(prev => [notification, ...prev.slice(0, 49)]);
 
-        // Auto-remove after 30 seconds for success/info
-        if (type === 'success' || type === 'info') {
-            setTimeout(() => {
-                setNotifications(prev => prev.filter(n => n.id !== notification.id));
-            }, 30000);
-        }
-        // Keep errors and warnings longer (60 seconds)
-        if (type === 'error' || type === 'warning') {
-            setTimeout(() => {
-                setNotifications(prev => prev.filter(n => n.id !== notification.id));
-            }, 60000);
-        }
+        // Auto-remove after 5 minutes (300000ms) for all notification types
+        setTimeout(() => {
+            setNotifications(prev => prev.filter(n => n.id !== notification.id));
+        }, 180000);
     };
+
     // App.js - Part 3: Utility Functions and API Calls
 
     // Enhanced utility functions with notifications
