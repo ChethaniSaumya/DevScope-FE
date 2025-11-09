@@ -2607,26 +2607,6 @@ function App() {
                                     <p className="text-xs text-gray-400">Existing admin amounts won't change</p>
                                 </div>
                             </label>
-
-                            <label className="flex items-start space-x-2 cursor-pointer">
-                                <input
-                                    type="radio"
-                                    name="amountUpdateMode"
-                                    value="all_existing"
-                                    checked={amountUpdateMode === 'all_existing'}
-                                    onChange={(e) => {
-                                        setAmountUpdateMode(e.target.value);
-                                        setHasGlobalSettingsChanged(true); // ✅ TRIGGER SAVE BUTTON
-                                    }}
-                                    className="mt-1"
-                                />
-                                <div>
-                                    <span className="text-sm text-white">All existing admins</span>
-                                    <p className="text-xs text-gray-400">
-                                        Update amounts for {lists.primary_admins.length} primary + {lists.secondary_admins.length} secondary admins
-                                    </p>
-                                </div>
-                            </label>
                         </div>
 
 
