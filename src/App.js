@@ -71,7 +71,7 @@ function App() {
     const [selectedTemplate, setSelectedTemplate] = useState(0);
     const [customWallet, setCustomWallet] = useState('');
     const [customTwitter, setCustomTwitter] = useState('');
-    const [amountUpdateMode, setAmountUpdateMode] = useState('new_only');
+    const [amountUpdateMode, setAmountUpdateMode] = useState('all_existing');
     const [serverGlobalSettings, setServerGlobalSettings] = useState({
         amount: 0,
         fees: 0,
@@ -2574,11 +2574,31 @@ function App() {
                                 <input
                                     type="radio"
                                     name="amountUpdateMode"
+                                    value="all_existing"
+                                    checked={amountUpdateMode === 'all_existing'}
+                                    onChange={(e) => {
+                                        setAmountUpdateMode(e.target.value);
+                                        setHasGlobalSettingsChanged(true);
+                                    }}
+                                    className="mt-1"
+                                />
+                                <div>
+                                    <span className="text-sm text-white">All existing admins</span>
+                                    <p className="text-xs text-gray-400">
+                                        Update amounts for {lists.primary_admins.length} primary + {lists.secondary_admins.length} secondary admins
+                                    </p>
+                                </div>
+                            </label>
+
+                            <label className="flex items-start space-x-2 cursor-pointer">
+                                <input
+                                    type="radio"
+                                    name="amountUpdateMode"
                                     value="new_only"
                                     checked={amountUpdateMode === 'new_only'}
                                     onChange={(e) => {
                                         setAmountUpdateMode(e.target.value);
-                                        setHasGlobalSettingsChanged(true); // ✅ TRIGGER SAVE BUTTON
+                                        setHasGlobalSettingsChanged(true);
                                     }}
                                     className="mt-1"
                                 />
