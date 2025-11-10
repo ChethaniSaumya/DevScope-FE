@@ -4008,13 +4008,26 @@ function App() {
                                                             <p className="text-xs text-gray-400">Tracked in Firebase for duplicate prevention</p>
 
                                                             {/* TWITTER ADMIN MATCH INDICATOR */}
+                                                            {/* TWITTER ADMIN MATCH INDICATOR */}
                                                             <div className="mt-1">
-                                                                {token.matchType === 'primary_admin' && token.matchedEntity === `Community ${token.twitterCommunityId}` ? (
-                                                                    <span className="text-green-400 text-xs bg-green-900/20 px-2 py-1 rounded">✅ Community Detected</span>
-                                                                ) : token.matchType === 'secondary_admin' && token.matchedEntity === `Community ${token.twitterCommunityId}` ? (
-                                                                    <span className="text-yellow-400 text-xs bg-yellow-900/20 px-2 py-1 rounded">🔔 Community Detected</span>
+                                                                {token.matchType === 'primary_admin' && token.twitterType === 'community' ? (
+                                                                    <div className="bg-green-900/30 border border-green-500/30 rounded px-2 py-1">
+                                                                        <span className="text-green-400 text-xs">
+                                                                            ✅ Community Admin Match: @{token.matchedEntity}
+                                                                        </span>
+                                                                    </div>
+                                                                ) : token.matchType === 'secondary_admin' && token.twitterType === 'community' ? (
+                                                                    <div className="bg-yellow-900/30 border border-yellow-500/30 rounded px-2 py-1">
+                                                                        <span className="text-yellow-400 text-xs">
+                                                                            🔔 Community Admin Match: @{token.matchedEntity}
+                                                                        </span>
+                                                                    </div>
                                                                 ) : (
-                                                                    <span className="text-gray-400 text-xs bg-gray-900/20 px-2 py-1 rounded">❌ Community ID is not in lists</span>
+                                                                    <div className="bg-gray-900/30 border border-gray-500/30 rounded px-2 py-1">
+                                                                        <span className="text-gray-400 text-xs">
+                                                                            ❌ No admin from this community in lists
+                                                                        </span>
+                                                                    </div>
                                                                 )}
                                                             </div>
 
@@ -4051,13 +4064,25 @@ function App() {
                                                             <p className="text-xs text-gray-400">Individual Twitter account</p>
 
                                                             {/* TWITTER ADMIN MATCH INDICATOR */}
-                                                            <div className="mt-1">
-                                                                {token.matchType === 'primary_admin' && token.matchedEntity === token.twitterHandle ? (
-                                                                    <span className="text-green-400 text-xs bg-green-900/20 px-2 py-1 rounded">✅ Primary Twitter Admin Match</span>
-                                                                ) : token.matchType === 'secondary_admin' && token.matchedEntity === token.twitterHandle ? (
-                                                                    <span className="text-yellow-400 text-xs bg-yellow-900/20 px-2 py-1 rounded">🔔 Secondary Twitter Admin Match</span>
+                                                             <div className="mt-1">
+                                                                {token.matchType === 'primary_admin' && token.twitterType === 'individual' ? (
+                                                                    <div className="bg-green-900/30 border border-green-500/30 rounded px-2 py-1">
+                                                                        <span className="text-green-400 text-xs">
+                                                                            ✅ Matched in Primary List: @{token.matchedEntity}
+                                                                        </span>
+                                                                    </div>
+                                                                ) : token.matchType === 'secondary_admin' && token.twitterType === 'individual' ? (
+                                                                    <div className="bg-yellow-900/30 border border-yellow-500/30 rounded px-2 py-1">
+                                                                        <span className="text-yellow-400 text-xs">
+                                                                            🔔 Matched in Secondary List: @{token.matchedEntity}
+                                                                        </span>
+                                                                    </div>
                                                                 ) : (
-                                                                    <span className="text-gray-400 text-xs bg-gray-900/20 px-2 py-1 rounded">❌ Twitter Admin Not in Lists</span>
+                                                                    <div className="bg-gray-900/30 border border-gray-500/30 rounded px-2 py-1">
+                                                                        <span className="text-gray-400 text-xs">
+                                                                            ❌ Twitter Admin Not in Lists
+                                                                        </span>
+                                                                    </div>
                                                                 )}
                                                             </div>
                                                         </div>
