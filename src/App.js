@@ -71,7 +71,7 @@ function App() {
     const [selectedTemplate, setSelectedTemplate] = useState(0);
     const [customWallet, setCustomWallet] = useState('');
     const [customTwitter, setCustomTwitter] = useState('');
-    const [amountUpdateMode, setAmountUpdateMode] = useState('all_existing');
+    const [amountUpdateMode, setAmountUpdateMode] = useState('new_only');
     const [serverGlobalSettings, setServerGlobalSettings] = useState({
         amount: 0,
         fees: 0,
@@ -2574,11 +2574,29 @@ function App() {
                                 <input
                                     type="radio"
                                     name="amountUpdateMode"
+                                    value="new_only"
+                                    checked={amountUpdateMode === 'new_only'}
+                                    onChange={(e) => {
+                                        setAmountUpdateMode(e.target.value);
+                                        setHasGlobalSettingsChanged(true); // ✅ TRIGGER SAVE BUTTON
+                                    }}
+                                    className="mt-1"
+                                />
+                                <div>
+                                    <span className="text-sm text-white">Only newly adding admins</span>
+                                    <p className="text-xs text-gray-400">Existing admin amounts won't change</p>
+                                </div>
+                            </label>
+
+                            <label className="flex items-start space-x-2 cursor-pointer">
+                                <input
+                                    type="radio"
+                                    name="amountUpdateMode"
                                     value="all_existing"
                                     checked={amountUpdateMode === 'all_existing'}
                                     onChange={(e) => {
                                         setAmountUpdateMode(e.target.value);
-                                        setHasGlobalSettingsChanged(true);
+                                        setHasGlobalSettingsChanged(true); // ✅ TRIGGER SAVE BUTTON
                                     }}
                                     className="mt-1"
                                 />
@@ -2587,24 +2605,6 @@ function App() {
                                     <p className="text-xs text-gray-400">
                                         Update amounts for {lists.primary_admins.length} primary + {lists.secondary_admins.length} secondary admins
                                     </p>
-                                </div>
-                            </label>
-
-                            <label className="flex items-start space-x-2 cursor-pointer">
-                                <input
-                                    type="radio"
-                                    name="amountUpdateMode"
-                                    value="new_only"
-                                    checked={amountUpdateMode === 'new_only'}
-                                    onChange={(e) => {
-                                        setAmountUpdateMode(e.target.value);
-                                        setHasGlobalSettingsChanged(true);
-                                    }}
-                                    className="mt-1"
-                                />
-                                <div>
-                                    <span className="text-sm text-white">Only newly adding admins</span>
-                                    <p className="text-xs text-gray-400">Existing admin amounts won't change</p>
                                 </div>
                             </label>
                         </div>
@@ -4008,26 +4008,13 @@ function App() {
                                                             <p className="text-xs text-gray-400">Tracked in Firebase for duplicate prevention</p>
 
                                                             {/* TWITTER ADMIN MATCH INDICATOR */}
-                                                            {/* TWITTER ADMIN MATCH INDICATOR */}
                                                             <div className="mt-1">
-                                                                {token.matchType === 'primary_admin' && token.twitterType === 'community' ? (
-                                                                    <div className="bg-green-900/30 border border-green-500/30 rounded px-2 py-1">
-                                                                        <span className="text-green-400 text-xs">
-                                                                            ✅ Community Admin Match: @{token.matchedEntity}
-                                                                        </span>
-                                                                    </div>
-                                                                ) : token.matchType === 'secondary_admin' && token.twitterType === 'community' ? (
-                                                                    <div className="bg-yellow-900/30 border border-yellow-500/30 rounded px-2 py-1">
-                                                                        <span className="text-yellow-400 text-xs">
-                                                                            🔔 Community Admin Match: @{token.matchedEntity}
-                                                                        </span>
-                                                                    </div>
+                                                                {token.matchType === 'primary_admin' && token.matchedEntity === `Community ${token.twitterCommunityId}` ? (
+                                                                    <span className="text-green-400 text-xs bg-green-900/20 px-2 py-1 rounded">✅ Community Detected</span>
+                                                                ) : token.matchType === 'secondary_admin' && token.matchedEntity === `Community ${token.twitterCommunityId}` ? (
+                                                                    <span className="text-yellow-400 text-xs bg-yellow-900/20 px-2 py-1 rounded">🔔 Community Detected</span>
                                                                 ) : (
-                                                                    <div className="bg-gray-900/30 border border-gray-500/30 rounded px-2 py-1">
-                                                                        <span className="text-gray-400 text-xs">
-                                                                            ❌ No admin from this community in lists
-                                                                        </span>
-                                                                    </div>
+                                                                    <span className="text-gray-400 text-xs bg-gray-900/20 px-2 py-1 rounded">❌ Community ID is not in lists</span>
                                                                 )}
                                                             </div>
 
@@ -4064,25 +4051,13 @@ function App() {
                                                             <p className="text-xs text-gray-400">Individual Twitter account</p>
 
                                                             {/* TWITTER ADMIN MATCH INDICATOR */}
-                                                             <div className="mt-1">
-                                                                {token.matchType === 'primary_admin' && token.twitterType === 'individual' ? (
-                                                                    <div className="bg-green-900/30 border border-green-500/30 rounded px-2 py-1">
-                                                                        <span className="text-green-400 text-xs">
-                                                                            ✅ Matched in Primary List: @{token.matchedEntity}
-                                                                        </span>
-                                                                    </div>
-                                                                ) : token.matchType === 'secondary_admin' && token.twitterType === 'individual' ? (
-                                                                    <div className="bg-yellow-900/30 border border-yellow-500/30 rounded px-2 py-1">
-                                                                        <span className="text-yellow-400 text-xs">
-                                                                            🔔 Matched in Secondary List: @{token.matchedEntity}
-                                                                        </span>
-                                                                    </div>
+                                                            <div className="mt-1">
+                                                                {token.matchType === 'primary_admin' && token.matchedEntity === token.twitterHandle ? (
+                                                                    <span className="text-green-400 text-xs bg-green-900/20 px-2 py-1 rounded">✅ Primary Twitter Admin Match</span>
+                                                                ) : token.matchType === 'secondary_admin' && token.matchedEntity === token.twitterHandle ? (
+                                                                    <span className="text-yellow-400 text-xs bg-yellow-900/20 px-2 py-1 rounded">🔔 Secondary Twitter Admin Match</span>
                                                                 ) : (
-                                                                    <div className="bg-gray-900/30 border border-gray-500/30 rounded px-2 py-1">
-                                                                        <span className="text-gray-400 text-xs">
-                                                                            ❌ Twitter Admin Not in Lists
-                                                                        </span>
-                                                                    </div>
+                                                                    <span className="text-gray-400 text-xs bg-gray-900/20 px-2 py-1 rounded">❌ Twitter Admin Not in Lists</span>
                                                                 )}
                                                             </div>
                                                         </div>
