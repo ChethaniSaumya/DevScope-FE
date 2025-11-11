@@ -112,10 +112,6 @@ function App() {
         FILTER_SETTINGS: 'devscope_filter_settings'
     };
 
-    const [testTokenAddress, setTestTokenAddress] = useState('');
-    const [isProcessing, setIsProcessing] = useState(false);
-    const [lastTestedToken, setLastTestedToken] = useState(null);
-
     const loadFromLocalStorage = (key, defaultValue = null) => {
         try {
             const stored = localStorage.getItem(key);
@@ -2273,278 +2269,261 @@ function App() {
         </div>
     );
 
-    const renderDemoTab = () => {
-        // Add these to your existing state declarations at the top of App() if not present
-        // const [testTokenAddress, setTestTokenAddress] = useState('');
-        // const [isProcessing, setIsProcessing] = useState(false);
-        // const [lastTestedToken, setLastTestedToken] = useState(null);
-
-        const handleTestToken = async () => {
-            if (!testTokenAddress.trim()) {
-                addNotification('error', 'Please enter a token address');
-                return;
-            }
-
-            // Basic Solana address validation (43-44 characters, base58)
-            if (testTokenAddress.length !== 43 && testTokenAddress.length !== 44) {
-                addNotification('error', 'Invalid Solana address format');
-                return;
-            }
-
-            setIsProcessing(true);
-
-            try {
-                const data = await apiCall('/demo/test-token-stream', {
-                    method: 'POST',
-                    body: JSON.stringify({
-                        tokenAddress: testTokenAddress.trim()
-                    })
-                });
-
-                if (data.success) {
-                    setLastTestedToken({
-                        address: testTokenAddress,
-                        timestamp: new Date().toISOString(),
-                        result: data.data
-                    });
-                    addNotification('success', `✅ Token processed via gRPC stream`);
-                }
-            } catch (error) {
-                addNotification('error', `❌ Failed to process token: ${error.message}`);
-                console.error('Token test error:', error);
-            } finally {
-                setIsProcessing(false);
-            }
-        };
-
-        const quickTestToken = (address, name) => {
-            setTestTokenAddress(address);
-            addNotification('info', `📋 Set to ${name}`);
-        };
-
-        return (
-            <div className="space-y-4 md:space-y-6">
-                {/* Main Test Input */}
-                <div className="bg-gray-800 rounded-lg p-4 md:p-6">
-                    <div className="flex items-center space-x-2 mb-4">
-                        <h2 className="text-lg md:text-xl font-semibold text-white">🧪 Test Token Address</h2>
-                        <div className="px-2 py-1 bg-blue-600 text-white text-xs rounded">
-                            gRPC STREAM TEST
-                        </div>
-                    </div>
-
-                    <p className="text-sm text-gray-400 mb-6">
-                        Enter any token address to test the gRPC blockchain listener data stream processing
-                    </p>
-
-                    <div className="space-y-4">
-                        {/* Input Field */}
-                        <div>
-                            <label className="block text-sm font-medium text-gray-300 mb-2">
-                                Token Mint Address
-                            </label>
-                            <input
-                                type="text"
-                                value={testTokenAddress}
-                                onChange={(e) => setTestTokenAddress(e.target.value)}
-                                placeholder="Enter Solana token address (e.g., pump.fun or bonk token)"
-                                className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm"
-                                disabled={isProcessing}
-                            />
-                            <p className="text-xs text-gray-500 mt-1">
-                                44-character Solana address
-                            </p>
-                        </div>
-
-                        {/* Action Button */}
-                        <button
-                            onClick={handleTestToken}
-                            disabled={isProcessing || !botStatus.isRunning}
-                            className="w-full px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 disabled:from-gray-600 disabled:to-gray-600 text-white font-semibold rounded-lg transition-all duration-200 shadow-lg hover:shadow-xl disabled:cursor-not-allowed"
-                        >
-                            {isProcessing ? (
-                                <span className="flex items-center justify-center space-x-2">
-                                    <span className="animate-spin">⚙️</span>
-                                    <span>Processing via gRPC...</span>
-                                </span>
-                            ) : (
-                                <span>🎯 Test Token Stream Processing</span>
-                            )}
-                        </button>
-
-                        {!botStatus.isRunning && (
-                            <div className="bg-red-900/20 border border-red-500/30 rounded-lg p-3">
-                                <p className="text-red-400 text-sm">
-                                    ⚠️ Bot must be running to test token processing
-                                </p>
-                            </div>
-                        )}
+    const renderDemoTab = () => (
+        <div className="space-y-4 md:space-y-6">
+            {/* Demo Control Panel */}
+            <div className="bg-gray-800 rounded-lg p-4 md:p-6">
+                <div className="flex items-center space-x-2 mb-4">
+                    <h2 className="text-lg md:text-xl font-semibold text-white">🧪 Demo Token Injection</h2>
+                    <div className="px-2 py-1 bg-orange-600 text-white text-xs rounded">
+                        TESTING ONLY
                     </div>
                 </div>
+                <p className="text-sm text-gray-400 mb-6">
+                    Inject fake tokens to test your filtering and sniping logic without waiting for real tokens.
+                </p>
 
-                {/* Quick Test Buttons - Known Tokens */}
-                <div className="bg-gray-800 rounded-lg p-4 md:p-6">
-                    <h3 className="text-lg font-semibold text-white mb-4">⚡ Quick Test with Known Tokens</h3>
-                    <p className="text-sm text-gray-400 mb-4">
-                        Use these addresses from recent pump.fun or bonk launches for instant testing
-                    </p>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        <button
-                            onClick={() => quickTestToken('9BB6NFEcjBCtnNLFko2FqVQBq8HHM13kCyYcdQbgpump', 'Recent Pump.fun Token')}
-                            className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm text-left"
-                        >
-                            <div className="font-semibold">🚀 Pump.fun Example</div>
-                            <div className="text-xs opacity-75 font-mono truncate">9BB6NFE...gpump</div>
-                        </button>
-
-                        <button
-                            onClick={() => quickTestToken('7GCihgDB8fe6KNjn2MYtkzZcRjQy3t9GHdC8uHYmW2hr', 'POPCAT Token')}
-                            className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-sm text-left"
-                        >
-                            <div className="font-semibold">🎯 Bonk Example</div>
-                            <div className="text-xs opacity-75 font-mono truncate">7GCihgD...mW2hr</div>
-                        </button>
+                {/*{!botStatus.isRunning && (
+                    <div className="bg-red-900/20 border border-red-500/30 rounded-lg p-4 mb-6">
+                        <p className="text-red-400">⚠️ Bot will be running to inject demo tokens</p>
                     </div>
+                )}*/}
+
+                {/* Template Selection */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-2">
+                            Demo Template
+                        </label>
+                        <select
+                            value={selectedTemplate}
+                            onChange={(e) => setSelectedTemplate(parseInt(e.target.value))}
+                            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
+                        //disabled={!botStatus.isRunning}
+                        >
+                            {demoTemplates.map((template, index) => (
+                                <option key={index} value={index}>
+                                    {template.name} ({template.symbol}) - {template.platform}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-2">
+                            Custom Wallet
+                        </label>
+                        <input
+                            type="text"
+                            value={customWallet}
+                            onChange={(e) => setCustomWallet(e.target.value)}
+                            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
+                            placeholder="Override creator wallet"
+                        //disabled={!botStatus.isRunning}
+                        />
+                    </div>
+
+
+                    <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-2">
+                            Custom Twitter (Optional)
+                        </label>
+                        <input
+                            type="text"
+                            value={customTwitter}
+                            onChange={(e) => setCustomTwitter(e.target.value)} // UNCOMMENT THIS LINE
+                            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
+                            placeholder="Override Twitter handle"
+                        // disabled={!botStatus.isRunning} // COMMENT OR REMOVE THIS LINE
+                        />
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-2">
+                            Custom Twitter Community (Optional)
+                        </label>
+                        <input
+                            type="text"
+                            value={customCommunity}
+                            onChange={(e) => setCustomCommunity(e.target.value)}
+                            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
+                            placeholder="Community ID (e.g., 1234567890)"
+                        // disabled={!botStatus.isRunning}
+                        />
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-2">
+                            Custom Twitter Status/Tweet (Optional)
+                        </label>
+                        <input
+                            type="text"
+                            value={customTweet}
+                            onChange={(e) => setCustomTweet(e.target.value)}
+                            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
+                            placeholder="Tweet URL (e.g., x.com/user/status/123...)"
+                        // disabled={!botStatus.isRunning}
+                        />
+                    </div>
+
                 </div>
 
-                {/* Last Test Result */}
-                {lastTestedToken && (
-                    <div className="bg-gray-800 rounded-lg p-4 md:p-6">
-                        <h3 className="text-lg font-semibold text-white mb-4">📊 Last Test Result</h3>
+                {/* Quick Action Buttons */}
+                <div className="mt-6 grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <button
+                        onClick={() => injectDemoToken()}  // <-- Add empty parentheses
+                        // disabled={!botStatus.isRunning}
+                        className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white rounded-lg transition-colors text-sm"
+                    >
+                        🧪 Inject Single
+                    </button>
 
-                        <div className="space-y-3">
-                            <div className="bg-gray-700 rounded-lg p-4">
-                                <div className="text-xs text-gray-400 mb-1">Token Address</div>
-                                <div className="text-sm text-white font-mono break-all">
-                                    {lastTestedToken.address}
-                                </div>
-                            </div>
+                    <button
+                        onClick={injectDemoBatch}
+                        disabled={!botStatus.isRunning}
+                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white rounded-lg transition-colors text-sm"
+                    >
+                        🚀 Inject Batch (5)
+                    </button>
 
-                            <div className="bg-gray-700 rounded-lg p-4">
-                                <div className="text-xs text-gray-400 mb-1">Tested At</div>
-                                <div className="text-sm text-white">
-                                    {new Date(lastTestedToken.timestamp).toLocaleString()}
-                                </div>
-                            </div>
+                    <button
+                        onClick={() => injectDemoToken({ platform: 'pumpfun' })}
+                        disabled={!botStatus.isRunning}
+                        className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white rounded-lg transition-colors text-sm"
+                    >
+                        🎯 Force Pump.fun
+                    </button>
 
-                            {lastTestedToken.result && (
-                                <>
-                                    {/* Token Info */}
-                                    <div className="bg-gray-700 rounded-lg p-4">
-                                        <div className="text-xs text-gray-400 mb-2">Token Info</div>
-                                        <div className="space-y-2 text-sm">
-                                            <div className="flex justify-between">
-                                                <span className="text-gray-400">Platform:</span>
-                                                <span className="text-white font-semibold">{lastTestedToken.result.platform}</span>
-                                            </div>
-                                            <div className="flex justify-between">
-                                                <span className="text-gray-400">Name:</span>
-                                                <span className="text-white">{lastTestedToken.result.metadata?.name || 'N/A'}</span>
-                                            </div>
-                                            <div className="flex justify-between">
-                                                <span className="text-gray-400">Symbol:</span>
-                                                <span className="text-white">{lastTestedToken.result.metadata?.symbol || 'N/A'}</span>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    {/* Detection Result */}
-                                    <div className={`rounded-lg p-4 ${lastTestedToken.result.detection?.matched
-                                            ? 'bg-green-900/20 border border-green-500/30'
-                                            : 'bg-gray-700'
-                                        }`}>
-                                        <div className="text-xs text-gray-400 mb-2">Admin Detection</div>
-                                        <div className="space-y-2 text-sm">
-                                            <div className="flex justify-between">
-                                                <span className="text-gray-400">Matched:</span>
-                                                <span className={`font-semibold ${lastTestedToken.result.detection?.matched
-                                                        ? 'text-green-400'
-                                                        : 'text-red-400'
-                                                    }`}>
-                                                    {lastTestedToken.result.detection?.matched ? '✅ YES' : '❌ NO'}
-                                                </span>
-                                            </div>
-                                            {lastTestedToken.result.detection?.matched && (
-                                                <>
-                                                    <div className="flex justify-between">
-                                                        <span className="text-gray-400">Match Type:</span>
-                                                        <span className="text-white">{lastTestedToken.result.detection.matchType}</span>
-                                                    </div>
-                                                    <div className="flex justify-between">
-                                                        <span className="text-gray-400">Matched Entity:</span>
-                                                        <span className="text-white font-mono text-xs">
-                                                            {lastTestedToken.result.detection.matchedEntity?.substring(0, 20)}...
-                                                        </span>
-                                                    </div>
-                                                </>
-                                            )}
-                                        </div>
-                                    </div>
-
-                                    {/* Timing Breakdown */}
-                                    <div className="bg-gray-700 rounded-lg p-4">
-                                        <div className="text-xs text-gray-400 mb-2">⏱️ Performance Timing</div>
-                                        <div className="space-y-2 text-sm">
-                                            <div className="flex justify-between">
-                                                <span className="text-gray-400">Total Time:</span>
-                                                <span className="text-white font-semibold">{lastTestedToken.result.timing?.total}ms</span>
-                                            </div>
-                                            <div className="flex justify-between">
-                                                <span className="text-gray-400">Account Fetch:</span>
-                                                <span className="text-white">{lastTestedToken.result.timing?.accountFetch || 'N/A'}ms</span>
-                                            </div>
-                                            <div className="flex justify-between">
-                                                <span className="text-gray-400">Bonding Curve:</span>
-                                                <span className="text-white">{lastTestedToken.result.timing?.bondingCurveExtraction || 'N/A'}ms</span>
-                                            </div>
-                                            <div className="flex justify-between">
-                                                <span className="text-gray-400">Metadata Fetch:</span>
-                                                <span className="text-white">{lastTestedToken.result.timing?.metadataFetch || 'N/A'}ms</span>
-                                            </div>
-                                            <div className="flex justify-between">
-                                                <span className="text-gray-400">Admin Detection:</span>
-                                                <span className="text-white">{lastTestedToken.result.timing?.adminDetection || 'N/A'}ms</span>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    {/* Full JSON Result (Collapsible) */}
-                                    <details className="bg-gray-700 rounded-lg p-4">
-                                        <summary className="cursor-pointer text-xs text-gray-400 hover:text-white">
-                                            🔍 View Full JSON Result
-                                        </summary>
-                                        <pre className="text-xs text-green-400 overflow-x-auto mt-3 p-2 bg-gray-900 rounded">
-                                            {JSON.stringify(lastTestedToken.result, null, 2)}
-                                        </pre>
-                                    </details>
-                                </>
-                            )}
-                        </div>
-                    </div>
-                )}
-
-                {/* Info Panel */}
-                <div className="bg-blue-900/20 border border-blue-500/30 rounded-lg p-4 md:p-6">
-                    <h3 className="text-blue-400 font-semibold mb-3">ℹ️ How This Works</h3>
-                    <div className="text-sm text-blue-300 space-y-2">
-                        <p>1️⃣ Enter a token mint address from pump.fun or bonk</p>
-                        <p>2️⃣ The system fetches transaction data via gRPC stream</p>
-                        <p>3️⃣ Extracts metadata directly from blockchain (no IPFS delays)</p>
-                        <p>4️⃣ Processes through your detection pipeline (admin matching, Twitter extraction)</p>
-                        <p>5️⃣ Shows complete timing breakdown for performance analysis</p>
-                    </div>
-
-                    <div className="mt-4 pt-4 border-t border-blue-500/30">
-                        <p className="text-xs text-blue-200">
-                            💡 <strong>Tip:</strong> This tests the same gRPC processing pipeline used for live sniping,
-                            but with a specific token address instead of monitoring all new token creates.
-                        </p>
-                    </div>
+                    <button
+                        onClick={() => injectDemoToken({ platform: 'letsbonk' })}
+                        disabled={!botStatus.isRunning}
+                        className="px-4 py-2 bg-orange-600 hover:bg-orange-700 disabled:bg-gray-600 text-white rounded-lg transition-colors text-sm"
+                    >
+                        🎯 Force LetsBonk
+                    </button>
                 </div>
             </div>
-        );
-    };
+
+            {/* Test With Your Lists */}
+            <div className="bg-gray-800 rounded-lg p-4 md:p-6">
+                <h3 className="text-lg font-semibold text-white mb-4">Test With Your Lists</h3>
+                <p className="text-sm text-gray-400 mb-4">
+                    Inject tokens that will match entries in your lists to test primary/secondary detection
+                </p>
+
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <button
+                        onClick={() => injectFromList('primary_admins')}
+                        disabled={!botStatus.isRunning || lists.primary_admins.length === 0}
+                        className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white rounded-lg transition-colors text-sm"
+                    >
+                        🎯 Primary Wallet
+                        <div className="text-xs opacity-75">({lists.primary_admins.length} entries)</div>
+                    </button>
+
+                    <button
+                        onClick={() => injectFromList('primary_admins')}
+                        disabled={!botStatus.isRunning || lists.primary_admins.length === 0}
+                        className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white rounded-lg transition-colors text-sm"
+                    >
+                        🎯 Primary Admin
+                        <div className="text-xs opacity-75">({lists.primary_admins.length} entries)</div>
+                    </button>
+
+                    <button
+                        onClick={() => injectFromList('secondary_admins')}
+                        disabled={!botStatus.isRunning || lists.secondary_admins.length === 0}
+                        className="px-4 py-2 bg-yellow-600 hover:bg-yellow-700 disabled:bg-gray-600 text-white rounded-lg transition-colors text-sm"
+                    >
+                        🔔 Secondary Wallet
+                        <div className="text-xs opacity-75">({lists.secondary_admins.length} entries)</div>
+                    </button>
+
+                    <button
+                        onClick={() => injectFromList('secondary_admins')}
+                        disabled={!botStatus.isRunning || lists.secondary_admins.length === 0}
+                        className="px-4 py-2 bg-orange-600 hover:bg-orange-700 disabled:bg-gray-600 text-white rounded-lg transition-colors text-sm"
+                    >
+                        🔔 Secondary Admin
+                        <div className="text-xs opacity-75">({lists.secondary_admins.length} entries)</div>
+                    </button>
+                </div>
+            </div>
+
+            {/* Demo Templates Info */}
+            <div className="bg-gray-800 rounded-lg p-4 md:p-6">
+                <h3 className="text-lg font-semibold text-white mb-4">Available Demo Templates</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {demoTemplates.map((template, index) => (
+                        <div
+                            key={index}
+                            className={`p-3 rounded-lg border-2 transition-colors cursor-pointer ${selectedTemplate === index
+                                ? 'border-blue-500 bg-blue-900/20'
+                                : 'border-gray-600 bg-gray-700 hover:border-gray-500'
+                                }`}
+                            onClick={() => setSelectedTemplate(index)}
+                        >
+                            <div className="flex items-center space-x-2 mb-2">
+                                <h4 className="font-semibold text-white">{template.name}</h4>
+                                <span className="text-xs px-2 py-1 bg-gray-600 text-white rounded">
+                                    {template.symbol}
+                                </span>
+                            </div>
+                            <div className="text-xs text-gray-400 space-y-1">
+                                <p>Platform: {template.platform}</p>
+                                <p>Twitter: @{template.twitterHandle}</p>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+
+            {/* Speed Test Section */}
+            <div className="bg-gray-800 rounded-lg p-4 md:p-6">
+                <h3 className="text-lg font-semibold text-white mb-4">⚡ Speed Testing</h3>
+                <p className="text-sm text-gray-400 mb-4">
+                    Test the speed of your detection and sniping logic
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <button
+                        onClick={() => injectDemoBatch()}
+                        disabled={!botStatus.isRunning}
+                        className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-gray-600 text-white rounded-lg transition-colors text-sm"
+                    >
+                        🔥 Rapid Fire (5 tokens)
+                    </button>
+                    <button
+                        onClick={async () => {
+                            for (let i = 0; i < 10; i++) {
+                                await injectDemoToken();
+                                await new Promise(resolve => setTimeout(resolve, 100));
+                            }
+                        }}
+                        disabled={!botStatus.isRunning}
+                        className="px-4 py-2 bg-red-700 hover:bg-red-800 disabled:bg-gray-600 text-white rounded-lg transition-colors text-sm"
+                    >
+                        ⚡ Lightning (10 tokens)
+                    </button>
+                    <button
+                        onClick={() => {
+                            // Inject one token that should match primary list immediately
+                            if (lists.primary_admins.length > 0) {
+                                injectFromList('primary_admins');
+                                addNotification('info', '🏁 Speed test: Primary wallet token injected!');
+                            } else {
+                                addNotification('warning', '⚠️ Add wallets to primary list first');
+                            }
+                        }}
+                        disabled={!botStatus.isRunning}
+                        className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white rounded-lg transition-colors text-sm"
+                    >
+                        🏁 Speed Test Snipe
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+
     const renderGlobalSnipeSettings = () => {
         return (
             <div className="bg-gray-800 rounded-lg p-4 md:p-6">
@@ -4085,7 +4064,7 @@ function App() {
                                                             <p className="text-xs text-gray-400">Individual Twitter account</p>
 
                                                             {/* TWITTER ADMIN MATCH INDICATOR */}
-                                                            <div className="mt-1">
+                                                             <div className="mt-1">
                                                                 {token.matchType === 'primary_admin' && token.twitterType === 'individual' ? (
                                                                     <div className="bg-green-900/30 border border-green-500/30 rounded px-2 py-1">
                                                                         <span className="text-green-400 text-xs">
@@ -4967,11 +4946,11 @@ function App() {
             </div>
         </div>
     );
-    // ============================================================================
-    // SIMPLIFIED DEMO SECTION FOR APP.JS
-    // Purpose: Test gRPC blockchain listener with any token address
-    // ============================================================================
-
+// ============================================================================
+// SIMPLIFIED DEMO SECTION FOR APP.JS
+// Purpose: Test gRPC blockchain listener with any token address
+// ============================================================================
+ 
     const renderLists = () => (
         <div className="space-y-4 md:space-y-6">
             {/* Enhanced Firebase Controls */}
