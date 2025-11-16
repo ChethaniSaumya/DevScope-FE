@@ -1619,6 +1619,42 @@ function App() {
         });
     };
 
+    // Add this useEffect near the top of your component, after your state declarations
+    useEffect(() => {
+        const fetchCurrentSettings = async () => {
+            try {
+                const response = await fetch(`${"https://devscope-be.onrender.com/"}/api/status`);
+                const data = await response.json();
+
+                if (data.settings) {
+                    // Merge server settings with any local storage overrides
+                    const serverSettings = {
+                        privateKey: data.settings.privateKey || '',
+                        tokenPageDestination: data.settings.tokenPageDestination || 'neo_bullx',
+                        enableAdminFilter: data.settings.enableAdminFilter ?? true,
+                        enableCommunityReuse: data.settings.enableCommunityReuse ?? true,
+                        snipeAllTokens: data.settings.snipeAllTokens ?? false,
+                        detectionOnlyMode: data.settings.detectionOnlyMode ?? true,
+                        bonkTokensOnly: data.settings.bonkTokensOnly ?? false,
+                        enablePrimaryDetection: data.settings.enablePrimaryDetection ?? true,
+                        enableSecondaryDetection: data.settings.enableSecondaryDetection ?? true
+                    };
+
+                    // Update both settings and originalSettings
+                    setSettings(prev => ({ ...prev, ...serverSettings }));
+                    setOriginalSettings(prev => ({ ...prev, ...serverSettings }));
+
+                    console.log('✅ Synced with server settings:', serverSettings);
+                }
+            } catch (error) {
+                console.error('❌ Failed to fetch server settings:', error);
+                addNotification('warning', '⚠️ Could not sync with server settings');
+            }
+        };
+
+        fetchCurrentSettings();
+    }, []); // Run once on mount
+
     // Effects
     useEffect(() => {
         fetchStatus();
@@ -4064,7 +4100,7 @@ function App() {
                                                             <p className="text-xs text-gray-400">Individual Twitter account</p>
 
                                                             {/* TWITTER ADMIN MATCH INDICATOR */}
-                                                             <div className="mt-1">
+                                                            <div className="mt-1">
                                                                 {token.matchType === 'primary_admin' && token.twitterType === 'individual' ? (
                                                                     <div className="bg-green-900/30 border border-green-500/30 rounded px-2 py-1">
                                                                         <span className="text-green-400 text-xs">
@@ -4287,15 +4323,39 @@ function App() {
 
             {/* Filter Settings */}
             <div className="bg-gray-800 rounded-lg p-4 md:p-6">
-                <h2 className="text-lg md:text-xl font-semibold text-white mb-4">Filter Settings</h2>
+                <div className="flex items-center justify-between mb-4">
+                    <h2 className="text-lg md:text-xl font-semibold text-white">Filter Settings</h2>
+                    {/* Sync indicator */}
+                    <div className="flex items-center space-x-2">
+                        <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                        <span className="text-xs text-gray-400">Synced with server</span>
+                    </div>
+                </div>
 
                 <div className="space-y-4">
                     {/* Detection Only Mode Toggle */}
                     <div className="bg-green-900/20 border border-green-500/30 rounded-lg p-4">
                         <div className="flex flex-col space-y-3 md:flex-row md:items-center md:justify-between md:space-y-0">
-                            <div>
-                                <h3 className="text-base md:text-lg font-medium text-green-400">🛡️ Detection Only Mode</h3>
-                                <p className="text-sm text-green-300">SAFE: Only detect and list tokens, don't buy them</p>
+                            <div className="flex-1">
+                                <div className="flex items-center space-x-2 mb-1">
+                                    <h3 className="text-base md:text-lg font-medium text-green-400">🛡️ Detection Only Mode</h3>
+                                    {settings.detectionOnlyMode !== originalSettings.detectionOnlyMode && (
+                                        <span className="text-xs bg-yellow-500/20 text-yellow-300 px-2 py-0.5 rounded">Modified</span>
+                                    )}
+                                </div>
+                                <p className="text-sm text-green-300 mb-2">SAFE: Only detect and list tokens, don't buy them</p>
+                                <div className="flex items-center space-x-4 text-xs">
+                                    <span className="text-gray-400">
+                                        Current: <span className={`font-semibold ${settings.detectionOnlyMode ? 'text-green-400' : 'text-red-400'}`}>
+                                            {settings.detectionOnlyMode ? 'ON' : 'OFF'}
+                                        </span>
+                                    </span>
+                                    <span className="text-gray-500">
+                                        Server: <span className={`font-semibold ${originalSettings.detectionOnlyMode ? 'text-green-400' : 'text-red-400'}`}>
+                                            {originalSettings.detectionOnlyMode ? 'ON' : 'OFF'}
+                                        </span>
+                                    </span>
+                                </div>
                             </div>
                             <label className="relative inline-flex items-center cursor-pointer">
                                 <input
@@ -4312,9 +4372,26 @@ function App() {
                     {/* Snipe All Tokens Toggle */}
                     <div className="bg-red-900/20 border border-red-500/30 rounded-lg p-4">
                         <div className="flex flex-col space-y-3 md:flex-row md:items-center md:justify-between md:space-y-0">
-                            <div>
-                                <h3 className="text-base md:text-lg font-medium text-red-400">⚠️ Snipe All New Tokens</h3>
-                                <p className="text-sm text-red-300">DANGER: This will snipe EVERY new token (bypasses all filters)</p>
+                            <div className="flex-1">
+                                <div className="flex items-center space-x-2 mb-1">
+                                    <h3 className="text-base md:text-lg font-medium text-red-400">⚠️ Snipe All New Tokens</h3>
+                                    {settings.snipeAllTokens !== originalSettings.snipeAllTokens && (
+                                        <span className="text-xs bg-yellow-500/20 text-yellow-300 px-2 py-0.5 rounded">Modified</span>
+                                    )}
+                                </div>
+                                <p className="text-sm text-red-300 mb-2">DANGER: This will snipe EVERY new token (bypasses all filters)</p>
+                                <div className="flex items-center space-x-4 text-xs">
+                                    <span className="text-gray-400">
+                                        Current: <span className={`font-semibold ${settings.snipeAllTokens ? 'text-red-400' : 'text-green-400'}`}>
+                                            {settings.snipeAllTokens ? 'ON ⚠️' : 'OFF ✅'}
+                                        </span>
+                                    </span>
+                                    <span className="text-gray-500">
+                                        Server: <span className={`font-semibold ${originalSettings.snipeAllTokens ? 'text-red-400' : 'text-green-400'}`}>
+                                            {originalSettings.snipeAllTokens ? 'ON ⚠️' : 'OFF ✅'}
+                                        </span>
+                                    </span>
+                                </div>
                             </div>
                             <label className="relative inline-flex items-center cursor-pointer">
                                 <input
@@ -4330,9 +4407,26 @@ function App() {
 
                     {/* Admin Filter Toggle */}
                     <div className="flex flex-col space-y-3 md:flex-row md:items-center md:justify-between md:space-y-0 p-4 bg-gray-700 rounded-lg">
-                        <div>
-                            <h3 className="text-base md:text-lg font-medium text-white">Enable Admin Filtering</h3>
-                            <p className="text-sm text-gray-400">Only detect tokens from wallet addresses or Twitter admins in your lists</p>
+                        <div className="flex-1">
+                            <div className="flex items-center space-x-2 mb-1">
+                                <h3 className="text-base md:text-lg font-medium text-white">Enable Admin Filtering</h3>
+                                {settings.enableAdminFilter !== originalSettings.enableAdminFilter && (
+                                    <span className="text-xs bg-yellow-500/20 text-yellow-300 px-2 py-0.5 rounded">Modified</span>
+                                )}
+                            </div>
+                            <p className="text-sm text-gray-400 mb-2">Only detect tokens from wallet addresses or Twitter admins in your lists</p>
+                            <div className="flex items-center space-x-4 text-xs">
+                                <span className="text-gray-400">
+                                    Current: <span className={`font-semibold ${settings.enableAdminFilter ? 'text-purple-400' : 'text-gray-400'}`}>
+                                        {settings.enableAdminFilter ? 'ON' : 'OFF'}
+                                    </span>
+                                </span>
+                                <span className="text-gray-500">
+                                    Server: <span className={`font-semibold ${originalSettings.enableAdminFilter ? 'text-purple-400' : 'text-gray-400'}`}>
+                                        {originalSettings.enableAdminFilter ? 'ON' : 'OFF'}
+                                    </span>
+                                </span>
+                            </div>
                         </div>
                         <label className="relative inline-flex items-center cursor-pointer">
                             <input
@@ -4348,9 +4442,26 @@ function App() {
 
                     {/* Community Reuse Toggle */}
                     <div className="flex flex-col space-y-3 md:flex-row md:items-center md:justify-between md:space-y-0 p-4 bg-gray-700 rounded-lg">
-                        <div>
-                            <h3 className="text-base md:text-lg font-medium text-white">Prevent Community Reuse</h3>
-                            <p className="text-sm text-gray-400">Skip tokens if Twitter community was already used</p>
+                        <div className="flex-1">
+                            <div className="flex items-center space-x-2 mb-1">
+                                <h3 className="text-base md:text-lg font-medium text-white">Prevent Community Reuse</h3>
+                                {settings.enableCommunityReuse !== originalSettings.enableCommunityReuse && (
+                                    <span className="text-xs bg-yellow-500/20 text-yellow-300 px-2 py-0.5 rounded">Modified</span>
+                                )}
+                            </div>
+                            <p className="text-sm text-gray-400 mb-2">Skip tokens if Twitter community was already used</p>
+                            <div className="flex items-center space-x-4 text-xs">
+                                <span className="text-gray-400">
+                                    Current: <span className={`font-semibold ${settings.enableCommunityReuse ? 'text-green-400' : 'text-gray-400'}`}>
+                                        {settings.enableCommunityReuse ? 'ON' : 'OFF'}
+                                    </span>
+                                </span>
+                                <span className="text-gray-500">
+                                    Server: <span className={`font-semibold ${originalSettings.enableCommunityReuse ? 'text-green-400' : 'text-gray-400'}`}>
+                                        {originalSettings.enableCommunityReuse ? 'ON' : 'OFF'}
+                                    </span>
+                                </span>
+                            </div>
                         </div>
                         <label className="relative inline-flex items-center cursor-pointer">
                             <input
@@ -4364,42 +4475,77 @@ function App() {
                         </label>
                     </div>
 
-                    {/* Current Filter Status */}
-                    <div className="mt-6 p-4 bg-gray-700 rounded-lg">
-                        <h3 className="text-base md:text-lg font-medium text-white mb-2">Current Filter Status</h3>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                            <div className="flex items-center space-x-2">
-                                <div className={`w-3 h-3 rounded-full ${settings.detectionOnlyMode ? 'bg-green-500' : 'bg-gray-500'}`}></div>
-                                <span className="text-gray-300">Detection Only: {settings.detectionOnlyMode ? 'ON' : 'OFF'}</span>
+                    {/* Server Status Summary */}
+                    <div className="mt-6 p-4 bg-gray-700 rounded-lg border-2 border-blue-500/30">
+                        <h3 className="text-base font-medium text-white mb-3 flex items-center">
+                            <span className="mr-2">📊</span>
+                            Server Status Summary
+                        </h3>
+                        <div className="grid grid-cols-2 gap-3 text-xs">
+                            <div className="flex items-center justify-between p-2 bg-gray-800 rounded">
+                                <span className="text-gray-300">Detection Only</span>
+                                <span className={`font-semibold ${originalSettings.detectionOnlyMode ? 'text-green-400' : 'text-red-400'}`}>
+                                    {originalSettings.detectionOnlyMode ? '✅ ON' : '❌ OFF'}
+                                </span>
                             </div>
-                            <div className="flex items-center space-x-2">
-                                <div className={`w-3 h-3 rounded-full ${settings.snipeAllTokens ? 'bg-red-500' : 'bg-gray-500'}`}></div>
-                                <span className="text-gray-300">Snipe All: {settings.snipeAllTokens ? 'ON' : 'OFF'}</span>
+                            <div className="flex items-center justify-between p-2 bg-gray-800 rounded">
+                                <span className="text-gray-300">Snipe All</span>
+                                <span className={`font-semibold ${originalSettings.snipeAllTokens ? 'text-red-400' : 'text-green-400'}`}>
+                                    {originalSettings.snipeAllTokens ? '⚠️ ON' : '✅ OFF'}
+                                </span>
                             </div>
-                            <div className="flex items-center space-x-2">
-                                <div className={`w-3 h-3 rounded-full ${settings.enableAdminFilter ? 'bg-purple-500' : 'bg-gray-500'}`}></div>
-                                <span className="text-gray-300">Admin Filter: {settings.enableAdminFilter ? 'ON' : 'OFF'}</span>
+                            <div className="flex items-center justify-between p-2 bg-gray-800 rounded">
+                                <span className="text-gray-300">Admin Filter</span>
+                                <span className={`font-semibold ${originalSettings.enableAdminFilter ? 'text-purple-400' : 'text-gray-400'}`}>
+                                    {originalSettings.enableAdminFilter ? '✅ ON' : '❌ OFF'}
+                                </span>
+                            </div>
+                            <div className="flex items-center justify-between p-2 bg-gray-800 rounded">
+                                <span className="text-gray-300">Block Reuse</span>
+                                <span className={`font-semibold ${originalSettings.enableCommunityReuse ? 'text-green-400' : 'text-gray-400'}`}>
+                                    {originalSettings.enableCommunityReuse ? '✅ ON' : '❌ OFF'}
+                                </span>
                             </div>
                         </div>
                     </div>
 
+                    {/* Unsaved Changes Warning */}
+                    {hasFilterSettingsChanged() && (
+                        <div className="p-3 bg-yellow-900/20 border border-yellow-500/30 rounded-lg">
+                            <div className="flex items-start space-x-2">
+                                <span className="text-yellow-400 text-lg">⚠️</span>
+                                <div>
+                                    <p className="text-sm text-yellow-300 font-medium">You have unsaved changes</p>
+                                    <p className="text-xs text-yellow-400 mt-1">
+                                        Click "Save Filter Settings" below to apply your changes to the server
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Save Button */}
                     <div className="flex flex-col space-y-2">
                         <button
                             onClick={() => updateFilterSettings({
                                 enableAdminFilter: settings.enableAdminFilter,
                                 enableCommunityReuse: settings.enableCommunityReuse,
                                 snipeAllTokens: settings.snipeAllTokens,
-                                detectionOnlyMode: settings.detectionOnlyMode
+                                detectionOnlyMode: settings.detectionOnlyMode,
+                                bonkTokensOnly: settings.bonkTokensOnly
                             })}
                             disabled={!hasFilterSettingsChanged()}
-                            className="w-full px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
+                            className={`w-full px-4 py-3 rounded-lg transition-all font-medium ${hasFilterSettingsChanged()
+                                    ? 'bg-green-600 hover:bg-green-700 text-white shadow-lg'
+                                    : 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                                }`}
                         >
-                            Save Filter Settings
+                            {hasFilterSettingsChanged() ? '💾 Save Filter Settings' : '✅ All Changes Saved'}
                         </button>
                         {buttonMessages.filterSettings && (
                             <div className={`text-sm px-3 py-2 rounded ${buttonMessages.filterSettings.includes('✅')
-                                ? 'bg-green-900/20 text-green-400 border border-green-500/30'
-                                : 'bg-red-900/20 text-red-400 border border-red-500/30'
+                                    ? 'bg-green-900/20 text-green-400 border border-green-500/30'
+                                    : 'bg-red-900/20 text-red-400 border border-red-500/30'
                                 }`}>
                                 {buttonMessages.filterSettings}
                             </div>
@@ -4946,11 +5092,11 @@ function App() {
             </div>
         </div>
     );
-// ============================================================================
-// SIMPLIFIED DEMO SECTION FOR APP.JS
-// Purpose: Test gRPC blockchain listener with any token address
-// ============================================================================
- 
+    // ============================================================================
+    // SIMPLIFIED DEMO SECTION FOR APP.JS
+    // Purpose: Test gRPC blockchain listener with any token address
+    // ============================================================================
+
     const renderLists = () => (
         <div className="space-y-4 md:space-y-6">
             {/* Enhanced Firebase Controls */}
