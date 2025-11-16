@@ -1489,11 +1489,16 @@ function App() {
             addNotification('error', `❌ Failed to snipe token: ${error.message}`);
         }
     };
-    // App.js - Part 4: Settings and Bot Control Functions
 
     const hasBasicSettingsChanged = () => {
         return settings.privateKey !== originalSettings.privateKey ||
             settings.tokenPageDestination !== originalSettings.tokenPageDestination;
+    };
+
+    // ✅ Add this new helper function
+    const hasDetectionSettingsChanged = () => {
+        return settings.enablePrimaryDetection !== originalSettings.enablePrimaryDetection ||
+            settings.enableSecondaryDetection !== originalSettings.enableSecondaryDetection;
     };
 
     const hasFilterSettingsChanged = () => {
@@ -1540,6 +1545,12 @@ function App() {
 
             // Save to localStorage
             saveToLocalStorage(STORAGE_KEYS.SETTINGS, updatedSettings);
+
+            // ✅ UPDATE ORIGINAL SETTINGS
+            setOriginalSettings(prev => ({
+                ...prev,
+                ...newSettings
+            }));
 
             addNotification('success', '✅ Settings updated and saved locally');
             setButtonMessages(prev => ({ ...prev, basicSettings: '✅ Settings saved successfully!' }));
@@ -1619,11 +1630,10 @@ function App() {
         });
     };
 
-    // Add this useEffect near the top of your component, after your state declarations
     useEffect(() => {
         const fetchCurrentSettings = async () => {
             try {
-                const response = await fetch(`${"https://devscope-be.onrender.com/"}/api/status`);
+                const response = await fetch(`${"https://devscope-be.onrender.com"}/api/status`);
                 const data = await response.json();
 
                 if (data.settings) {
@@ -1636,8 +1646,8 @@ function App() {
                         snipeAllTokens: data.settings.snipeAllTokens ?? false,
                         detectionOnlyMode: data.settings.detectionOnlyMode ?? true,
                         bonkTokensOnly: data.settings.bonkTokensOnly ?? false,
-                        enablePrimaryDetection: data.settings.enablePrimaryDetection ?? true,
-                        enableSecondaryDetection: data.settings.enableSecondaryDetection ?? true
+                        enablePrimaryDetection: data.settings.enablePrimaryDetection ?? true,    // ✅ ADD
+                        enableSecondaryDetection: data.settings.enableSecondaryDetection ?? true  // ✅ ADD
                     };
 
                     // Update both settings and originalSettings
@@ -3067,7 +3077,14 @@ function App() {
 
     const renderDetectionSettings = () => (
         <div className="bg-gray-800 rounded-lg p-4 md:p-6">
-            <h2 className="text-lg md:text-xl font-semibold text-white mb-4">🎯 Separate Detection Settings</h2>
+            <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg md:text-xl font-semibold text-white">🎯 Separate Detection Settings</h2>
+                {/* Sync indicator */}
+                <div className="flex items-center space-x-2">
+                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                    <span className="text-xs text-gray-400">Synced with server</span>
+                </div>
+            </div>
             <p className="text-sm text-gray-400 mb-4">
                 Enable or disable primary and secondary admin detection separately for testing
             </p>
@@ -3075,11 +3092,28 @@ function App() {
             <div className="space-y-4">
                 {/* Primary Detection Toggle */}
                 <div className="flex flex-col space-y-3 md:flex-row md:items-center md:justify-between md:space-y-0 p-4 bg-gray-700 rounded-lg">
-                    <div>
-                        <h3 className="text-base md:text-lg font-medium text-purple-400">🎯 Primary Admin Detection</h3>
-                        <p className="text-sm text-gray-400">
+                    <div className="flex-1">
+                        <div className="flex items-center space-x-2 mb-1">
+                            <h3 className="text-base md:text-lg font-medium text-purple-400">🎯 Primary Admin Detection</h3>
+                            {settings.enablePrimaryDetection !== originalSettings.enablePrimaryDetection && (
+                                <span className="text-xs bg-yellow-500/20 text-yellow-300 px-2 py-0.5 rounded">Modified</span>
+                            )}
+                        </div>
+                        <p className="text-sm text-gray-400 mb-2">
                             Auto-snipe tokens from primary admin list {settings.detectionOnlyMode ? '(detection only)' : '(with auto-snipe)'}
                         </p>
+                        <div className="flex items-center space-x-4 text-xs">
+                            <span className="text-gray-400">
+                                Current: <span className={`font-semibold ${settings.enablePrimaryDetection ? 'text-purple-400' : 'text-gray-400'}`}>
+                                    {settings.enablePrimaryDetection ? 'ON' : 'OFF'}
+                                </span>
+                            </span>
+                            <span className="text-gray-500">
+                                Server: <span className={`font-semibold ${originalSettings.enablePrimaryDetection ? 'text-purple-400' : 'text-gray-400'}`}>
+                                    {originalSettings.enablePrimaryDetection ? 'ON' : 'OFF'}
+                                </span>
+                            </span>
+                        </div>
                     </div>
                     <label className="relative inline-flex items-center cursor-pointer">
                         <input
@@ -3094,11 +3128,28 @@ function App() {
 
                 {/* Secondary Detection Toggle */}
                 <div className="flex flex-col space-y-3 md:flex-row md:items-center md:justify-between md:space-y-0 p-4 bg-gray-700 rounded-lg">
-                    <div>
-                        <h3 className="text-base md:text-lg font-medium text-orange-400">🔔 Secondary Admin Detection</h3>
-                        <p className="text-sm text-gray-400">
+                    <div className="flex-1">
+                        <div className="flex items-center space-x-2 mb-1">
+                            <h3 className="text-base md:text-lg font-medium text-orange-400">🔔 Secondary Admin Detection</h3>
+                            {settings.enableSecondaryDetection !== originalSettings.enableSecondaryDetection && (
+                                <span className="text-xs bg-yellow-500/20 text-yellow-300 px-2 py-0.5 rounded">Modified</span>
+                            )}
+                        </div>
+                        <p className="text-sm text-gray-400 mb-2">
                             Show popup notifications for tokens from secondary admin list
                         </p>
+                        <div className="flex items-center space-x-4 text-xs">
+                            <span className="text-gray-400">
+                                Current: <span className={`font-semibold ${settings.enableSecondaryDetection ? 'text-orange-400' : 'text-gray-400'}`}>
+                                    {settings.enableSecondaryDetection ? 'ON' : 'OFF'}
+                                </span>
+                            </span>
+                            <span className="text-gray-500">
+                                Server: <span className={`font-semibold ${originalSettings.enableSecondaryDetection ? 'text-orange-400' : 'text-gray-400'}`}>
+                                    {originalSettings.enableSecondaryDetection ? 'ON' : 'OFF'}
+                                </span>
+                            </span>
+                        </div>
                     </div>
                     <label className="relative inline-flex items-center cursor-pointer">
                         <input
@@ -3111,33 +3162,56 @@ function App() {
                     </label>
                 </div>
 
-                {/* Detection Status */}
-                <div className="mt-6 p-4 bg-gray-700 rounded-lg">
-                    <h3 className="text-base md:text-lg font-medium text-white mb-2">Current Detection Status</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                        <div className="flex items-center space-x-2">
-                            <div className={`w-3 h-3 rounded-full ${settings.enablePrimaryDetection ? 'bg-purple-500' : 'bg-gray-500'}`}></div>
-                            <span className="text-gray-300">Primary Detection: {settings.enablePrimaryDetection ? 'ON' : 'OFF'}</span>
+                {/* Detection Status Summary */}
+                <div className="mt-6 p-4 bg-gray-700 rounded-lg border-2 border-blue-500/30">
+                    <h3 className="text-base font-medium text-white mb-3 flex items-center">
+                        <span className="mr-2">📊</span>
+                        Server Status Summary
+                    </h3>
+                    <div className="grid grid-cols-2 gap-3 text-xs">
+                        <div className="flex items-center justify-between p-2 bg-gray-800 rounded">
+                            <span className="text-gray-300">Primary Detection</span>
+                            <span className={`font-semibold ${originalSettings.enablePrimaryDetection ? 'text-purple-400' : 'text-gray-400'}`}>
+                                {originalSettings.enablePrimaryDetection ? '✅ ON' : '❌ OFF'}
+                            </span>
                         </div>
-                        <div className="flex items-center space-x-2">
-                            <div className={`w-3 h-3 rounded-full ${settings.enableSecondaryDetection ? 'bg-orange-500' : 'bg-gray-500'}`}></div>
-                            <span className="text-gray-300">Secondary Detection: {settings.enableSecondaryDetection ? 'ON' : 'OFF'}</span>
+                        <div className="flex items-center justify-between p-2 bg-gray-800 rounded">
+                            <span className="text-gray-300">Secondary Detection</span>
+                            <span className={`font-semibold ${originalSettings.enableSecondaryDetection ? 'text-orange-400' : 'text-gray-400'}`}>
+                                {originalSettings.enableSecondaryDetection ? '✅ ON' : '❌ OFF'}
+                            </span>
                         </div>
                     </div>
 
                     {/* Status Explanation */}
                     <div className="mt-3 p-3 bg-gray-600 rounded text-xs">
-                        {!settings.enablePrimaryDetection && !settings.enableSecondaryDetection ? (
-                            <p className="text-red-400">❌ All admin detection is disabled</p>
-                        ) : settings.enablePrimaryDetection && !settings.enableSecondaryDetection ? (
-                            <p className="text-purple-400">🎯 Only primary detection active (auto-snipe)</p>
-                        ) : !settings.enablePrimaryDetection && settings.enableSecondaryDetection ? (
-                            <p className="text-orange-400">🔔 Only secondary detection active (popup notifications)</p>
+                        {!originalSettings.enablePrimaryDetection && !originalSettings.enableSecondaryDetection ? (
+                            <p className="text-red-400">❌ All admin detection is disabled on server</p>
+                        ) : originalSettings.enablePrimaryDetection && !originalSettings.enableSecondaryDetection ? (
+                            <p className="text-purple-400">🎯 Only primary detection active on server (auto-snipe)</p>
+                        ) : !originalSettings.enablePrimaryDetection && originalSettings.enableSecondaryDetection ? (
+                            <p className="text-orange-400">🔔 Only secondary detection active on server (popup notifications)</p>
                         ) : (
-                            <p className="text-green-400">✅ Both detection types active</p>
+                            <p className="text-green-400">✅ Both detection types active on server</p>
                         )}
                     </div>
                 </div>
+
+                {/* Unsaved Changes Warning */}
+                {(settings.enablePrimaryDetection !== originalSettings.enablePrimaryDetection ||
+                    settings.enableSecondaryDetection !== originalSettings.enableSecondaryDetection) && (
+                        <div className="p-3 bg-yellow-900/20 border border-yellow-500/30 rounded-lg">
+                            <div className="flex items-start space-x-2">
+                                <span className="text-yellow-400 text-lg">⚠️</span>
+                                <div>
+                                    <p className="text-sm text-yellow-300 font-medium">You have unsaved changes</p>
+                                    <p className="text-xs text-yellow-400 mt-1">
+                                        Click "Save Detection Settings" below to apply your changes to the server
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                 <div className="flex flex-col space-y-2">
                     <button
@@ -3158,7 +3232,7 @@ function App() {
                                 setButtonMessages(prev => ({ ...prev, detectionSettings: '✅ Detection settings saved successfully!' }));
                                 clearButtonMessage('detectionSettings');
 
-                                // Store the original settings to track changes
+                                // ✅ UPDATE ORIGINAL SETTINGS TO REFLECT SAVED STATE
                                 setOriginalSettings(prev => ({
                                     ...prev,
                                     enablePrimaryDetection: settings.enablePrimaryDetection,
@@ -3170,9 +3244,18 @@ function App() {
                                 clearButtonMessage('detectionSettings');
                             }
                         }}
-                        className="w-full px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors"
+                        disabled={settings.enablePrimaryDetection === originalSettings.enablePrimaryDetection &&
+                            settings.enableSecondaryDetection === originalSettings.enableSecondaryDetection}
+                        className={`w-full px-4 py-3 rounded-lg transition-all font-medium ${(settings.enablePrimaryDetection !== originalSettings.enablePrimaryDetection ||
+                            settings.enableSecondaryDetection !== originalSettings.enableSecondaryDetection)
+                            ? 'bg-green-600 hover:bg-green-700 text-white shadow-lg'
+                            : 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                            }`}
                     >
-                        Save Detection Settings
+                        {(settings.enablePrimaryDetection !== originalSettings.enablePrimaryDetection ||
+                            settings.enableSecondaryDetection !== originalSettings.enableSecondaryDetection)
+                            ? '💾 Save Detection Settings'
+                            : '✅ All Changes Saved'}
                     </button>
 
                     {/* Inline success/error message display */}
@@ -4536,16 +4619,16 @@ function App() {
                             })}
                             disabled={!hasFilterSettingsChanged()}
                             className={`w-full px-4 py-3 rounded-lg transition-all font-medium ${hasFilterSettingsChanged()
-                                    ? 'bg-green-600 hover:bg-green-700 text-white shadow-lg'
-                                    : 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                                ? 'bg-green-600 hover:bg-green-700 text-white shadow-lg'
+                                : 'bg-gray-600 text-gray-400 cursor-not-allowed'
                                 }`}
                         >
                             {hasFilterSettingsChanged() ? '💾 Save Filter Settings' : '✅ All Changes Saved'}
                         </button>
                         {buttonMessages.filterSettings && (
                             <div className={`text-sm px-3 py-2 rounded ${buttonMessages.filterSettings.includes('✅')
-                                    ? 'bg-green-900/20 text-green-400 border border-green-500/30'
-                                    : 'bg-red-900/20 text-red-400 border border-red-500/30'
+                                ? 'bg-green-900/20 text-green-400 border border-green-500/30'
+                                : 'bg-red-900/20 text-red-400 border border-red-500/30'
                                 }`}>
                                 {buttonMessages.filterSettings}
                             </div>
