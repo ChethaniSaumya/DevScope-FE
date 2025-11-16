@@ -4364,18 +4364,6 @@ function App() {
                             className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                             placeholder="Enter your base58 private key"
                         />
-                        <div className="flex items-center space-x-4 mt-2 text-xs">
-                            <span className="text-gray-400">
-                                Current: <span className={`font-semibold ${settings.privateKey ? 'text-blue-400' : 'text-gray-400'}`}>
-                                    {settings.privateKey ? '••••••••' : 'Not Set'}
-                                </span>
-                            </span>
-                            <span className="text-gray-500">
-                                Server: <span className={`font-semibold ${originalSettings.privateKey ? 'text-blue-400' : 'text-gray-400'}`}>
-                                    {originalSettings.privateKey ? '••••••••' : 'Not Set'}
-                                </span>
-                            </span>
-                        </div>
                     </div>
 
                     <div>
