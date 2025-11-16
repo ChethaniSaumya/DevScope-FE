@@ -1637,17 +1637,16 @@ function App() {
                 const data = await response.json();
 
                 if (data.settings) {
-                    // Merge server settings with any local storage overrides
                     const serverSettings = {
-                        privateKey: data.settings.privateKey || '',
-                        tokenPageDestination: data.settings.tokenPageDestination || 'neo_bullx',
+                        privateKey: data.settings.privateKey || '',                              // ✅ ADD
+                        tokenPageDestination: data.settings.tokenPageDestination || 'neo_bullx', // ✅ ADD
                         enableAdminFilter: data.settings.enableAdminFilter ?? true,
                         enableCommunityReuse: data.settings.enableCommunityReuse ?? true,
                         snipeAllTokens: data.settings.snipeAllTokens ?? false,
                         detectionOnlyMode: data.settings.detectionOnlyMode ?? true,
                         bonkTokensOnly: data.settings.bonkTokensOnly ?? false,
-                        enablePrimaryDetection: data.settings.enablePrimaryDetection ?? true,    // ✅ ADD
-                        enableSecondaryDetection: data.settings.enableSecondaryDetection ?? true  // ✅ ADD
+                        enablePrimaryDetection: data.settings.enablePrimaryDetection ?? true,
+                        enableSecondaryDetection: data.settings.enableSecondaryDetection ?? true
                     };
 
                     // Update both settings and originalSettings
@@ -1663,7 +1662,7 @@ function App() {
         };
 
         fetchCurrentSettings();
-    }, []); // Run once on mount
+    }, []);
 
     // Effects
     useEffect(() => {
@@ -4340,13 +4339,24 @@ function App() {
         <div className="space-y-4 md:space-y-6">
             {/* Bot Settings */}
             <div className="bg-gray-800 rounded-lg p-4 md:p-6">
-                <h2 className="text-lg md:text-xl font-semibold text-white mb-4">Bot Settings</h2>
+                <div className="flex items-center justify-between mb-4">
+                    <h2 className="text-lg md:text-xl font-semibold text-white">Bot Settings</h2>
+                    <div className="flex items-center space-x-2">
+                        <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                        <span className="text-xs text-gray-400">Synced with server</span>
+                    </div>
+                </div>
 
                 <div className="space-y-4">
                     <div>
-                        <label className="block text-sm font-medium text-gray-300 mb-2">
-                            Private Key (Hidden)
-                        </label>
+                        <div className="flex items-center space-x-2 mb-2">
+                            <label className="block text-sm font-medium text-gray-300">
+                                Private Key (Hidden)
+                            </label>
+                            {settings.privateKey !== originalSettings.privateKey && (
+                                <span className="text-xs bg-yellow-500/20 text-yellow-300 px-2 py-0.5 rounded">Modified</span>
+                            )}
+                        </div>
                         <input
                             type="password"
                             value={settings.privateKey}
@@ -4354,21 +4364,29 @@ function App() {
                             className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                             placeholder="Enter your base58 private key"
                         />
-                        {/* Testing: Show the actual private key below the input */}
-                        {/*settings.privateKey && (
-                            <div className="mt-2 p-3 bg-yellow-900/20 border border-yellow-500/30 rounded-lg">
-                                <p className="text-xs text-yellow-400 mb-1">🔍 Testing Display:</p>
-                                <p className="text-xs text-white font-mono break-all">
-                                    {settings.privateKey}
-                                </p>
-                            </div>
-                        )*/}
+                        <div className="flex items-center space-x-4 mt-2 text-xs">
+                            <span className="text-gray-400">
+                                Current: <span className={`font-semibold ${settings.privateKey ? 'text-blue-400' : 'text-gray-400'}`}>
+                                    {settings.privateKey ? '••••••••' : 'Not Set'}
+                                </span>
+                            </span>
+                            <span className="text-gray-500">
+                                Server: <span className={`font-semibold ${originalSettings.privateKey ? 'text-blue-400' : 'text-gray-400'}`}>
+                                    {originalSettings.privateKey ? '••••••••' : 'Not Set'}
+                                </span>
+                            </span>
+                        </div>
                     </div>
 
                     <div>
-                        <label className="block text-sm font-medium text-gray-300 mb-2">
-                            Token Page Destination
-                        </label>
+                        <div className="flex items-center space-x-2 mb-2">
+                            <label className="block text-sm font-medium text-gray-300">
+                                Token Page Destination
+                            </label>
+                            {settings.tokenPageDestination !== originalSettings.tokenPageDestination && (
+                                <span className="text-xs bg-yellow-500/20 text-yellow-300 px-2 py-0.5 rounded">Modified</span>
+                            )}
+                        </div>
                         <select
                             value={settings.tokenPageDestination}
                             onChange={(e) => setSettings(prev => ({ ...prev, tokenPageDestination: e.target.value }))}
@@ -4377,7 +4395,54 @@ function App() {
                             <option value="neo_bullx">Neo BullX</option>
                             <option value="axiom">Axiom</option>
                         </select>
+                        <div className="flex items-center space-x-4 mt-2 text-xs">
+                            <span className="text-gray-400">
+                                Current: <span className="font-semibold text-blue-400">
+                                    {settings.tokenPageDestination === 'neo_bullx' ? 'Neo BullX' : 'Axiom'}
+                                </span>
+                            </span>
+                            <span className="text-gray-500">
+                                Server: <span className="font-semibold text-blue-400">
+                                    {originalSettings.tokenPageDestination === 'neo_bullx' ? 'Neo BullX' : 'Axiom'}
+                                </span>
+                            </span>
+                        </div>
                     </div>
+
+                    <div className="mt-6 p-4 bg-gray-700 rounded-lg border-2 border-blue-500/30">
+                        <h3 className="text-base font-medium text-white mb-3 flex items-center">
+                            <span className="mr-2">📊</span>
+                            Server Status Summary
+                        </h3>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                            <div className="flex items-center justify-between p-2 bg-gray-800 rounded">
+                                <span className="text-gray-300">Private Key</span>
+                                <span className={`font-semibold ${originalSettings.privateKey ? 'text-green-400' : 'text-red-400'}`}>
+                                    {originalSettings.privateKey ? '✅ Set' : '❌ Not Set'}
+                                </span>
+                            </div>
+                            <div className="flex items-center justify-between p-2 bg-gray-800 rounded">
+                                <span className="text-gray-300">Token Page</span>
+                                <span className="font-semibold text-blue-400">
+                                    {originalSettings.tokenPageDestination === 'neo_bullx' ? 'Neo BullX' : 'Axiom'}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+
+                    {hasBasicSettingsChanged() && (
+                        <div className="p-3 bg-yellow-900/20 border border-yellow-500/30 rounded-lg">
+                            <div className="flex items-start space-x-2">
+                                <span className="text-yellow-400 text-lg">⚠️</span>
+                                <div>
+                                    <p className="text-sm text-yellow-300 font-medium">You have unsaved changes</p>
+                                    <p className="text-xs text-yellow-400 mt-1">
+                                        Click "Save Basic Settings" below to apply your changes to the server
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                     <div className="flex flex-col space-y-2">
                         <button
@@ -4386,14 +4451,17 @@ function App() {
                                 tokenPageDestination: settings.tokenPageDestination
                             })}
                             disabled={!hasBasicSettingsChanged()}
-                            className="w-full md:w-auto px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
+                            className={`w-full px-4 py-3 rounded-lg transition-all font-medium ${hasBasicSettingsChanged()
+                                    ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg'
+                                    : 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                                }`}
                         >
-                            Save Basic Settings
+                            {hasBasicSettingsChanged() ? '💾 Save Basic Settings' : '✅ All Changes Saved'}
                         </button>
                         {buttonMessages.basicSettings && (
                             <div className={`text-sm px-3 py-2 rounded ${buttonMessages.basicSettings.includes('✅')
-                                ? 'bg-green-900/20 text-green-400 border border-green-500/30'
-                                : 'bg-red-900/20 text-red-400 border border-red-500/30'
+                                    ? 'bg-green-900/20 text-green-400 border border-green-500/30'
+                                    : 'bg-red-900/20 text-red-400 border border-red-500/30'
                                 }`}>
                                 {buttonMessages.basicSettings}
                             </div>
