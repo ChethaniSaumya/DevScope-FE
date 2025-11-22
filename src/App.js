@@ -957,122 +957,141 @@ function App() {
                 if (data.data.config && data.data.config.soundNotification && window.electronAPI) {
                     window.electronAPI.playSound(data.data.config.soundNotification);
                 }
-
-                // ✅ PRIMARY MATCH HANDLING - Ensure config is passed correctly
-                // âœ… PRIMARY MATCH HANDLING - Ensure config is passed correctly
                 if (data.data.matchType === 'primary_wallet' || data.data.matchType === 'primary_admin') {
-                    console.log('ðŸŽ¯ PRIMARY MATCH DETECTED - SHOWING POPUP + AUTO-OPENING WINDOW');
+                    console.log('🎯 PRIMARY MATCH DETECTED - SHOWING POPUP + AUTO-OPENING WINDOW');
 
                     const tokenAddress = data.data.tokenAddress;
 
-                    // âœ… CHECK IF TAB ALREADY OPENED
-                    if (openedTokenTabs.has(tokenAddress)) {
-                        console.log('âš ï¸ PRIMARY: Tab already opened for this token, skipping...');
-                        return;
-                    }
+                    // ✅ CHECK IF TAB NOT ALREADY OPENED - Wrap everything in this condition
+                    if (!openedTokenTabs.has(tokenAddress)) {
 
-                    const tokenData = {
-                        ...data.data,
-                        config: data.data.config || {
-                            amount: settings.globalSnipeSettings.amount,
-                            fees: settings.globalSnipeSettings.fees,
-                            priorityFee: settings.globalSnipeSettings.priorityFee,
-                            mevProtection: settings.globalSnipeSettings.mevProtection,
-                            soundNotification: settings.globalSnipeSettings.soundNotification
-                        }
-                    };
-
-                    // Show popup for ALL primary matches (demo and real)
-                    setSecondaryPopup({
-                        show: true,
-                        tokenData: tokenData,
-                        globalSettings: settings.globalSnipeSettings,
-                        isPrimary: true
-                    });
-
-                    addNotification('info', `ðŸŽ¯ Primary match: ${tokenData.tokenAddress.substring(0, 8)}...`);
-
-                    // For DEMO tokens: Trigger manual snipe
-                    if (tokenData.isDemo) {
-                        console.log('ðŸ§ª DEMO PRIMARY - Triggering snipe');
-                        setTimeout(async () => {
-                            try {
-                                await apiCall(`/snipe-with-global-settings/${tokenData.tokenAddress}`, { method: 'POST' });
-                                addNotification('success', `ðŸ§ª Demo token sniped: ${tokenData.tokenAddress.substring(0, 8)}...`);
-                            } catch (error) {
-                                addNotification('error', `âŒ Demo snipe failed: ${error.message}`);
+                        const tokenData = {
+                            ...data.data,
+                            config: data.data.config || {
+                                amount: settings.globalSnipeSettings.amount,
+                                fees: settings.globalSnipeSettings.fees,
+                                priorityFee: settings.globalSnipeSettings.priorityFee,
+                                mevProtection: settings.globalSnipeSettings.mevProtection,
+                                soundNotification: settings.globalSnipeSettings.soundNotification
                             }
-                        }, 100);
-                    }
+                        };
 
-                    // âœ… MARK AS OPENED BEFORE OPENING
-                    setOpenedTokenTabs(prev => new Set(prev).add(tokenAddress));
+                        // Show popup for ALL primary matches (demo and real)
+                        setSecondaryPopup({
+                            show: true,
+                            tokenData: tokenData,
+                            globalSettings: settings.globalSnipeSettings,
+                            isPrimary: true
+                        });
 
-                    // Auto-open window after 500ms (for both demo and real)
-                    setTimeout(async () => {
-                        let autoOpenUrl;
-                        const token = tokenData;
+                        addNotification('info', `🎯 Primary match: ${tokenData.tokenAddress.substring(0, 8)}...`);
 
-                        // Determine URL based on user's tokenPageDestination setting
-                        if (settings.tokenPageDestination === 'axiom') {
-                            if (token.isDemo) {
-                                autoOpenUrl = `https://axiom.trade/meme/${token.tokenAddress}`;
-                                console.log(`ðŸ§ª Demo Primary: Opening Axiom with token address`);
-                            } else {
+                        // For DEMO tokens: Trigger manual snipe
+                        if (tokenData.isDemo) {
+                            console.log('🧪 DEMO PRIMARY - Triggering snipe');
+                            setTimeout(async () => {
                                 try {
-                                    const response = await apiCall(`/pair-address/${token.tokenAddress}`);
-                                    if (response.success && response.pairData && response.pairData.pairAddress) {
-                                        autoOpenUrl = `https://axiom.trade/meme/${response.pairData.pairAddress}`;
-                                        console.log(`âœ… Primary: Opening Axiom with pair address: ${response.pairData.pairAddress}`);
-                                    } else {
-                                        autoOpenUrl = `https://axiom.trade/meme/${token.tokenAddress}`;
-                                        console.log(`âš ï¸ Primary: Using token address`);
-                                    }
+                                    await apiCall(`/snipe-with-global-settings/${tokenData.tokenAddress}`, { method: 'POST' });
+                                    addNotification('success', `🧪 Demo token sniped: ${tokenData.tokenAddress.substring(0, 8)}...`);
                                 } catch (error) {
-                                    console.error(`âŒ Error fetching address:`, error);
+                                    addNotification('error', `❌ Demo snipe failed: ${error.message}`);
+                                }
+                            }, 100);
+                        }
+
+                        // ✅ MARK AS OPENED BEFORE OPENING
+                        setOpenedTokenTabs(prev => new Set(prev).add(tokenAddress));
+
+                        // Auto-open window after 500ms (for both demo and real)
+                        setTimeout(async () => {
+                            let autoOpenUrl;
+                            const token = tokenData;
+
+                            // Determine URL based on user's tokenPageDestination setting
+                            if (settings.tokenPageDestination === 'axiom') {
+                                // For demo tokens, just use token address
+                                if (token.isDemo) {
                                     autoOpenUrl = `https://axiom.trade/meme/${token.tokenAddress}`;
+                                    console.log(`🧪 Demo Primary: Opening Axiom with token address`);
+                                } else {
+                                    // For real tokens, fetch bonding curve/pair
+                                    try {
+                                        const response = await fetch(`${API_BASE}/pair-address/${token.tokenAddress}`);
+                                        const addressData = await response.json();
+
+                                        console.log('🔍 PRIMARY: Backend response:', addressData);
+
+                                        if (addressData.success) {
+                                            // ✅ PUMP.FUN: Check bondingCurveData first
+                                            if (addressData.bondingCurveData?.bondingCurveAddress) {
+                                                autoOpenUrl = `https://axiom.trade/meme/${addressData.bondingCurveData.bondingCurveAddress}`;
+                                                console.log(`✅ PRIMARY: Using bonding curve: ${addressData.bondingCurveData.bondingCurveAddress}`);
+                                            }
+                                            // ✅ LETSBONK: Check pairData second
+                                            else if (addressData.pairData?.pairAddress) {
+                                                autoOpenUrl = `https://axiom.trade/meme/${addressData.pairData.pairAddress}`;
+                                                console.log(`✅ PRIMARY: Using pair address: ${addressData.pairData.pairAddress}`);
+                                            }
+                                            // ❌ FALLBACK: Use token address
+                                            else {
+                                                autoOpenUrl = `https://axiom.trade/meme/${token.tokenAddress}`;
+                                                console.log(`⚠️ PRIMARY: No bonding curve or pair found, using token address`);
+                                            }
+                                        } else {
+                                            autoOpenUrl = `https://axiom.trade/meme/${token.tokenAddress}`;
+                                            console.log(`⚠️ PRIMARY: Backend returned success=false, using token address`);
+                                        }
+                                    } catch (error) {
+                                        console.error(`❌ PRIMARY: Error fetching address:`, error);
+                                        autoOpenUrl = `https://axiom.trade/meme/${token.tokenAddress}`;
+                                    }
+                                }
+                            } else {
+                                // Neo BullX destination
+                                autoOpenUrl = `https://neo.bullx.io/terminal?chainId=1399811149&address=${token.tokenAddress}`;
+                                console.log(`✅ Primary: Opening Neo BullX`);
+                            }
+
+                            console.log(`🔗 PRIMARY AUTO-OPEN URL: ${autoOpenUrl}`);
+
+                            // Open the URL
+                            if (window.electronAPI && window.electronAPI.openExternalURL) {
+                                window.electronAPI.openExternalURL(autoOpenUrl);
+                                console.log('🖥️ Primary: Opened via Electron');
+                            } else {
+                                const newWindow = window.open(autoOpenUrl, '_blank');
+                                if (newWindow) {
+                                    console.log('✅ Primary: Browser opened');
+                                } else {
+                                    console.error('❌ Primary: Popup blocked');
+                                    addNotification('warning', '🚫 Auto-open blocked by browser');
                                 }
                             }
-                        } else {
-                            autoOpenUrl = `https://neo.bullx.io/terminal?chainId=1399811149&address=${token.tokenAddress}`;
-                            console.log(`âœ… Primary: Opening Neo BullX`);
-                        }
 
-                        console.log(`ðŸ"— PRIMARY AUTO-OPEN URL: ${autoOpenUrl}`);
+                            addNotification('success', '🚀 Token page opened automatically!');
+                        }, 500);
 
-                        // âœ… SINGLE BROWSER OPEN
-                        if (window.electronAPI && window.electronAPI.openExternalURL) {
-                            window.electronAPI.openExternalURL(autoOpenUrl);
-                            console.log('ðŸ–¥ï¸ Primary: Opened via Electron');
-                        } else {
-                            const newWindow = window.open(autoOpenUrl, '_blank');
-                            if (newWindow) {
-                                console.log('âœ… Primary: Browser opened');
-                            } else {
-                                console.error('âŒ Primary: Popup blocked');
-                                addNotification('warning', 'ðŸš« Auto-open blocked by browser');
-                            }
-                        }
-
-                        addNotification('success', 'ðŸš€ Token page opened automatically!');
-                    }, 500);
+                    } else {
+                        // ✅ Token already has a tab open
+                        console.log('⚠️ PRIMARY: Tab already opened for this token, skipping...');
+                    }
                 }
                 break;
 
             case 'secondary_popup_trigger':
-                console.log('ðŸ"" SECONDARY ADMIN MATCH DETECTED');
-                console.log('ðŸ"Š Token data:', data.data.tokenData);
+                console.log('🔔 SECONDARY ADMIN MATCH DETECTED');
+                console.log('📊 Token data:', data.data.tokenData);
 
                 const secondaryTokenAddress = data.data.tokenData.tokenAddress;
 
-                // âœ… CHECK IF TAB ALREADY OPENED (by primary)
+                // ✅ CHECK IF TAB ALREADY OPENED (by primary)
                 if (openedTokenTabs.has(secondaryTokenAddress)) {
-                    console.log('âš ï¸ SECONDARY: Tab already opened for this token (likely by primary), skipping...');
-                    addNotification('info', `ðŸ"" Secondary match detected (tab already open): ${secondaryTokenAddress.substring(0, 8)}...`);
+                    console.log('⚠️ SECONDARY: Tab already opened for this token (likely by primary), skipping...');
+                    addNotification('info', `🔔 Secondary match detected (tab already open): ${secondaryTokenAddress.substring(0, 8)}...`);
                     break;
                 }
 
-                // âœ… CRITICAL FIX: Ensure config is included
+                // ✅ CRITICAL FIX: Ensure config is included
                 const tokenData = {
                     ...data.data.tokenData,
                     config: data.data.tokenData.config || {
@@ -1090,9 +1109,9 @@ function App() {
                     globalSettings: data.data.globalSnipeSettings
                 });
 
-                addNotification('info', `ðŸ"" Secondary match found: ${tokenData.tokenAddress.substring(0, 8)}...`);
+                addNotification('info', `🔔 Secondary match found: ${tokenData.tokenAddress.substring(0, 8)}...`);
 
-                // âœ… MARK AS OPENED BEFORE OPENING
+                // ✅ MARK AS OPENED BEFORE OPENING
                 setOpenedTokenTabs(prev => new Set(prev).add(secondaryTokenAddress));
 
                 setTimeout(async () => {
@@ -1101,47 +1120,65 @@ function App() {
 
                     // Determine URL based on user's tokenPageDestination setting
                     if (settings.tokenPageDestination === 'axiom') {
-                        if (token.platform === 'pumpfun' || token.pool === 'pump') {
-                            try {
-                                const response = await apiCall(`/pair-address/${token.tokenAddress}`);
-                                if (response.success && response.pairData && response.pairData.pairAddress) {
-                                    autoOpenUrl = `https://axiom.trade/meme/${response.pairData.pairAddress}`;
-                                    console.log(`âœ… SECONDARY: Opening Axiom with pair: ${response.pairData.pairAddress}`);
-                                } else {
-                                    autoOpenUrl = `https://axiom.trade/meme/${token.tokenAddress}`;
-                                    console.log(`âš ï¸ SECONDARY: Using token address`);
+                        console.log('🔍 SECONDARY: Fetching bonding curve/pair address...');
+                        console.log('🔍 SECONDARY: Token platform:', token.platform);
+                        console.log('🔍 SECONDARY: Token pool:', token.pool);
+
+                        try {
+                            const response = await fetch(`${API_BASE}/pair-address/${token.tokenAddress}`);
+                            const data = await response.json();
+
+                            console.log('🔍 SECONDARY: Backend response:', data);
+
+                            if (data.success) {
+                                // ✅ PUMP.FUN: Check bondingCurveData first
+                                if (data.bondingCurveData?.bondingCurveAddress) {
+                                    autoOpenUrl = `https://axiom.trade/meme/${data.bondingCurveData.bondingCurveAddress}`;
+                                    console.log(`✅ SECONDARY: Using bonding curve: ${data.bondingCurveData.bondingCurveAddress}`);
                                 }
-                            } catch (error) {
-                                console.error(`âŒ SECONDARY: Error fetching pair:`, error);
+                                // ✅ LETSBONK: Check pairData second
+                                else if (data.pairData?.pairAddress) {
+                                    autoOpenUrl = `https://axiom.trade/meme/${data.pairData.pairAddress}`;
+                                    console.log(`✅ SECONDARY: Using pair address: ${data.pairData.pairAddress}`);
+                                }
+                                // ❌ FALLBACK: Use token address
+                                else {
+                                    autoOpenUrl = `https://axiom.trade/meme/${token.tokenAddress}`;
+                                    console.log(`⚠️ SECONDARY: No bonding curve or pair found, using token address`);
+                                }
+                            } else {
                                 autoOpenUrl = `https://axiom.trade/meme/${token.tokenAddress}`;
+                                console.log(`⚠️ SECONDARY: Backend returned success=false, using token address`);
                             }
-                        } else {
+                        } catch (error) {
+                            console.error(`❌ SECONDARY: Error fetching address:`, error);
                             autoOpenUrl = `https://axiom.trade/meme/${token.tokenAddress}`;
-                            console.log(`âš ï¸ SECONDARY: Unknown platform, using token address`);
                         }
                     } else {
+                        // Neo BullX destination
                         autoOpenUrl = `https://neo.bullx.io/terminal?chainId=1399811149&address=${token.tokenAddress}`;
-                        console.log(`âœ… SECONDARY: Opening Neo BullX`);
+                        console.log(`✅ SECONDARY: Opening Neo BullX`);
                     }
 
-                    console.log(`ðŸ"— SECONDARY AUTO-OPEN URL: ${autoOpenUrl}`);
+                    console.log(`🔗 SECONDARY AUTO-OPEN URL: ${autoOpenUrl}`);
 
-                    // âœ… SINGLE BROWSER OPEN
+                    // Open the URL
                     if (window.electronAPI && window.electronAPI.openExternalURL) {
                         window.electronAPI.openExternalURL(autoOpenUrl);
-                        console.log('ðŸ–¥ï¸ SECONDARY: Opened via Electron');
+                        console.log('🖥️ SECONDARY: Opened via Electron');
                     } else {
                         const newWindow = window.open(autoOpenUrl, '_blank');
                         if (newWindow) {
-                            console.log('âœ… SECONDARY: Browser opened');
+                            console.log('✅ SECONDARY: Browser opened');
                         } else {
-                            console.error('âŒ SECONDARY: Popup blocked');
-                            addNotification('warning', 'ðŸš« Auto-open blocked by browser');
+                            console.error('❌ SECONDARY: Popup blocked');
+                            addNotification('warning', '🚫 Auto-open blocked by browser');
                         }
                     }
 
-                    addNotification('success', 'ðŸš€ Token page opened automatically!');
+                    addNotification('success', '🚀 Token page opened automatically!');
                 }, 500);
+
                 break;
 
             case 'community_admin_match_found':
