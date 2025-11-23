@@ -3697,87 +3697,6 @@ function App() {
         </div>
     );
 
-    const renderPopupBlockerModal = () => {
-        if (!popupBlockerModal.show) return null;
-
-        return (
-            <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
-                <div className="bg-gray-800 rounded-lg p-6 w-full max-w-2xl max-h-screen overflow-y-auto border-2 border-red-500">
-                    {/* Header */}
-                    <div className="flex items-center justify-between mb-6">
-                        <div className="flex items-center space-x-3">
-                            <div className="w-12 h-12 bg-red-600 rounded-full flex items-center justify-center">
-                                <span className="text-2xl">🚫</span>
-                            </div>
-                            <div>
-                                <h2 className="text-2xl font-bold text-white">Popup Blocked by Browser</h2>
-                                <p className="text-red-400">Token page couldn't open automatically</p>
-                            </div>
-                        </div>
-                        <button
-                            onClick={() => setPopupBlockerModal({ show: false, tokenUrl: '', tokenAddress: '', reason: '' })}
-                            className="text-gray-400 hover:text-white text-2xl"
-                        >
-                            ✖️
-                        </button>
-                    </div>
-
-                    {/* Manual Link */}
-                    <div className="bg-blue-900/20 border border-blue-500/30 rounded-lg p-4 mb-6">
-                        <h3 className="text-lg font-semibold text-blue-400 mb-3">🔗 Manual Link (Click to Open)</h3>
-                        <div className="flex items-center space-x-2">
-                            <input
-                                type="text"
-                                value={popupBlockerModal.tokenUrl}
-                                readOnly
-                                className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white text-sm"
-                            />
-                            <button
-                                onClick={() => {
-                                    window.open(popupBlockerModal.tokenUrl, '_blank');
-                                    addNotification('info', '🔗 Manual link clicked - check for new tab');
-                                }}
-                                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors"
-                            >
-                                🌐 Open
-                            </button>
-                            <button
-                                onClick={() => {
-                                    copyToClipboard(popupBlockerModal.tokenUrl, 'Token page URL');
-                                }}
-                                className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded transition-colors"
-                            >
-                                📋 Copy
-                            </button>
-                        </div>
-                    </div>
-
-                    {/* Action Buttons */}
-                    <div className="flex flex-col space-y-3 md:flex-row md:space-y-0 md:space-x-4">
-                        <button
-                            onClick={() => {
-                                window.open(popupBlockerModal.tokenUrl, '_blank');
-                                setPopupBlockerModal({ show: false, tokenUrl: '', tokenAddress: '', reason: '' });
-                            }}
-                            className="flex-1 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-bold"
-                        >
-                            🌐 Try Opening Again
-                        </button>
-                        <button
-                            onClick={() => {
-                                copyToClipboard(popupBlockerModal.tokenUrl, 'Token page URL');
-                                setPopupBlockerModal({ show: false, tokenUrl: '', tokenAddress: '', reason: '' });
-                            }}
-                            className="flex-1 px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors font-bold"
-                        >
-                            📋 Copy Link & Close
-                        </button>
-                    </div>
-                </div>
-            </div>
-        );
-    };
-
     const renderDashboard = () => (
         <div className="space-y-4 md:space-y-6">
             {/* Control Panel - keep existing */}
@@ -5479,7 +5398,7 @@ function App() {
 
             {/* Enhanced Popups */}
             {renderSecondaryPopup()}
-            {renderPopupBlockerModal()}
+            {/*renderPopupBlockerModal()*/}
 
 
             {/* Footer Info */}
