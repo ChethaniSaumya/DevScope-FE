@@ -875,7 +875,7 @@ function App() {
                                 console.error('❌ POPUP BLOCKED BY BROWSER!');
                                 console.error('   Browser prevented the popup from opening');
 
-                                addNotification('error', '🚫 Browser blocked popup - Click "Allow" in address bar');
+                                //addNotification('error', '🚫 Browser blocked popup - Click "Allow" in address bar');
 
                                 setPopupBlockerModal({
                                     show: true,
@@ -1727,7 +1727,7 @@ function App() {
                             } else {
                                 const newWindow = window.open(axiomUrl, '_blank');
                                 if (!newWindow || newWindow.closed) {
-                                    addNotification('warning', '🚫 Browser blocked popup - Click "Allow" in address bar');
+                                    //addNotification('warning', '🚫 Browser blocked popup - Click "Allow" in address bar');
                                 }
                             }
 
@@ -1744,7 +1744,7 @@ function App() {
                             } else {
                                 const newWindow = window.open(fallbackUrl, '_blank');
                                 if (!newWindow || newWindow.closed) {
-                                    addNotification('warning', '🚫 Browser blocked popup - Click "Allow" in address bar');
+                                    //addNotification('warning', '🚫 Browser blocked popup - Click "Allow" in address bar');
                                 }
                             }
 
@@ -1766,7 +1766,7 @@ function App() {
                     } else {
                         const newWindow = window.open(neoBullxUrl, '_blank');
                         if (!newWindow || newWindow.closed) {
-                            addNotification('warning', '🚫 Browser blocked popup - Click "Allow" in address bar');
+                            //addNotification('warning', '🚫 Browser blocked popup - Click "Allow" in address bar');
                         }
                     }
 
