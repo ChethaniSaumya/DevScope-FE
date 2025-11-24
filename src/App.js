@@ -946,9 +946,10 @@ function App() {
                     window.electronAPI.playSound(data.data.config.soundNotification);
                 }
 
-                // ✅ PRIMARY MATCH HANDLING - Ensure config is passed correctly
+                // ✅ PRIMARY MATCH HANDLING - Only show popup, NO auto-open here
+                // The backend will send separate auto_open_token_page event
                 if (data.data.matchType === 'primary_wallet' || data.data.matchType === 'primary_admin') {
-                    console.log('🎯 PRIMARY MATCH DETECTED - SHOWING POPUP + AUTO-OPENING WINDOW');
+                    console.log('🎯 PRIMARY MATCH DETECTED - SHOWING POPUP ONLY (NO AUTO-OPEN)');
 
                     const tokenData = {
                         ...data.data,
@@ -964,13 +965,12 @@ function App() {
                     // Show popup for ALL primary matches (demo and real)
                     setSecondaryPopup({
                         show: true,
-                        tokenData: tokenData, // ✅ Use tokenData with config
+                        tokenData: tokenData,
                         globalSettings: settings.globalSnipeSettings,
                         isPrimary: true
                     });
 
                     addNotification('info', `🎯 Primary match: ${tokenData.tokenAddress.substring(0, 8)}...`);
-
 
                     // For DEMO tokens: Trigger manual snipe
                     if (tokenData.isDemo) {
@@ -985,66 +985,7 @@ function App() {
                         }, 100);
                     }
 
-                    // Auto-open window after 500ms (for both demo and real)
-                    setTimeout(async () => {
-                        let autoOpenUrl;
-                        const token = tokenData;
-
-                        // Determine URL based on user's tokenPageDestination setting
-                        if (settings.tokenPageDestination === 'axiom') {
-                            // For demo tokens, just use token address
-                            if (token.isDemo) {
-                                autoOpenUrl = `https://axiom.trade/meme/${token.tokenAddress}`;
-                                console.log(`🧪 Demo Primary: Opening Axiom with token address`);
-                            } else {
-                                // For real tokens, fetch bonding curve/pair
-                                try {
-                                    const response = await fetch(`${API_BASE}/pair-address/${token.tokenAddress}`);
-                                    const addressData = await response.json();
-
-                                    if (addressData.success) {
-                                        if (addressData.bondingCurveData?.bondingCurveAddress) {
-                                            autoOpenUrl = `https://axiom.trade/meme/${addressData.bondingCurveData.bondingCurveAddress}`;
-                                            console.log(`✅ Real Primary: Using bonding curve: ${addressData.bondingCurveData.bondingCurveAddress}`);
-                                        } else if (addressData.pairData?.pairAddress) {
-                                            autoOpenUrl = `https://axiom.trade/meme/${addressData.pairData.pairAddress}`;
-                                            console.log(`✅ Real Primary: Using pair address: ${addressData.pairData.pairAddress}`);
-                                        } else {
-                                            autoOpenUrl = `https://axiom.trade/meme/${token.tokenAddress}`;
-                                            console.log(`⚠️ Real Primary: No address found, using token address`);
-                                        }
-                                    } else {
-                                        autoOpenUrl = `https://axiom.trade/meme/${token.tokenAddress}`;
-                                    }
-                                } catch (error) {
-                                    console.error(`❌ Error fetching address:`, error);
-                                    autoOpenUrl = `https://axiom.trade/meme/${token.tokenAddress}`;
-                                }
-                            }
-                        } else {
-                            // Neo BullX destination
-                            autoOpenUrl = `https://neo.bullx.io/terminal?chainId=1399811149&address=${token.tokenAddress}`;
-                            console.log(`✅ Primary: Opening Neo BullX`);
-                        }
-
-                        console.log(`🔗 PRIMARY AUTO-OPEN URL: ${autoOpenUrl}`);
-
-                        // Open the URL
-                        if (window.electronAPI && window.electronAPI.openExternalURL) {
-                            window.electronAPI.openExternalURL(autoOpenUrl);
-                            console.log('🖥️ Primary: Opened via Electron');
-                        } else {
-                            const newWindow = window.open(autoOpenUrl, '_blank');
-                            if (newWindow) {
-                                console.log('✅ Primary: Browser opened');
-                            } else {
-                                console.error('❌ Primary: Popup blocked');
-                                addNotification('warning', '🚫 Auto-open blocked by browser');
-                            }
-                        }
-
-                        addNotification('success', '🚀 Token page opened automatically!');
-                    }, 500);
+                    // ⚠️ REMOVED AUTO-OPEN FROM HERE - Backend handles it via auto_open_token_page event
                 }
                 break;
 
@@ -4440,16 +4381,16 @@ function App() {
                             })}
                             disabled={!hasBasicSettingsChanged()}
                             className={`w-full px-4 py-3 rounded-lg transition-all font-medium ${hasBasicSettingsChanged()
-                                    ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg'
-                                    : 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                                ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg'
+                                : 'bg-gray-600 text-gray-400 cursor-not-allowed'
                                 }`}
                         >
                             {hasBasicSettingsChanged() ? '💾 Save Basic Settings' : '✅ All Changes Saved'}
                         </button>
                         {buttonMessages.basicSettings && (
                             <div className={`text-sm px-3 py-2 rounded ${buttonMessages.basicSettings.includes('✅')
-                                    ? 'bg-green-900/20 text-green-400 border border-green-500/30'
-                                    : 'bg-red-900/20 text-red-400 border border-red-500/30'
+                                ? 'bg-green-900/20 text-green-400 border border-green-500/30'
+                                : 'bg-red-900/20 text-red-400 border border-red-500/30'
                                 }`}>
                                 {buttonMessages.basicSettings}
                             </div>
