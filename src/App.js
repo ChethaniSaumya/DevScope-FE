@@ -838,61 +838,79 @@ function App() {
                 console.log('❓ Reason:', data.data.reason);
                 console.log('='.repeat(80) + '\n');
 
-                const tokenPageUrl = data.data.tokenPageUrl;
+                const axiomUrl = data.data.tokenPageUrl; // This is the Axiom URL from backend
+                const bullxUrl = `https://neo.bullx.io/terminal?chainId=1399811149&address=${data.data.tokenAddress}`;
 
-                // Check if URL is valid
-                if (!tokenPageUrl || !tokenPageUrl.startsWith('http')) {
-                    console.error('❌ Invalid URL received:', tokenPageUrl);
+                // Check if URLs are valid
+                if (!axiomUrl || !axiomUrl.startsWith('http')) {
+                    console.error('❌ Invalid Axiom URL received:', axiomUrl);
                     addNotification('error', '❌ Invalid token page URL received');
                     break;
                 }
 
-                // Check if electronAPI exists
-                console.log('🔍 Checking for Electron API...');
-                console.log('   window.electronAPI exists:', !!window.electronAPI);
-                console.log('   window.electronAPI.openExternalURL exists:', !!(window.electronAPI?.openExternalURL));
+                console.log('🔍 Opening BOTH Axiom and BullX...');
+                console.log('   Axiom URL:', axiomUrl);
+                console.log('   BullX URL:', bullxUrl);
 
+                // Open Axiom first
                 setTimeout(() => {
                     if (window.electronAPI && window.electronAPI.openExternalURL) {
-                        console.log('🖥️ USING ELECTRON API TO OPEN URL');
+                        console.log('🖥️ Opening Axiom via Electron');
                         try {
-                            window.electronAPI.openExternalURL(tokenPageUrl);
-                            console.log('✅ Electron API call successful');
-                            addNotification('success', `🚀 Opening ${data.data.platform || 'token page'} via Electron`);
+                            window.electronAPI.openExternalURL(axiomUrl);
+                            console.log('✅ Axiom opened via Electron');
+                            addNotification('success', '🚀 Axiom opened');
                         } catch (error) {
-                            console.error('❌ Electron API error:', error);
-                            addNotification('error', `❌ Failed to open: ${error.message}`);
+                            console.error('❌ Electron API error (Axiom):', error);
+                            addNotification('error', `❌ Failed to open Axiom: ${error.message}`);
                         }
                     } else {
-                        console.log('🌐 USING BROWSER WINDOW.OPEN()');
-                        console.log('   Attempting to open:', tokenPageUrl);
-
+                        console.log('🌐 Opening Axiom via browser');
                         try {
-                            const newWindow = window.open(tokenPageUrl, '_blank', 'noopener,noreferrer');
-                            console.log('   window.open() returned:', newWindow);
-
+                            const newWindow = window.open(axiomUrl, '_blank', 'noopener,noreferrer');
                             if (!newWindow || newWindow.closed) {
-                                console.error('❌ POPUP BLOCKED BY BROWSER!');
-                                console.error('   Browser prevented the popup from opening');
-
-                                //addNotification('error', '🚫 Browser blocked popup - Click "Allow" in address bar');
-
-                                setPopupBlockerModal({
-                                    show: true,
-                                    tokenUrl: tokenPageUrl,
-                                    tokenAddress: data.data.tokenAddress,
-                                    reason: 'Browser popup blocker is active'
-                                });
+                                console.error('❌ POPUP BLOCKED BY BROWSER (Axiom)!');
+                                addNotification('error', '🚫 Browser blocked Axiom popup');
                             } else {
-                                console.log('✅ WINDOW OPENED SUCCESSFULLY');
-                                addNotification('success', `🚀 ${data.data.platform || 'Token page'} opened`);
+                                console.log('✅ Axiom opened successfully');
+                                addNotification('success', '🚀 Axiom opened');
                             }
                         } catch (error) {
-                            console.error('❌ window.open() threw error:', error);
-                            addNotification('error', `❌ Failed to open window: ${error.message}`);
+                            console.error('❌ Error opening Axiom:', error);
+                            addNotification('error', `❌ Failed to open Axiom: ${error.message}`);
                         }
                     }
                 }, 100);
+
+                // Open BullX 300ms later
+                setTimeout(() => {
+                    if (window.electronAPI && window.electronAPI.openExternalURL) {
+                        console.log('🖥️ Opening BullX via Electron');
+                        try {
+                            window.electronAPI.openExternalURL(bullxUrl);
+                            console.log('✅ BullX opened via Electron');
+                            addNotification('success', '🚀 BullX opened');
+                        } catch (error) {
+                            console.error('❌ Electron API error (BullX):', error);
+                            addNotification('error', `❌ Failed to open BullX: ${error.message}`);
+                        }
+                    } else {
+                        console.log('🌐 Opening BullX via browser');
+                        try {
+                            const newWindow = window.open(bullxUrl, '_blank', 'noopener,noreferrer');
+                            if (!newWindow || newWindow.closed) {
+                                console.error('❌ POPUP BLOCKED BY BROWSER (BullX)!');
+                                addNotification('error', '🚫 Browser blocked BullX popup');
+                            } else {
+                                console.log('✅ BullX opened successfully');
+                                addNotification('success', '🚀 BullX opened');
+                            }
+                        } catch (error) {
+                            console.error('❌ Error opening BullX:', error);
+                            addNotification('error', `❌ Failed to open BullX: ${error.message}`);
+                        }
+                    }
+                }, 400); // 400ms delay to ensure both windows open properly
 
                 break;
 
@@ -996,7 +1014,7 @@ function App() {
                         }, 100);
                     }
 
-                     // Backend will open the tab via 'auto_open_token_page' event
+                    // Backend will open the tab via 'auto_open_token_page' event
                     console.log('✅ PRIMARY MATCH: Popup shown, backend will handle tab opening');
                 }
                 break;
