@@ -563,8 +563,6 @@ function App() {
         }
     };
 
-    const [tokenProgramType, setTokenProgramType] = useState('spl'); // 'spl', 'token2022', or 'token2022_mayhem'
-
     const injectDemoToken = async (customData = {}) => {
         try {
             const payload = {
@@ -572,11 +570,7 @@ function App() {
                 customWallet: customWallet || null,
                 customTwitter: customTwitter || null,
                 customCommunity: customCommunity || null,
-                customTweet: customTweet || null,
-                // Add token program information
-                tokenProgramType: tokenProgramType || 'spl',
-                isToken2022: tokenProgramType.includes('token2022'),
-                isMayhemMode: tokenProgramType === 'token2022_mayhem'
+                customTweet: customTweet || null, // ADD THIS LINE
             };
 
             if (customData && typeof customData === 'object' && !customData.target) {
@@ -587,12 +581,7 @@ function App() {
                 method: 'POST',
                 body: JSON.stringify(payload)
             });
-
-            const programLabel = tokenProgramType === 'spl' ? 'SPL Token'
-                : tokenProgramType === 'token2022_mayhem' ? 'Token 2022 (Mayhem)'
-                    : 'Token 2022';
-
-            addNotification('success', `🧪 Demo token injected (${programLabel})`);
+            addNotification('success', '🧪 Demo token injected successfully');
         } catch (error) {
             addNotification('error', '❌ Failed to inject demo token');
             console.error('Demo injection error:', error);
@@ -838,79 +827,61 @@ function App() {
                 console.log('❓ Reason:', data.data.reason);
                 console.log('='.repeat(80) + '\n');
 
-                const axiomUrl = data.data.tokenPageUrl; // This is the Axiom URL from backend
-                const bullxUrl = `https://neo.bullx.io/terminal?chainId=1399811149&address=${data.data.tokenAddress}`;
+                const tokenPageUrl = data.data.tokenPageUrl;
 
-                // Check if URLs are valid
-                if (!axiomUrl || !axiomUrl.startsWith('http')) {
-                    console.error('❌ Invalid Axiom URL received:', axiomUrl);
+                // Check if URL is valid
+                if (!tokenPageUrl || !tokenPageUrl.startsWith('http')) {
+                    console.error('❌ Invalid URL received:', tokenPageUrl);
                     addNotification('error', '❌ Invalid token page URL received');
                     break;
                 }
 
-                console.log('🔍 Opening BOTH Axiom and BullX...');
-                console.log('   Axiom URL:', axiomUrl);
-                console.log('   BullX URL:', bullxUrl);
+                // Check if electronAPI exists
+                console.log('🔍 Checking for Electron API...');
+                console.log('   window.electronAPI exists:', !!window.electronAPI);
+                console.log('   window.electronAPI.openExternalURL exists:', !!(window.electronAPI?.openExternalURL));
 
-                // Open Axiom first
                 setTimeout(() => {
                     if (window.electronAPI && window.electronAPI.openExternalURL) {
-                        console.log('🖥️ Opening Axiom via Electron');
+                        console.log('🖥️ USING ELECTRON API TO OPEN URL');
                         try {
-                            window.electronAPI.openExternalURL(axiomUrl);
-                            console.log('✅ Axiom opened via Electron');
-                            addNotification('success', '🚀 Axiom opened');
+                            window.electronAPI.openExternalURL(tokenPageUrl);
+                            console.log('✅ Electron API call successful');
+                            addNotification('success', `🚀 Opening ${data.data.platform || 'token page'} via Electron`);
                         } catch (error) {
-                            console.error('❌ Electron API error (Axiom):', error);
-                            addNotification('error', `❌ Failed to open Axiom: ${error.message}`);
+                            console.error('❌ Electron API error:', error);
+                            addNotification('error', `❌ Failed to open: ${error.message}`);
                         }
                     } else {
-                        console.log('🌐 Opening Axiom via browser');
+                        console.log('🌐 USING BROWSER WINDOW.OPEN()');
+                        console.log('   Attempting to open:', tokenPageUrl);
+
                         try {
-                            const newWindow = window.open(axiomUrl, '_blank', 'noopener,noreferrer');
+                            const newWindow = window.open(tokenPageUrl, '_blank', 'noopener,noreferrer');
+                            console.log('   window.open() returned:', newWindow);
+
                             if (!newWindow || newWindow.closed) {
-                                console.error('❌ POPUP BLOCKED BY BROWSER (Axiom)!');
-                                addNotification('error', '🚫 Browser blocked Axiom popup');
+                                console.error('❌ POPUP BLOCKED BY BROWSER!');
+                                console.error('   Browser prevented the popup from opening');
+
+                                addNotification('error', '🚫 Browser blocked popup - Click "Allow" in address bar');
+
+                                setPopupBlockerModal({
+                                    show: true,
+                                    tokenUrl: tokenPageUrl,
+                                    tokenAddress: data.data.tokenAddress,
+                                    reason: 'Browser popup blocker is active'
+                                });
                             } else {
-                                console.log('✅ Axiom opened successfully');
-                                addNotification('success', '🚀 Axiom opened');
+                                console.log('✅ WINDOW OPENED SUCCESSFULLY');
+                                addNotification('success', `🚀 ${data.data.platform || 'Token page'} opened`);
                             }
                         } catch (error) {
-                            console.error('❌ Error opening Axiom:', error);
-                            addNotification('error', `❌ Failed to open Axiom: ${error.message}`);
+                            console.error('❌ window.open() threw error:', error);
+                            addNotification('error', `❌ Failed to open window: ${error.message}`);
                         }
                     }
                 }, 100);
-
-                // Open BullX 300ms later
-                setTimeout(() => {
-                    if (window.electronAPI && window.electronAPI.openExternalURL) {
-                        console.log('🖥️ Opening BullX via Electron');
-                        try {
-                            window.electronAPI.openExternalURL(bullxUrl);
-                            console.log('✅ BullX opened via Electron');
-                            addNotification('success', '🚀 BullX opened');
-                        } catch (error) {
-                            console.error('❌ Electron API error (BullX):', error);
-                            addNotification('error', `❌ Failed to open BullX: ${error.message}`);
-                        }
-                    } else {
-                        console.log('🌐 Opening BullX via browser');
-                        try {
-                            const newWindow = window.open(bullxUrl, '_blank', 'noopener,noreferrer');
-                            if (!newWindow || newWindow.closed) {
-                                console.error('❌ POPUP BLOCKED BY BROWSER (BullX)!');
-                                addNotification('error', '🚫 Browser blocked BullX popup');
-                            } else {
-                                console.log('✅ BullX opened successfully');
-                                addNotification('success', '🚀 BullX opened');
-                            }
-                        } catch (error) {
-                            console.error('❌ Error opening BullX:', error);
-                            addNotification('error', `❌ Failed to open BullX: ${error.message}`);
-                        }
-                    }
-                }, 400); // 400ms delay to ensure both windows open properly
 
                 break;
 
@@ -1014,8 +985,66 @@ function App() {
                         }, 100);
                     }
 
-                    // Backend will open the tab via 'auto_open_token_page' event
-                    console.log('✅ PRIMARY MATCH: Popup shown, backend will handle tab opening');
+                    // Auto-open window after 500ms (for both demo and real)
+                    setTimeout(async () => {
+                        let autoOpenUrl;
+                        const token = tokenData;
+
+                        // Determine URL based on user's tokenPageDestination setting
+                        if (settings.tokenPageDestination === 'axiom') {
+                            // For demo tokens, just use token address
+                            if (token.isDemo) {
+                                autoOpenUrl = `https://axiom.trade/meme/${token.tokenAddress}`;
+                                console.log(`🧪 Demo Primary: Opening Axiom with token address`);
+                            } else {
+                                // For real tokens, fetch bonding curve/pair
+                                try {
+                                    const response = await fetch(`${API_BASE}/pair-address/${token.tokenAddress}`);
+                                    const addressData = await response.json();
+
+                                    if (addressData.success) {
+                                        if (addressData.bondingCurveData?.bondingCurveAddress) {
+                                            autoOpenUrl = `https://axiom.trade/meme/${addressData.bondingCurveData.bondingCurveAddress}`;
+                                            console.log(`✅ Real Primary: Using bonding curve: ${addressData.bondingCurveData.bondingCurveAddress}`);
+                                        } else if (addressData.pairData?.pairAddress) {
+                                            autoOpenUrl = `https://axiom.trade/meme/${addressData.pairData.pairAddress}`;
+                                            console.log(`✅ Real Primary: Using pair address: ${addressData.pairData.pairAddress}`);
+                                        } else {
+                                            autoOpenUrl = `https://axiom.trade/meme/${token.tokenAddress}`;
+                                            console.log(`⚠️ Real Primary: No address found, using token address`);
+                                        }
+                                    } else {
+                                        autoOpenUrl = `https://axiom.trade/meme/${token.tokenAddress}`;
+                                    }
+                                } catch (error) {
+                                    console.error(`❌ Error fetching address:`, error);
+                                    autoOpenUrl = `https://axiom.trade/meme/${token.tokenAddress}`;
+                                }
+                            }
+                        } else {
+                            // Neo BullX destination
+                            autoOpenUrl = `https://neo.bullx.io/terminal?chainId=1399811149&address=${token.tokenAddress}`;
+                            console.log(`✅ Primary: Opening Neo BullX`);
+                        }
+
+                        console.log(`🔗 PRIMARY AUTO-OPEN URL: ${autoOpenUrl}`);
+
+                        // Open the URL
+                        if (window.electronAPI && window.electronAPI.openExternalURL) {
+                            window.electronAPI.openExternalURL(autoOpenUrl);
+                            console.log('🖥️ Primary: Opened via Electron');
+                        } else {
+                            const newWindow = window.open(autoOpenUrl, '_blank');
+                            if (newWindow) {
+                                console.log('✅ Primary: Browser opened');
+                            } else {
+                                console.error('❌ Primary: Popup blocked');
+                                addNotification('warning', '🚫 Auto-open blocked by browser');
+                            }
+                        }
+
+                        addNotification('success', '🚀 Token page opened automatically!');
+                    }, 500);
                 }
                 break;
 
@@ -1745,7 +1774,7 @@ function App() {
                             } else {
                                 const newWindow = window.open(axiomUrl, '_blank');
                                 if (!newWindow || newWindow.closed) {
-                                    //addNotification('warning', '🚫 Browser blocked popup - Click "Allow" in address bar');
+                                    addNotification('warning', '🚫 Browser blocked popup - Click "Allow" in address bar');
                                 }
                             }
 
@@ -1762,7 +1791,7 @@ function App() {
                             } else {
                                 const newWindow = window.open(fallbackUrl, '_blank');
                                 if (!newWindow || newWindow.closed) {
-                                    //addNotification('warning', '🚫 Browser blocked popup - Click "Allow" in address bar');
+                                    addNotification('warning', '🚫 Browser blocked popup - Click "Allow" in address bar');
                                 }
                             }
 
@@ -1784,7 +1813,7 @@ function App() {
                     } else {
                         const newWindow = window.open(neoBullxUrl, '_blank');
                         if (!newWindow || newWindow.closed) {
-                            //addNotification('warning', '🚫 Browser blocked popup - Click "Allow" in address bar');
+                            addNotification('warning', '🚫 Browser blocked popup - Click "Allow" in address bar');
                         }
                     }
 
@@ -2290,332 +2319,251 @@ function App() {
             {/* Demo Control Panel */}
             <div className="bg-gray-800 rounded-lg p-4 md:p-6">
                 <div className="flex items-center space-x-2 mb-4">
-                    <h2 className="text-lg md:text-xl font-semibold text-white">🧪 Demo Token Testing</h2>
+                    <h2 className="text-lg md:text-xl font-semibold text-white">🧪 Demo Token Injection</h2>
                     <div className="px-2 py-1 bg-orange-600 text-white text-xs rounded">
-                        TESTING MODE
+                        TESTING ONLY
                     </div>
                 </div>
                 <p className="text-sm text-gray-400 mb-6">
-                    Test your complete detection and sniping workflow with simulated tokens
+                    Inject fake tokens to test your filtering and sniping logic without waiting for real tokens.
                 </p>
 
-                {!botStatus.isRunning && (
+                {/*{!botStatus.isRunning && (
                     <div className="bg-red-900/20 border border-red-500/30 rounded-lg p-4 mb-6">
-                        <p className="text-red-400">⚠️ Start the bot first to test demo tokens</p>
+                        <p className="text-red-400">⚠️ Bot will be running to inject demo tokens</p>
                     </div>
-                )}
+                )}*/}
 
-                {/* Template Selection & Configuration */}
-                <div className="space-y-4">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {/* Template Selector */}
-                        <div>
-                            <label className="block text-sm font-medium text-gray-300 mb-2">
-                                Select Demo Template
-                            </label>
-                            <select
-                                value={selectedTemplate}
-                                onChange={(e) => setSelectedTemplate(parseInt(e.target.value))}
-                                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
-                                disabled={!botStatus.isRunning}
-                            >
-                                {demoTemplates.map((template, index) => (
-                                    <option key={index} value={index}>
-                                        {template.name} ({template.symbol}) - {template.platform}
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
-
-                        {/* Custom Wallet */}
-                        <div>
-                            <label className="block text-sm font-medium text-gray-300 mb-2">
-                                Custom Creator Wallet (Optional)
-                            </label>
-                            <input
-                                type="text"
-                                value={customWallet}
-                                onChange={(e) => setCustomWallet(e.target.value)}
-                                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
-                                placeholder="e.g., HaSdFi2wKLT..."
-                                disabled={!botStatus.isRunning}
-                            />
-                        </div>
-
-                        {/* Custom Twitter Handle */}
-                        <div>
-                            <label className="block text-sm font-medium text-gray-300 mb-2">
-                                Custom Twitter Handle (Optional)
-                            </label>
-                            <input
-                                type="text"
-                                value={customTwitter}
-                                onChange={(e) => setCustomTwitter(e.target.value)}
-                                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
-                                placeholder="e.g., elonmusk"
-                                disabled={!botStatus.isRunning}
-                            />
-                        </div>
-
-                        {/* Custom Tweet URL */}
-                        <div>
-                            <label className="block text-sm font-medium text-gray-300 mb-2">
-                                Custom Tweet URL (Optional)
-                            </label>
-                            <input
-                                type="text"
-                                value={customTweet}
-                                onChange={(e) => setCustomTweet(e.target.value)}
-                                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
-                                placeholder="e.g., https://twitter.com/user/status/123..."
-                                disabled={!botStatus.isRunning}
-                            />
-                        </div>
-
-                        {/* Custom Community ID */}
-                        <div>
-                            <label className="block text-sm font-medium text-gray-300 mb-2">
-                                Custom Community ID (Optional)
-                            </label>
-                            <input
-                                type="text"
-                                value={customCommunity}
-                                onChange={(e) => setCustomCommunity(e.target.value)}
-                                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
-                                placeholder="e.g., 1864891560858468809"
-                                disabled={!botStatus.isRunning}
-                            />
-                        </div>
-
-                        {/* Token Program Selection */}
-                        <div>
-                            <label className="block text-sm font-medium text-gray-300 mb-2">
-                                Token Program Type
-                            </label>
-                            <select
-                                value={tokenProgramType}
-                                onChange={(e) => setTokenProgramType(e.target.value)}
-                                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
-                                disabled={!botStatus.isRunning}
-                            >
-                                <option value="spl">SPL Token (Standard)</option>
-                                <option value="token2022">Token 2022 (Extensions)</option>
-                                <option value="token2022_mayhem">Token 2022 Mayhem Mode</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    {/* Main Inject Button */}
-                    <div className="flex justify-center pt-2">
-                        <button
-                            onClick={() => injectDemoToken()}
-                            disabled={!botStatus.isRunning}
-                            className="px-8 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white rounded-lg transition-colors font-medium text-base"
+                {/* Template Selection */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-2">
+                            Demo Template
+                        </label>
+                        <select
+                            value={selectedTemplate}
+                            onChange={(e) => setSelectedTemplate(parseInt(e.target.value))}
+                            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
+                        //disabled={!botStatus.isRunning}
                         >
-                            🚀 Inject Demo Token
-                        </button>
+                            {demoTemplates.map((template, index) => (
+                                <option key={index} value={index}>
+                                    {template.name} ({template.symbol}) - {template.platform}
+                                </option>
+                            ))}
+                        </select>
                     </div>
+
+                    <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-2">
+                            Custom Wallet
+                        </label>
+                        <input
+                            type="text"
+                            value={customWallet}
+                            onChange={(e) => setCustomWallet(e.target.value)}
+                            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
+                            placeholder="Override creator wallet"
+                        //disabled={!botStatus.isRunning}
+                        />
+                    </div>
+
+
+                    <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-2">
+                            Custom Twitter (Optional)
+                        </label>
+                        <input
+                            type="text"
+                            value={customTwitter}
+                            onChange={(e) => setCustomTwitter(e.target.value)} // UNCOMMENT THIS LINE
+                            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
+                            placeholder="Override Twitter handle"
+                        // disabled={!botStatus.isRunning} // COMMENT OR REMOVE THIS LINE
+                        />
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-2">
+                            Custom Twitter Community (Optional)
+                        </label>
+                        <input
+                            type="text"
+                            value={customCommunity}
+                            onChange={(e) => setCustomCommunity(e.target.value)}
+                            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
+                            placeholder="Community ID (e.g., 1234567890)"
+                        // disabled={!botStatus.isRunning}
+                        />
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-2">
+                            Custom Twitter Status/Tweet (Optional)
+                        </label>
+                        <input
+                            type="text"
+                            value={customTweet}
+                            onChange={(e) => setCustomTweet(e.target.value)}
+                            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
+                            placeholder="Tweet URL (e.g., x.com/user/status/123...)"
+                        // disabled={!botStatus.isRunning}
+                        />
+                    </div>
+
                 </div>
-            </div>
 
-            {/* Quick Test Scenarios */}
-            <div className="bg-gray-800 rounded-lg p-4 md:p-6">
-                <h3 className="text-lg font-semibold text-white mb-4">⚡ Quick Test Scenarios</h3>
-                <p className="text-sm text-gray-400 mb-4">
-                    Test specific detection scenarios using your configured admin lists
-                </p>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-                    {/* Test Primary Detection */}
+                {/* Quick Action Buttons */}
+                <div className="mt-6 grid grid-cols-2 md:grid-cols-4 gap-3">
                     <button
-                        onClick={() => injectFromList('primary_admins')}
-                        disabled={!botStatus.isRunning || lists.primary_admins.length === 0}
-                        className="px-4 py-3 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white rounded-lg transition-colors"
+                        onClick={() => injectDemoToken()}  // <-- Add empty parentheses
+                        // disabled={!botStatus.isRunning}
+                        className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white rounded-lg transition-colors text-sm"
                     >
-                        <div className="text-sm font-medium">🎯 Test Primary Match</div>
-                        <div className="text-xs opacity-75 mt-1">
-                            Should auto-snipe ({lists.primary_admins.length} admins)
-                        </div>
+                        🧪 Inject Single
                     </button>
 
-                    {/* Test Secondary Detection */}
                     <button
-                        onClick={() => injectFromList('secondary_admins')}
-                        disabled={!botStatus.isRunning || lists.secondary_admins.length === 0}
-                        className="px-4 py-3 bg-yellow-600 hover:bg-yellow-700 disabled:bg-gray-600 text-white rounded-lg transition-colors"
+                        onClick={injectDemoBatch}
+                        disabled={!botStatus.isRunning}
+                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white rounded-lg transition-colors text-sm"
                     >
-                        <div className="text-sm font-medium">🔔 Test Secondary Match</div>
-                        <div className="text-xs opacity-75 mt-1">
-                            Should notify only ({lists.secondary_admins.length} admins)
-                        </div>
+                        🚀 Inject Batch (5)
                     </button>
 
-                    {/* Test Pump.fun Platform */}
                     <button
                         onClick={() => injectDemoToken({ platform: 'pumpfun' })}
                         disabled={!botStatus.isRunning}
-                        className="px-4 py-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white rounded-lg transition-colors"
+                        className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white rounded-lg transition-colors text-sm"
                     >
-                        <div className="text-sm font-medium">🎯 Test Pump.fun</div>
-                        <div className="text-xs opacity-75 mt-1">
-                            Force pump.fun platform
-                        </div>
+                        🎯 Force Pump.fun
                     </button>
 
-                    {/* Test LetsBonk Platform */}
                     <button
                         onClick={() => injectDemoToken({ platform: 'letsbonk' })}
                         disabled={!botStatus.isRunning}
-                        className="px-4 py-3 bg-orange-600 hover:bg-orange-700 disabled:bg-gray-600 text-white rounded-lg transition-colors"
+                        className="px-4 py-2 bg-orange-600 hover:bg-orange-700 disabled:bg-gray-600 text-white rounded-lg transition-colors text-sm"
                     >
-                        <div className="text-sm font-medium">🎯 Test LetsBonk</div>
-                        <div className="text-xs opacity-75 mt-1">
-                            Force letsbonk platform
-                        </div>
+                        🎯 Force LetsBonk
                     </button>
                 </div>
             </div>
 
-            {/* Speed & Load Testing */}
+            {/* Test With Your Lists */}
             <div className="bg-gray-800 rounded-lg p-4 md:p-6">
-                <h3 className="text-lg font-semibold text-white mb-4">⚡ Speed & Load Testing</h3>
+                <h3 className="text-lg font-semibold text-white mb-4">Test With Your Lists</h3>
                 <p className="text-sm text-gray-400 mb-4">
-                    Test system performance with multiple token injections
+                    Inject tokens that will match entries in your lists to test primary/secondary detection
                 </p>
 
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <button
+                        onClick={() => injectFromList('primary_admins')}
+                        disabled={!botStatus.isRunning || lists.primary_admins.length === 0}
+                        className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white rounded-lg transition-colors text-sm"
+                    >
+                        🎯 Primary Wallet
+                        <div className="text-xs opacity-75">({lists.primary_admins.length} entries)</div>
+                    </button>
+
+                    <button
+                        onClick={() => injectFromList('primary_admins')}
+                        disabled={!botStatus.isRunning || lists.primary_admins.length === 0}
+                        className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white rounded-lg transition-colors text-sm"
+                    >
+                        🎯 Primary Admin
+                        <div className="text-xs opacity-75">({lists.primary_admins.length} entries)</div>
+                    </button>
+
+                    <button
+                        onClick={() => injectFromList('secondary_admins')}
+                        disabled={!botStatus.isRunning || lists.secondary_admins.length === 0}
+                        className="px-4 py-2 bg-yellow-600 hover:bg-yellow-700 disabled:bg-gray-600 text-white rounded-lg transition-colors text-sm"
+                    >
+                        🔔 Secondary Wallet
+                        <div className="text-xs opacity-75">({lists.secondary_admins.length} entries)</div>
+                    </button>
+
+                    <button
+                        onClick={() => injectFromList('secondary_admins')}
+                        disabled={!botStatus.isRunning || lists.secondary_admins.length === 0}
+                        className="px-4 py-2 bg-orange-600 hover:bg-orange-700 disabled:bg-gray-600 text-white rounded-lg transition-colors text-sm"
+                    >
+                        🔔 Secondary Admin
+                        <div className="text-xs opacity-75">({lists.secondary_admins.length} entries)</div>
+                    </button>
+                </div>
+            </div>
+
+            {/* Demo Templates Info */}
+            <div className="bg-gray-800 rounded-lg p-4 md:p-6">
+                <h3 className="text-lg font-semibold text-white mb-4">Available Demo Templates</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {demoTemplates.map((template, index) => (
+                        <div
+                            key={index}
+                            className={`p-3 rounded-lg border-2 transition-colors cursor-pointer ${selectedTemplate === index
+                                ? 'border-blue-500 bg-blue-900/20'
+                                : 'border-gray-600 bg-gray-700 hover:border-gray-500'
+                                }`}
+                            onClick={() => setSelectedTemplate(index)}
+                        >
+                            <div className="flex items-center space-x-2 mb-2">
+                                <h4 className="font-semibold text-white">{template.name}</h4>
+                                <span className="text-xs px-2 py-1 bg-gray-600 text-white rounded">
+                                    {template.symbol}
+                                </span>
+                            </div>
+                            <div className="text-xs text-gray-400 space-y-1">
+                                <p>Platform: {template.platform}</p>
+                                <p>Twitter: @{template.twitterHandle}</p>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+
+            {/* Speed Test Section */}
+            <div className="bg-gray-800 rounded-lg p-4 md:p-6">
+                <h3 className="text-lg font-semibold text-white mb-4">⚡ Speed Testing</h3>
+                <p className="text-sm text-gray-400 mb-4">
+                    Test the speed of your detection and sniping logic
+                </p>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                     <button
                         onClick={() => injectDemoBatch()}
                         disabled={!botStatus.isRunning}
-                        className="px-4 py-3 bg-red-600 hover:bg-red-700 disabled:bg-gray-600 text-white rounded-lg transition-colors"
+                        className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-gray-600 text-white rounded-lg transition-colors text-sm"
                     >
-                        <div className="text-sm font-medium">🔥 Batch Test</div>
-                        <div className="text-xs opacity-75 mt-1">
-                            5 tokens / 3s delay
-                        </div>
+                        🔥 Rapid Fire (5 tokens)
                     </button>
-
                     <button
                         onClick={async () => {
                             for (let i = 0; i < 10; i++) {
                                 await injectDemoToken();
-                                await new Promise(resolve => setTimeout(resolve, 500));
+                                await new Promise(resolve => setTimeout(resolve, 100));
                             }
                         }}
                         disabled={!botStatus.isRunning}
-                        className="px-4 py-3 bg-red-700 hover:bg-red-800 disabled:bg-gray-600 text-white rounded-lg transition-colors"
+                        className="px-4 py-2 bg-red-700 hover:bg-red-800 disabled:bg-gray-600 text-white rounded-lg transition-colors text-sm"
                     >
-                        <div className="text-sm font-medium">⚡ Stress Test</div>
-                        <div className="text-xs opacity-75 mt-1">
-                            10 tokens / 500ms delay
-                        </div>
+                        ⚡ Lightning (10 tokens)
                     </button>
-
                     <button
-                        onClick={async () => {
+                        onClick={() => {
+                            // Inject one token that should match primary list immediately
                             if (lists.primary_admins.length > 0) {
-                                for (let i = 0; i < 3; i++) {
-                                    await injectFromList('primary_admins');
-                                    await new Promise(resolve => setTimeout(resolve, 1000));
-                                }
-                                addNotification('info', '🎯 Primary speed test complete!');
+                                injectFromList('primary_admins');
+                                addNotification('info', '🏁 Speed test: Primary wallet token injected!');
+                            } else {
+                                addNotification('warning', '⚠️ Add wallets to primary list first');
                             }
                         }}
-                        disabled={!botStatus.isRunning || lists.primary_admins.length === 0}
-                        className="px-4 py-3 bg-green-700 hover:bg-green-800 disabled:bg-gray-600 text-white rounded-lg transition-colors"
+                        disabled={!botStatus.isRunning}
+                        className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white rounded-lg transition-colors text-sm"
                     >
-                        <div className="text-sm font-medium">🎯 Primary Speed Test</div>
-                        <div className="text-xs opacity-75 mt-1">
-                            3 primary matches / 1s delay
-                        </div>
+                        🏁 Speed Test Snipe
                     </button>
-                </div>
-            </div>
-
-            {/* Understanding Demo Tokens */}
-            <div className="bg-gray-800 rounded-lg p-4 md:p-6">
-                <h3 className="text-lg font-semibold text-white mb-4">📚 How Demo Testing Works</h3>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {/* Process Flow */}
-                    <div className="bg-blue-900/20 border border-blue-500/30 rounded-lg p-4">
-                        <h4 className="text-blue-400 font-medium mb-3">🔄 Complete Test Flow</h4>
-                        <div className="text-sm text-blue-200 space-y-2">
-                            <p><span className="font-semibold">1.</span> Demo token is injected with selected template</p>
-                            <p><span className="font-semibold">2.</span> System processes token through detection pipeline</p>
-                            <p><span className="font-semibold">3.</span> Checks wallet/Twitter/community against admin lists</p>
-                            <p><span className="font-semibold">4.</span> Primary match → Auto-snipes with global settings</p>
-                            <p><span className="font-semibold">5.</span> Secondary match → Shows notification popup only</p>
-                            <p><span className="font-semibold">6.</span> Opens token page based on tokenPageDestination setting</p>
-                        </div>
-                    </div>
-
-                    {/* Custom Overrides */}
-                    <div className="bg-purple-900/20 border border-purple-500/30 rounded-lg p-4">
-                        <h4 className="text-purple-400 font-medium mb-3">🎨 Custom Overrides</h4>
-                        <div className="text-sm text-purple-200 space-y-2">
-                            <p><span className="font-semibold">Wallet:</span> Test specific creator wallet detection</p>
-                            <p><span className="font-semibold">Twitter:</span> Test individual Twitter account matching</p>
-                            <p><span className="font-semibold">Tweet URL:</span> Test tweet-based detection (checks author)</p>
-                            <p><span className="font-semibold">Community:</span> Test community-based detection</p>
-                            <p><span className="font-semibold">Token Program:</span> Test SPL vs Token 2022 handling</p>
-                            <p className="text-yellow-300 mt-2">💡 Leave empty to use template defaults</p>
-                        </div>
-                    </div>
-
-                    {/* Token Program Information */}
-                    <div className="bg-cyan-900/20 border border-cyan-500/30 rounded-lg p-4">
-                        <h4 className="text-cyan-400 font-medium mb-3">🔧 Token Program Types</h4>
-                        <div className="text-sm text-cyan-200 space-y-2">
-                            <p><span className="font-semibold text-green-300">SPL Token:</span> Standard Solana tokens (most common)</p>
-                            <p><span className="font-semibold text-blue-300">Token 2022:</span> New token standard with extensions</p>
-                            <p><span className="font-semibold text-orange-300">Token 2022 Mayhem:</span> Special meme token variant</p>
-                            <p className="text-yellow-300 mt-2">⚠️ Different ATAs are created for each program type</p>
-                        </div>
-                    </div>
-
-                    {/* Admin Lists Info */}
-                    <div className="bg-green-900/20 border border-green-500/30 rounded-lg p-4">
-                        <h4 className="text-green-400 font-medium mb-3">🎯 Primary vs Secondary</h4>
-                        <div className="text-sm text-green-200 space-y-2">
-                            <p><span className="font-semibold text-green-300">Primary Admins:</span></p>
-                            <p>• Auto-snipes immediately</p>
-                            <p>• Uses global snipe settings</p>
-                            <p>• Opens token page automatically</p>
-                            <p className="mt-2"><span className="font-semibold text-yellow-300">Secondary Admins:</span></p>
-                            <p>• Shows notification popup only</p>
-                            <p>• No automatic sniping</p>
-                            <p>• Requires manual action</p>
-                        </div>
-                    </div>
-
-                    {/* Available Templates */}
-                    <div className="bg-gray-700 rounded-lg p-4">
-                        <h4 className="text-gray-300 font-medium mb-3">📝 Demo Templates</h4>
-                        <div className="text-sm text-gray-300 space-y-2">
-                            {demoTemplates.map((template, index) => (
-                                <div key={index} className="flex items-center justify-between py-1 border-b border-gray-600 last:border-0">
-                                    <span className="font-medium">{template.name}</span>
-                                    <span className="text-xs bg-gray-600 px-2 py-1 rounded">
-                                        {template.platform}
-                                    </span>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            {/* Tips & Best Practices */}
-            <div className="bg-yellow-900/20 border border-yellow-500/30 rounded-lg p-4">
-                <h4 className="text-yellow-400 font-medium mb-2">💡 Testing Tips</h4>
-                <div className="text-sm text-yellow-200 space-y-1">
-                    <p>• Start with single token tests before running batch tests</p>
-                    <p>• Monitor the Detected Tokens tab to verify detection logic</p>
-                    <p>• Check browser console for detailed processing logs</p>
-                    <p>• Use custom overrides to test specific matching scenarios</p>
-                    <p>• Verify popup blockers are disabled for auto-opening token pages</p>
-                    <p>• Test both platforms (pump.fun and letsbonk) separately</p>
                 </div>
             </div>
         </div>
@@ -3715,6 +3663,87 @@ function App() {
         </div>
     );
 
+    const renderPopupBlockerModal = () => {
+        if (!popupBlockerModal.show) return null;
+
+        return (
+            <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+                <div className="bg-gray-800 rounded-lg p-6 w-full max-w-2xl max-h-screen overflow-y-auto border-2 border-red-500">
+                    {/* Header */}
+                    <div className="flex items-center justify-between mb-6">
+                        <div className="flex items-center space-x-3">
+                            <div className="w-12 h-12 bg-red-600 rounded-full flex items-center justify-center">
+                                <span className="text-2xl">🚫</span>
+                            </div>
+                            <div>
+                                <h2 className="text-2xl font-bold text-white">Popup Blocked by Browser</h2>
+                                <p className="text-red-400">Token page couldn't open automatically</p>
+                            </div>
+                        </div>
+                        <button
+                            onClick={() => setPopupBlockerModal({ show: false, tokenUrl: '', tokenAddress: '', reason: '' })}
+                            className="text-gray-400 hover:text-white text-2xl"
+                        >
+                            ✖️
+                        </button>
+                    </div>
+
+                    {/* Manual Link */}
+                    <div className="bg-blue-900/20 border border-blue-500/30 rounded-lg p-4 mb-6">
+                        <h3 className="text-lg font-semibold text-blue-400 mb-3">🔗 Manual Link (Click to Open)</h3>
+                        <div className="flex items-center space-x-2">
+                            <input
+                                type="text"
+                                value={popupBlockerModal.tokenUrl}
+                                readOnly
+                                className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white text-sm"
+                            />
+                            <button
+                                onClick={() => {
+                                    window.open(popupBlockerModal.tokenUrl, '_blank');
+                                    addNotification('info', '🔗 Manual link clicked - check for new tab');
+                                }}
+                                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors"
+                            >
+                                🌐 Open
+                            </button>
+                            <button
+                                onClick={() => {
+                                    copyToClipboard(popupBlockerModal.tokenUrl, 'Token page URL');
+                                }}
+                                className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded transition-colors"
+                            >
+                                📋 Copy
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Action Buttons */}
+                    <div className="flex flex-col space-y-3 md:flex-row md:space-y-0 md:space-x-4">
+                        <button
+                            onClick={() => {
+                                window.open(popupBlockerModal.tokenUrl, '_blank');
+                                setPopupBlockerModal({ show: false, tokenUrl: '', tokenAddress: '', reason: '' });
+                            }}
+                            className="flex-1 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-bold"
+                        >
+                            🌐 Try Opening Again
+                        </button>
+                        <button
+                            onClick={() => {
+                                copyToClipboard(popupBlockerModal.tokenUrl, 'Token page URL');
+                                setPopupBlockerModal({ show: false, tokenUrl: '', tokenAddress: '', reason: '' });
+                            }}
+                            className="flex-1 px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors font-bold"
+                        >
+                            📋 Copy Link & Close
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
     const renderDashboard = () => (
         <div className="space-y-4 md:space-y-6">
             {/* Control Panel - keep existing */}
@@ -4411,16 +4440,16 @@ function App() {
                             })}
                             disabled={!hasBasicSettingsChanged()}
                             className={`w-full px-4 py-3 rounded-lg transition-all font-medium ${hasBasicSettingsChanged()
-                                ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg'
-                                : 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                                    ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg'
+                                    : 'bg-gray-600 text-gray-400 cursor-not-allowed'
                                 }`}
                         >
                             {hasBasicSettingsChanged() ? '💾 Save Basic Settings' : '✅ All Changes Saved'}
                         </button>
                         {buttonMessages.basicSettings && (
                             <div className={`text-sm px-3 py-2 rounded ${buttonMessages.basicSettings.includes('✅')
-                                ? 'bg-green-900/20 text-green-400 border border-green-500/30'
-                                : 'bg-red-900/20 text-red-400 border border-red-500/30'
+                                    ? 'bg-green-900/20 text-green-400 border border-green-500/30'
+                                    : 'bg-red-900/20 text-red-400 border border-red-500/30'
                                 }`}>
                                 {buttonMessages.basicSettings}
                             </div>
@@ -5416,7 +5445,7 @@ function App() {
 
             {/* Enhanced Popups */}
             {renderSecondaryPopup()}
-            {/*renderPopupBlockerModal()*/}
+            {renderPopupBlockerModal()}
 
 
             {/* Footer Info */}
