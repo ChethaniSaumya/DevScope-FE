@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 
 import './App.css';
+import SnipeTest from './components/SnipeTest';
 
 const API_BASE = 'https://devscope.fun:3002/api';
 //const API_BASE = 'https://devscope.fun:3002/api';
@@ -4440,16 +4441,16 @@ function App() {
                             })}
                             disabled={!hasBasicSettingsChanged()}
                             className={`w-full px-4 py-3 rounded-lg transition-all font-medium ${hasBasicSettingsChanged()
-                                    ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg'
-                                    : 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                                ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg'
+                                : 'bg-gray-600 text-gray-400 cursor-not-allowed'
                                 }`}
                         >
                             {hasBasicSettingsChanged() ? '💾 Save Basic Settings' : '✅ All Changes Saved'}
                         </button>
                         {buttonMessages.basicSettings && (
                             <div className={`text-sm px-3 py-2 rounded ${buttonMessages.basicSettings.includes('✅')
-                                    ? 'bg-green-900/20 text-green-400 border border-green-500/30'
-                                    : 'bg-red-900/20 text-red-400 border border-red-500/30'
+                                ? 'bg-green-900/20 text-green-400 border border-green-500/30'
+                                : 'bg-red-900/20 text-red-400 border border-red-500/30'
                                 }`}>
                                 {buttonMessages.basicSettings}
                             </div>
@@ -5402,7 +5403,7 @@ function App() {
                             ⚙️ Settings
                         </button>
 
-                        <button
+                        {/*<button
                             onClick={() => setActiveTab('demo')}
                             className={`py-3 md:py-4 px-2 border-b-2 transition-colors whitespace-nowrap text-sm md:text-base ${activeTab === 'demo'
                                 ? 'border-blue-500 text-blue-400'
@@ -5412,7 +5413,7 @@ function App() {
                             🧪 Demo
                         </button>
 
-                        {/*<button
+                        <button
                             onClick={() => setActiveTab('twitter')}
                             className={`py-3 md:py-4 px-2 border-b-2 transition-colors whitespace-nowrap text-sm md:text-base ${activeTab === 'twitter'
                                 ? 'border-blue-500 text-blue-400'
@@ -5421,6 +5422,16 @@ function App() {
                         >
                             🐦 Twitter Session
                         </button>*/}
+
+                        <button
+                            onClick={() => setActiveTab('snipe-test')}
+                            className={`py-3 md:py-4 px-2 border-b-2 transition-colors whitespace-nowrap text-sm md:text-base ${activeTab === 'snipe-test'
+                                ? 'border-blue-500 text-blue-400'
+                                : 'border-transparent text-gray-400 hover:text-white'
+                                }`}
+                        >
+                            🎯 Snipe Test
+                        </button>
                     </div>
                 </div>
             </nav>
@@ -5433,6 +5444,7 @@ function App() {
                 {activeTab === 'communities' && renderCommunityManagement()}
                 {activeTab === 'tweets' && renderTweetManagement()}
                 {activeTab === 'demo' && renderDemoTab()}
+                {activeTab === 'snipe-test' && <SnipeTest />}
                 {activeTab === 'twitter' && renderTwitterSession()}
                 {activeTab === 'settings' && (
                     <div className="space-y-6">
