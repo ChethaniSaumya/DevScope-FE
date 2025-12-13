@@ -747,6 +747,16 @@ function App() {
         shortfall: 0
     });
 
+    // Add to your existing state declarations:
+    const [slippageErrorPopup, setSlippageErrorPopup] = useState({
+        show: false,
+        tokenAddress: '',
+        error: '',
+        tokenData: null,
+        needed: 0,
+        currentPrice: 0
+    });
+
     const handleWebSocketMessage = (data) => {
         console.log('📨 WebSocket message received:', data.type, data);
 
@@ -759,28 +769,36 @@ function App() {
                 console.log('Server log:', data.data);
                 break;
 
+            // In handleWebSocketMessage function:
             case 'snipe_error':
                 console.log('❌ Snipe error received:', data.data);
 
-                // Check error type for special handling
-                if (data.data.errorType === 'insufficient_funds') {
-                    // Show detailed insufficient funds notification in Recent Activity
-                    const details = data.data.details;
+                // Check for slippage error specifically
+                if (data.data.error && data.data.error.includes('Too much SOL required') ||
+                    data.data.error.includes('custom program error: 6002')) {
+
+                    // Show slippage error popup
+                    setSlippageErrorPopup({
+                        show: true,
+                        tokenAddress: data.data.tokenAddress,
+                        error: data.data.error,
+                        tokenData: data.data.tokenData || null,
+                        needed: data.data.needed || 0,
+                        currentPrice: data.data.currentPrice || 0
+                    });
+
                     addNotification('error',
-                        `💰 Insufficient Funds for ${data.data.tokenAddress.substring(0, 8)}...\n` +
-                        `Need: ${details.needed} SOL | Have: ${details.available} SOL | Short: ${details.shortfall} SOL`
+                        `💰 Slippage Error: ${data.data.tokenAddress.substring(0, 8)}...\n` +
+                        `Token price moved too fast!`
                     );
 
+                } else if (data.data.errorType === 'insufficient_funds') {
+                    // Existing insufficient funds handling...
                 } else if (data.data.errorType === 'detection_only_mode') {
-                    // Handle detection only mode block
-                    addNotification('warning',
-                        `🛡️ Detection Only Mode Active - Transaction blocked for ${data.data.tokenAddress.substring(0, 8)}...`
-                    );
+                    // Existing detection only mode handling...
                 } else {
                     // Generic error handling
-                    addNotification('error',
-                        `❌ Snipe failed: ${data.data.error}`
-                    );
+                    addNotification('error', `❌ Snipe failed: ${data.data.error}`);
                 }
                 break;
 
@@ -3431,6 +3449,236 @@ function App() {
         );
     };
 
+    const renderSlippageErrorPopup = () => {
+        if (!slippageErrorPopup.show) return null;
+
+        const token = slippageErrorPopup.tokenData || { tokenAddress: slippageErrorPopup.tokenAddress };
+
+        return (
+            <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+                <div className="bg-gray-800 rounded-lg p-6 w-full max-w-2xl max-h-screen overflow-y-auto border-2 border-red-500">
+                    {/* Header */}
+                    <div className="flex items-center justify-between mb-6">
+                        <div className="flex items-center space-x-3">
+                            <div className="w-12 h-12 bg-red-600 rounded-full flex items-center justify-center animate-pulse">
+                                <span className="text-2xl">💰</span>
+                            </div>
+                            <div>
+                                <h2 className="text-2xl font-bold text-white">Slippage Error!</h2>
+                                <p className="text-red-400">Token price moved too fast for your slippage tolerance</p>
+                            </div>
+                        </div>
+                        <button
+                            onClick={() => setSlippageErrorPopup({
+                                show: false,
+                                tokenAddress: '',
+                                error: '',
+                                tokenData: null,
+                                needed: 0,
+                                currentPrice: 0
+                            })}
+                            className="text-gray-400 hover:text-white text-2xl"
+                        >
+                            ✖️
+                        </button>
+                    </div>
+
+                    {/* Error Details */}
+                    <div className="bg-red-900/20 border border-red-500/30 rounded-lg p-4 mb-6">
+                        <h3 className="text-lg font-semibold text-red-400 mb-3">⚠️ What Happened</h3>
+                        <p className="text-white mb-3">
+                            The token price moved significantly between when you initiated the snipe and when the transaction executed.
+                            Your slippage setting ({slippageErrorPopup.tokenData?.config?.fees || settings.globalSnipeSettings.fees}%) wasn't enough to cover the price movement.
+                        </p>
+
+                        {slippageErrorPopup.needed > 0 && (
+                            <div className="grid grid-cols-2 gap-4 mt-3">
+                                <div className="bg-gray-700 p-3 rounded">
+                                    <p className="text-sm text-gray-400">SOL Needed</p>
+                                    <p className="text-red-400 font-bold">{slippageErrorPopup.needed.toFixed(4)} SOL</p>
+                                </div>
+                                <div className="bg-gray-700 p-3 rounded">
+                                    <p className="text-sm text-gray-400">Price Movement</p>
+                                    <p className="text-yellow-400 font-bold">
+                                        {slippageErrorPopup.currentPrice > 0 ?
+                                            `${((slippageErrorPopup.currentPrice / (slippageErrorPopup.tokenData?.config?.amount || settings.globalSnipeSettings.amount) - 1) * 100).toFixed(1)}%`
+                                            : 'Unknown'}
+                                    </p>
+                                </div>
+                            </div>
+                        )}
+
+                        <div className="mt-3 p-3 bg-gray-900/50 rounded">
+                            <p className="text-sm text-gray-300">
+                                <span className="text-red-400 font-medium">Error Code:</span> 6002
+                            </p>
+                            <p className="text-sm text-gray-300 mt-1">
+                                <span className="text-red-400 font-medium">Message:</span> {slippageErrorPopup.error}
+                            </p>
+                        </div>
+                    </div>
+
+                    {/* Token Details (if available) */}
+                    {slippageErrorPopup.tokenData && (
+                        <div className="bg-gray-700 rounded-lg p-4 mb-6">
+                            <h3 className="text-lg font-semibold text-white mb-3">📊 Token Details</h3>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <p className="text-sm text-gray-400">Token</p>
+                                    <p className="text-white font-bold">
+                                        {slippageErrorPopup.tokenData.name || 'Unknown'}
+                                        ({slippageErrorPopup.tokenData.symbol || 'Unknown'})
+                                    </p>
+                                </div>
+                                <div>
+                                    <p className="text-sm text-gray-400">Platform</p>
+                                    <p className="text-white font-bold">{slippageErrorPopup.tokenData.platform || 'Unknown'}</p>
+                                </div>
+                                <div>
+                                    <p className="text-sm text-gray-400">Attempted Amount</p>
+                                    <p className="text-green-400 font-bold">
+                                        {slippageErrorPopup.tokenData.config?.amount || settings.globalSnipeSettings.amount} SOL
+                                    </p>
+                                </div>
+                                <div>
+                                    <p className="text-sm text-gray-400">Slippage Setting</p>
+                                    <p className="text-yellow-400 font-bold">
+                                        {slippageErrorPopup.tokenData.config?.fees || settings.globalSnipeSettings.fees}%
+                                    </p>
+                                </div>
+                            </div>
+
+                            {/* Token Address */}
+                            <div className="mt-4">
+                                <p className="text-sm text-gray-400 mb-2">Token Address:</p>
+                                <div className="flex items-center space-x-2">
+                                    <code className="text-sm font-mono text-white flex-1 break-all bg-gray-800 p-2 rounded">
+                                        {slippageErrorPopup.tokenData.tokenAddress}
+                                    </code>
+                                    <button
+                                        onClick={() => copyToClipboard(slippageErrorPopup.tokenData.tokenAddress, 'Token address')}
+                                        className="text-blue-400 hover:text-blue-300 px-3 py-2"
+                                    >
+                                        📋
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Solutions & Actions */}
+                    <div className="bg-blue-900/20 border border-blue-500/30 rounded-lg p-4 mb-6">
+                        <h3 className="text-lg font-semibold text-blue-400 mb-3">💡 How to Fix This</h3>
+                        <div className="space-y-2 text-sm">
+                            <div className="flex items-start space-x-2">
+                                <span className="text-blue-400 mt-0.5">1.</span>
+                                <p className="text-white">Increase your slippage tolerance in Global Snipe Settings</p>
+                            </div>
+                            <div className="flex items-start space-x-2">
+                                <span className="text-blue-400 mt-0.5">2.</span>
+                                <p className="text-white">Try sniping again with a higher SOL amount</p>
+                            </div>
+                            <div className="flex items-start space-x-2">
+                                <span className="text-blue-400 mt-0.5">3.</span>
+                                <p className="text-white">Wait for the token price to stabilize before trying again</p>
+                            </div>
+                            <div className="flex items-start space-x-2">
+                                <span className="text-blue-400 mt-0.5">4.</span>
+                                <p className="text-white">Check if the token is experiencing extreme volatility</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Action Buttons */}
+                    <div className="flex flex-col space-y-3 md:flex-row md:space-y-0 md:space-x-4">
+                        <button
+                            onClick={() => {
+                                // Go to settings to adjust slippage
+                                setActiveTab('settings');
+                                setSlippageErrorPopup({
+                                    show: false,
+                                    tokenAddress: '',
+                                    error: '',
+                                    tokenData: null,
+                                    needed: 0,
+                                    currentPrice: 0
+                                });
+                            }}
+                            className="flex-1 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-bold"
+                        >
+                            ⚙️ Adjust Slippage Settings
+                        </button>
+
+                        <button
+                            onClick={() => {
+                                // Try to snipe again with higher amount
+                                if (slippageErrorPopup.tokenData) {
+                                    const newAmount = parseFloat(slippageErrorPopup.tokenData.config?.amount || settings.globalSnipeSettings.amount) * 1.2;
+
+                                    // Update the token's config with higher amount
+                                    const updatedTokenData = {
+                                        ...slippageErrorPopup.tokenData,
+                                        config: {
+                                            ...slippageErrorPopup.tokenData.config,
+                                            amount: newAmount,
+                                            fees: (slippageErrorPopup.tokenData.config?.fees || settings.globalSnipeSettings.fees) + 5
+                                        }
+                                    };
+
+                                    // Store in state and show message
+                                    setDetectedTokens(prev => {
+                                        const index = prev.findIndex(t => t.tokenAddress === slippageErrorPopup.tokenData.tokenAddress);
+                                        if (index !== -1) {
+                                            const newTokens = [...prev];
+                                            newTokens[index] = updatedTokenData;
+                                            return newTokens;
+                                        }
+                                        return prev;
+                                    });
+
+                                    addNotification('info', `🔄 Retrying with ${newAmount.toFixed(4)} SOL and increased slippage`);
+                                }
+
+                                setSlippageErrorPopup({
+                                    show: false,
+                                    tokenAddress: '',
+                                    error: '',
+                                    tokenData: null,
+                                    needed: 0,
+                                    currentPrice: 0
+                                });
+                            }}
+                            className="flex-1 px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors font-bold"
+                        >
+                            🔄 Retry with +20%
+                        </button>
+
+                        <button
+                            onClick={() => setSlippageErrorPopup({
+                                show: false,
+                                tokenAddress: '',
+                                error: '',
+                                tokenData: null,
+                                needed: 0,
+                                currentPrice: 0
+                            })}
+                            className="flex-1 px-6 py-3 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors"
+                        >
+                            ❌ Close
+                        </button>
+                    </div>
+
+                    {/* Quick Fix Suggestions */}
+                    <div className="mt-4 text-center">
+                        <p className="text-xs text-gray-400">
+                            💡 <span className="text-yellow-400">Quick Fix:</span> Try increasing slippage to 15-20% for very volatile tokens
+                        </p>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
     // 3. COUNTDOWN TIMER COMPONENT
     const PairDetectionCountdown = ({ tokenAddress, onRetry }) => {
         const [countdown, setCountdown] = useState(3);
@@ -5458,6 +5706,7 @@ function App() {
             {/* Enhanced Popups */}
             {renderSecondaryPopup()}
             {renderPopupBlockerModal()}
+            {renderSlippageErrorPopup()}
 
 
             {/* Footer Info */}
