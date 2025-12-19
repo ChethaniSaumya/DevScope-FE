@@ -3616,70 +3616,8 @@ function App() {
                     </div>
 
                     {/* Action Buttons */}
-                    <div className="flex flex-col space-y-3 md:flex-row md:space-y-0 md:space-x-4">
-                        <button
-                            onClick={() => {
-                                // Go to settings to adjust slippage
-                                setActiveTab('settings');
-                                setSlippageErrorPopup({
-                                    show: false,
-                                    tokenAddress: '',
-                                    error: '',
-                                    tokenData: null,
-                                    needed: 0,
-                                    currentPrice: 0
-                                });
-                            }}
-                            className="flex-1 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-bold"
-                        >
-                            ⚙️ Adjust Slippage Settings
-                        </button>
-
-                        <button
-                            onClick={() => {
-                                // Try to snipe again with higher amount
-                                if (slippageErrorPopup.tokenData) {
-                                    const newAmount = parseFloat(slippageErrorPopup.tokenData.config?.amount || settings.globalSnipeSettings.amount) * 1.2;
-
-                                    // Update the token's config with higher amount
-                                    const updatedTokenData = {
-                                        ...slippageErrorPopup.tokenData,
-                                        config: {
-                                            ...slippageErrorPopup.tokenData.config,
-                                            amount: newAmount,
-                                            fees: (slippageErrorPopup.tokenData.config?.fees || settings.globalSnipeSettings.fees) + 5
-                                        }
-                                    };
-
-                                    // Store in state and show message
-                                    setDetectedTokens(prev => {
-                                        const index = prev.findIndex(t => t.tokenAddress === slippageErrorPopup.tokenData.tokenAddress);
-                                        if (index !== -1) {
-                                            const newTokens = [...prev];
-                                            newTokens[index] = updatedTokenData;
-                                            return newTokens;
-                                        }
-                                        return prev;
-                                    });
-
-                                    addNotification('info', `🔄 Retrying with ${newAmount.toFixed(4)} SOL and increased slippage`);
-                                }
-
-                                setSlippageErrorPopup({
-                                    show: false,
-                                    tokenAddress: '',
-                                    error: '',
-                                    tokenData: null,
-                                    needed: 0,
-                                    currentPrice: 0
-                                });
-                            }}
-                            className="flex-1 px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors font-bold"
-                        >
-                            🔄 Retry with +20%
-                        </button>
-
-                        <button
+                    <div className="flex justify-center">
+                         <button
                             onClick={() => setSlippageErrorPopup({
                                 show: false,
                                 tokenAddress: '',
