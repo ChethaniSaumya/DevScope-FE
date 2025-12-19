@@ -802,6 +802,32 @@ function App() {
                 }
                 break;
 
+            // In handleWebSocketMessage function, ADD this case:
+            case 'transaction_failed':
+                console.log('❌ Transaction failed:', data.data);
+
+                // Check if it's a slippage error
+                if (data.data.errorCode === 6002 ||
+                    (data.data.error && (data.data.error.includes('6002') || data.data.error.includes('Too much SOL required')))) {
+
+                    // Find the token data if we have it
+                    const tokenData = detectedTokens.find(t => t.tokenAddress === data.data.tokenAddress);
+
+                    setSlippageErrorPopup({
+                        show: true,
+                        tokenAddress: data.data.tokenAddress,
+                        error: data.data.error,
+                        tokenData: tokenData || null,
+                        needed: 0,
+                        currentPrice: 0
+                    });
+
+                    addNotification('error', `❌ Slippage Error: ${data.data.tokenAddress?.substring(0, 8)}...`);
+                } else {
+                    // Other transaction failures
+                    addNotification('error', `❌ Transaction Failed: ${data.data.error || 'Unknown error'}`);
+                }
+                break;
             case 'open_dual_windows':
                 console.log('🚀 DUAL WINDOW OPEN COMMAND RECEIVED');
                 /*const window1Url = data.data.window1.url;
