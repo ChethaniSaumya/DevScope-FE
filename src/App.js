@@ -80,7 +80,6 @@ function App() {
         mevProtection: false,
         soundNotification: 'system_beep'
     });
-    const [openedTokens, setOpenedTokens] = useState(new Set());
 
     const [usedCommunities, setUsedCommunities] = useState([]);
     const [usedTweets, setUsedTweets] = useState([]);
@@ -100,6 +99,7 @@ function App() {
         apiError: null,             // NEW
         lastApiError: null
     });
+    const browserOpenedTokens = new Set();
 
     const [popupBlockerModal, setPopupBlockerModal] = useState({
         show: false,
@@ -389,6 +389,25 @@ function App() {
             console.error('❌ Error stack:', error.stack);
             addNotification('error', '❌ Failed to preview sound');
         }
+    };
+
+    const shouldOpenBrowser = (tokenAddress) => {
+        if (browserOpenedTokens.has(tokenAddress)) {
+            console.log(`⭐ Browser already opened for ${tokenAddress.substring(0, 16)}..., skipping duplicate`);
+            return false;
+        }
+
+        // Lock this token to prevent duplicate opens
+        browserOpenedTokens.add(tokenAddress);
+        console.log(`🔒 Browser opening locked for: ${tokenAddress.substring(0, 16)}...`);
+
+        // Auto-release after 30 seconds (safety measure for edge cases)
+        setTimeout(() => {
+            browserOpenedTokens.delete(tokenAddress);
+            console.log(`🔓 Browser lock released for: ${tokenAddress.substring(0, 16)}...`);
+        }, 30000);
+
+        return true;
     };
 
     const saveToLocalStorage = (key, data) => {
@@ -873,7 +892,14 @@ function App() {
                 console.log('❓ Reason:', data.data.reason);
                 console.log('='.repeat(80) + '\n');
 
+
+                if (!shouldOpenBrowser(data.data.tokenAddress)) {
+                    console.log(`⭐ AUTO_OPEN: Skipping duplicate browser open for ${data.data.tokenAddress}`);
+                    break; // Exit the case early
+                }
+
                 const tokenPageUrl = data.data.tokenPageUrl;
+
 
                 // Check if URL is valid
                 if (!tokenPageUrl || !tokenPageUrl.startsWith('http')) {
@@ -889,45 +915,18 @@ function App() {
 
                 setTimeout(() => {
                     if (window.electronAPI && window.electronAPI.openExternalURL) {
-                        console.log('🖥️ USING ELECTRON API TO OPEN URL');
-                        try {
-                            window.electronAPI.openExternalURL(tokenPageUrl);
-                            console.log('✅ Electron API call successful');
-                            addNotification('success', `🚀 Opening ${data.data.platform || 'token page'} via Electron`);
-                        } catch (error) {
-                            console.error('❌ Electron API error:', error);
-                            addNotification('error', `❌ Failed to open: ${error.message}`);
-                        }
+                        window.electronAPI.openExternalURL(tokenPageUrl);
+                        addNotification('success', `🚀 Opening ${data.data.platform || 'token page'} via Electron`);
                     } else {
-                        console.log('🌐 USING BROWSER WINDOW.OPEN()');
-                        console.log('   Attempting to open:', tokenPageUrl);
-
-                        try {
-                            const newWindow = window.open(tokenPageUrl, '_blank', 'noopener,noreferrer');
-                            console.log('   window.open() returned:', newWindow);
-
-                            if (!newWindow || newWindow.closed) {
-                                console.error('❌ POPUP BLOCKED BY BROWSER!');
-                                console.error('   Browser prevented the popup from opening');
-
-                                addNotification('error', '🚫 Browser blocked popup - Click "Allow" in address bar');
-
-                                setPopupBlockerModal({
-                                    show: true,
-                                    tokenUrl: tokenPageUrl,
-                                    tokenAddress: data.data.tokenAddress,
-                                    reason: 'Browser popup blocker is active'
-                                });
-                            } else {
-                                console.log('✅ WINDOW OPENED SUCCESSFULLY');
-                                addNotification('success', `🚀 ${data.data.platform || 'Token page'} opened`);
-                            }
-                        } catch (error) {
-                            console.error('❌ window.open() threw error:', error);
-                            addNotification('error', `❌ Failed to open window: ${error.message}`);
+                        const newWindow = window.open(tokenPageUrl, '_blank', 'noopener,noreferrer');
+                        if (!newWindow || newWindow.closed) {
+                            addNotification('error', '🚫 Browser blocked popup - Click "Allow" in address bar');
+                        } else {
+                            addNotification('success', `🚀 ${data.data.platform || 'Token page'} opened`);
                         }
                     }
                 }, 100);
+
 
                 break;
 
@@ -996,15 +995,6 @@ function App() {
                 if (data.data.matchType === 'primary_wallet' || data.data.matchType === 'primary_admin') {
                     console.log('🎯 PRIMARY MATCH DETECTED - SHOWING POPUP + AUTO-OPENING WINDOW');
 
-                    if (openedTokens.has(data.data.tokenAddress)) {
-                        console.log(`⛔ Already opened browser for ${data.data.tokenAddress}`);
-                        break; // ✅ Use 'break' not 'return' since we're in a switch statement
-                    }
-
-                    // Mark as opened FIRST
-                    setOpenedTokens(prev => new Set(prev).add(data.data.tokenAddress));
-
-                    // NOW define tokenData
                     const tokenData = {
                         ...data.data,
                         config: data.data.config || {
@@ -1016,7 +1006,7 @@ function App() {
                         }
                     };
 
-                    // Show popup for ALL primary matches (demo and real)
+                    // Show popup
                     setSecondaryPopup({
                         show: true,
                         tokenData: tokenData,
@@ -1039,51 +1029,56 @@ function App() {
                         }, 100);
                     }
 
-                    // Auto-open window after 500ms (for both demo and real)
+                    // Auto-open window after 500ms
                     setTimeout(async () => {
+                        // ✅ ADD THIS LINE - DEDUPLICATION CHECK
+                        if (!shouldOpenBrowser(tokenData.tokenAddress)) {
+                            console.log(`⭐ PRIMARY: Skipping duplicate browser open`);
+                            return;
+                        }
+
                         let autoOpenUrl;
                         const token = tokenData;
 
                         // Determine URL based on user's tokenPageDestination setting
                         if (settings.tokenPageDestination === 'axiom') {
-                            // For demo tokens, just use token address
                             if (token.isDemo) {
                                 autoOpenUrl = `https://axiom.trade/meme/${token.tokenAddress}`;
                                 console.log(`🧪 Demo Primary: Opening Axiom with token address`);
-                            } else {
-                                // For real tokens, fetch bonding curve/pair
+                            }
+                            else if (token.platform === 'pumpfun' || token.pool === 'pump') {
+                                if (token.bondingCurveAddress) {
+                                    autoOpenUrl = `https://axiom.trade/meme/${token.bondingCurveAddress}`;
+                                    console.log(`✅ Primary: Opening Axiom with bonding curve`);
+                                } else {
+                                    autoOpenUrl = `https://axiom.trade/meme/${token.tokenAddress}`;
+                                    console.log(`⚠️ Primary: No bonding curve, using token address`);
+                                }
+                            }
+                            else if (token.platform === 'raydium' || token.platform === 'launchlab') {
                                 try {
-                                    const response = await fetch(`${API_BASE}/pair-address/${token.tokenAddress}`);
-                                    const addressData = await response.json();
-
-                                    if (addressData.success) {
-                                        if (addressData.bondingCurveData?.bondingCurveAddress) {
-                                            autoOpenUrl = `https://axiom.trade/meme/${addressData.bondingCurveData.bondingCurveAddress}`;
-                                            console.log(`✅ Real Primary: Using bonding curve: ${addressData.bondingCurveData.bondingCurveAddress}`);
-                                        } else if (addressData.pairData?.pairAddress) {
-                                            autoOpenUrl = `https://axiom.trade/meme/${addressData.pairData.pairAddress}`;
-                                            console.log(`✅ Real Primary: Using pair address: ${addressData.pairData.pairAddress}`);
-                                        } else {
-                                            autoOpenUrl = `https://axiom.trade/meme/${token.tokenAddress}`;
-                                            console.log(`⚠️ Real Primary: No address found, using token address`);
-                                        }
+                                    const response = await apiCall(`/pair-address/${token.tokenAddress}`);
+                                    if (response.success && response.pairData && response.pairData.pairAddress) {
+                                        autoOpenUrl = `https://axiom.trade/meme/${response.pairData.pairAddress}`;
+                                        console.log(`✅ Primary: Opening Axiom with pair address`);
                                     } else {
                                         autoOpenUrl = `https://axiom.trade/meme/${token.tokenAddress}`;
+                                        console.log(`⚠️ Primary: No pair address, using token address`);
                                     }
                                 } catch (error) {
                                     console.error(`❌ Error fetching address:`, error);
                                     autoOpenUrl = `https://axiom.trade/meme/${token.tokenAddress}`;
                                 }
+                            } else {
+                                autoOpenUrl = `https://axiom.trade/meme/${token.tokenAddress}`;
                             }
                         } else {
-                            // Neo BullX destination
                             autoOpenUrl = `https://neo.bullx.io/terminal?chainId=1399811149&address=${token.tokenAddress}`;
                             console.log(`✅ Primary: Opening Neo BullX`);
                         }
 
                         console.log(`🔗 PRIMARY AUTO-OPEN URL: ${autoOpenUrl}`);
 
-                        // Open the URL
                         if (window.electronAPI && window.electronAPI.openExternalURL) {
                             window.electronAPI.openExternalURL(autoOpenUrl);
                             console.log('🖥️ Primary: Opened via Electron');
@@ -1099,15 +1094,6 @@ function App() {
 
                         addNotification('success', '🚀 Token page opened automatically!');
                     }, 500);
-
-                    // Clear from opened set after 30 seconds
-                    setTimeout(() => {
-                        setOpenedTokens(prev => {
-                            const newSet = new Set(prev);
-                            newSet.delete(data.data.tokenAddress); // ✅ Use data.data.tokenAddress
-                            return newSet;
-                        });
-                    }, 30000);
                 }
                 break;
 
@@ -1115,7 +1101,6 @@ function App() {
                 console.log('🔔 SECONDARY ADMIN MATCH DETECTED');
                 console.log('📊 Token data:', data.data.tokenData);
 
-                // ✅ CRITICAL FIX: Ensure config is included
                 const tokenData = {
                     ...data.data.tokenData,
                     config: data.data.tokenData.config || {
@@ -1129,44 +1114,41 @@ function App() {
 
                 setSecondaryPopup({
                     show: true,
-                    tokenData: tokenData, // ✅ Use tokenData with config
+                    tokenData: tokenData,
                     globalSettings: data.data.globalSnipeSettings
                 });
 
                 addNotification('info', `🔔 Secondary match found: ${tokenData.tokenAddress.substring(0, 8)}...`);
 
                 setTimeout(async () => {
+                    // ✅ ADD THIS LINE - DEDUPLICATION CHECK
+                    if (!shouldOpenBrowser(tokenData.tokenAddress)) {
+                        console.log(`⭐ SECONDARY: Skipping duplicate browser open`);
+                        return;
+                    }
+
                     let autoOpenUrl;
                     const token = tokenData;
 
-                    // Determine URL based on user's tokenPageDestination setting
                     if (settings.tokenPageDestination === 'axiom') {
-
-                        // Check if it's a Pump.fun token
                         if (token.platform === 'pumpfun' || token.pool === 'pump') {
-                            // Use bonding curve for Pump.fun
                             if (token.bondingCurveAddress) {
                                 autoOpenUrl = `https://axiom.trade/meme/${token.bondingCurveAddress}`;
-                                console.log(`✅ SECONDARY: Using bonding curve: ${token.bondingCurveAddress}`);
+                                console.log(`✅ SECONDARY: Opening Axiom with bonding curve`);
                             } else {
                                 autoOpenUrl = `https://axiom.trade/meme/${token.tokenAddress}`;
                                 console.log(`⚠️ SECONDARY: No bonding curve, using token address`);
                             }
                         }
-                        // Check if it's a Let's Bonk token
-                        else if (token.platform === 'letsbonk' || token.pool === 'bonk') {
-                            console.log(`🦎 SECONDARY: Let's Bonk token, fetching pair address...`);
-
+                        else if (token.platform === 'raydium' || token.platform === 'launchlab') {
                             try {
-                                const response = await fetch(`${API_BASE}/pair-address/${token.tokenAddress}`);
-                                const data = await response.json();
-
-                                if (data.success && data.pairData?.pairAddress) {
-                                    autoOpenUrl = `https://axiom.trade/meme/${data.pairData.pairAddress}`;
-                                    console.log(`✅ SECONDARY: Using pair address: ${data.pairData.pairAddress}`);
+                                const response = await apiCall(`/pair-address/${token.tokenAddress}`);
+                                if (response.success && response.pairData && response.pairData.pairAddress) {
+                                    autoOpenUrl = `https://axiom.trade/meme/${response.pairData.pairAddress}`;
+                                    console.log(`✅ SECONDARY: Opening Axiom with pair address`);
                                 } else {
                                     autoOpenUrl = `https://axiom.trade/meme/${token.tokenAddress}`;
-                                    console.log(`⚠️ SECONDARY: No pair found, using token address`);
+                                    console.log(`⚠️ SECONDARY: No pair address, using token address`);
                                 }
                             } catch (error) {
                                 console.error(`❌ SECONDARY: Error fetching pair:`, error);
@@ -1174,19 +1156,16 @@ function App() {
                             }
                         }
                         else {
-                            // Unknown platform - use token address
                             autoOpenUrl = `https://axiom.trade/meme/${token.tokenAddress}`;
                             console.log(`⚠️ SECONDARY: Unknown platform, using token address`);
                         }
                     } else {
-                        // Neo BullX destination
                         autoOpenUrl = `https://neo.bullx.io/terminal?chainId=1399811149&address=${token.tokenAddress}`;
                         console.log(`✅ SECONDARY: Opening Neo BullX`);
                     }
 
                     console.log(`🔗 SECONDARY AUTO-OPEN URL: ${autoOpenUrl}`);
 
-                    // Open the URL
                     if (window.electronAPI && window.electronAPI.openExternalURL) {
                         window.electronAPI.openExternalURL(autoOpenUrl);
                         console.log('🖥️ SECONDARY: Opened via Electron');
@@ -1204,6 +1183,7 @@ function App() {
                 }, 500);
 
                 break;
+
 
             case 'community_admin_match_found':
                 console.log('🎯 COMMUNITY ADMIN MATCH FOUND!', data.data);
@@ -1820,9 +1800,13 @@ function App() {
             // ✅ AUTOMATICALLY OPEN TOKEN PAGE AFTER SECONDARY SNIPE
             console.log('🌐 Auto-opening token page after secondary snipe...');
 
-            // Use a small delay
             setTimeout(async () => {
-                // ⏱️ START BROWSER TIMING FOR SECONDARY SNIPE
+                // ✅ ADD THIS LINE - DEDUPLICATION CHECK
+                if (!shouldOpenBrowser(tokenAddress)) {
+                    console.log(`⭐ SNIPE: Skipping duplicate browser open`);
+                    return;
+                }
+
                 const secondaryBrowserStart = performance.now();
 
                 if (settings.tokenPageDestination === 'axiom') {
@@ -1837,56 +1821,45 @@ function App() {
                             } else {
                                 const newWindow = window.open(axiomUrl, '_blank');
                                 if (!newWindow || newWindow.closed) {
-                                    addNotification('warning', '🚫 Browser blocked popup - Click "Allow" in address bar');
+                                    addNotification('warning', '🚫 Browser blocked popup');
                                 }
                             }
 
-                            // ⏱️ LOG SECONDARY SNIPE BROWSER TIMING
                             const browserOpenTime = performance.now() - secondaryBrowserStart;
                             console.log(`⏱️ SECONDARY SNIPE BROWSER TIMING: ${browserOpenTime.toFixed(2)}ms`);
-                            console.log(`   Total Snipe Time: ${(performance.now() - snipeStart).toFixed(2)}ms`);
-
-                            addNotification('success', `🌐 Axiom opened automatically with pair: ${response.pairData.pairAddress.substring(0, 8)}...`);
+                            addNotification('success', `🌐 Axiom opened with pair address`);
                         } else {
                             const fallbackUrl = `https://axiom.trade/meme/${tokenAddress}`;
+
                             if (window.electronAPI && window.electronAPI.openExternalURL) {
                                 window.electronAPI.openExternalURL(fallbackUrl);
                             } else {
                                 const newWindow = window.open(fallbackUrl, '_blank');
                                 if (!newWindow || newWindow.closed) {
-                                    addNotification('warning', '🚫 Browser blocked popup - Click "Allow" in address bar');
+                                    addNotification('warning', '🚫 Browser blocked popup');
                                 }
                             }
 
-                            // ⏱️ LOG FALLBACK BROWSER TIMING
-                            const browserOpenTime = performance.now() - secondaryBrowserStart;
-                            console.log(`⏱️ SECONDARY SNIPE FALLBACK BROWSER TIMING: ${browserOpenTime.toFixed(2)}ms`);
-
-                            addNotification('warning', '🔍 No Bonding Curve found yet, opening Axiom with token address');
+                            addNotification('warning', '🔍 Opening Axiom with token address');
                         }
                     } catch (error) {
-                        console.error('Error opening Axiom with pair:', error);
+                        console.error('Error opening Axiom:', error);
                         addNotification('error', '❌ Error opening token page');
                     }
                 } else {
-                    // Neo BullX
                     const neoBullxUrl = `https://neo.bullx.io/terminal?chainId=1399811149&address=${tokenAddress}`;
                     if (window.electronAPI && window.electronAPI.openExternalURL) {
                         window.electronAPI.openExternalURL(neoBullxUrl);
                     } else {
                         const newWindow = window.open(neoBullxUrl, '_blank');
                         if (!newWindow || newWindow.closed) {
-                            addNotification('warning', '🚫 Browser blocked popup - Click "Allow" in address bar');
+                            addNotification('warning', '🚫 Browser blocked popup');
                         }
                     }
 
-                    // ⏱️ LOG NEO BULLX BROWSER TIMING
-                    const browserOpenTime = performance.now() - secondaryBrowserStart;
-                    console.log(`⏱️ SECONDARY SNIPE NEO BULLX BROWSER TIMING: ${browserOpenTime.toFixed(2)}ms`);
-
-                    addNotification('success', `🌐 Neo BullX opened automatically`);
+                    addNotification('success', `🌐 Neo BullX opened`);
                 }
-            }, 1000); // 1 second delay for secondary snipes
+            }, 100);
 
         } catch (error) {
             // ⏱️ LOG ERROR TIMING - NOW snipeStart IS ACCESSIBLE
