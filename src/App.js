@@ -80,6 +80,7 @@ function App() {
         mevProtection: false,
         soundNotification: 'system_beep'
     });
+    const [openedTokens, setOpenedTokens] = useState(new Set());
 
     const [usedCommunities, setUsedCommunities] = useState([]);
     const [usedTweets, setUsedTweets] = useState([]);
@@ -995,6 +996,15 @@ function App() {
                 if (data.data.matchType === 'primary_wallet' || data.data.matchType === 'primary_admin') {
                     console.log('🎯 PRIMARY MATCH DETECTED - SHOWING POPUP + AUTO-OPENING WINDOW');
 
+                    if (openedTokens.has(data.data.tokenAddress)) {
+                        console.log(`⛔ Already opened browser for ${data.data.tokenAddress}`);
+                        break; // ✅ Use 'break' not 'return' since we're in a switch statement
+                    }
+
+                    // Mark as opened FIRST
+                    setOpenedTokens(prev => new Set(prev).add(data.data.tokenAddress));
+
+                    // NOW define tokenData
                     const tokenData = {
                         ...data.data,
                         config: data.data.config || {
@@ -1009,13 +1019,12 @@ function App() {
                     // Show popup for ALL primary matches (demo and real)
                     setSecondaryPopup({
                         show: true,
-                        tokenData: tokenData, // ✅ Use tokenData with config
+                        tokenData: tokenData,
                         globalSettings: settings.globalSnipeSettings,
                         isPrimary: true
                     });
 
                     addNotification('info', `🎯 Primary match: ${tokenData.tokenAddress.substring(0, 8)}...`);
-
 
                     // For DEMO tokens: Trigger manual snipe
                     if (tokenData.isDemo) {
@@ -1090,6 +1099,15 @@ function App() {
 
                         addNotification('success', '🚀 Token page opened automatically!');
                     }, 500);
+
+                    // Clear from opened set after 30 seconds
+                    setTimeout(() => {
+                        setOpenedTokens(prev => {
+                            const newSet = new Set(prev);
+                            newSet.delete(data.data.tokenAddress); // ✅ Use data.data.tokenAddress
+                            return newSet;
+                        });
+                    }, 30000);
                 }
                 break;
 
@@ -3617,7 +3635,7 @@ function App() {
 
                     {/* Action Buttons */}
                     <div className="flex justify-center">
-                         <button
+                        <button
                             onClick={() => setSlippageErrorPopup({
                                 show: false,
                                 tokenAddress: '',
