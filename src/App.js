@@ -671,10 +671,12 @@ function App() {
             console.log('🔔 Secondary popup opened, auto-playing notification sound...');
             console.log('🔔 Token data:', secondaryPopup.tokenData);
             console.log('🔔 Token config:', secondaryPopup.tokenData.config);
-            console.log('🔔 Global sound setting:', settings.globalSnipeSettings.soundNotification);
+            console.log('🔔 Global sound setting:', settings.globalSnipeSettings?.soundNotification);
 
-            // Use the token's specific sound notification or fall back to global setting
-            const soundToPlay = secondaryPopup.tokenData.config?.soundNotification || settings.globalSnipeSettings.soundNotification;
+            // ✅ FIX: Add proper null checking with fallback to 'default.wav'
+            const soundToPlay = secondaryPopup.tokenData.config?.soundNotification ||
+                settings.globalSnipeSettings?.soundNotification ||
+                'default.wav';
             console.log('🔔 Sound selected to auto-play:', soundToPlay);
 
             // Small delay to ensure popup is fully rendered
@@ -686,7 +688,7 @@ function App() {
             // Cleanup timeout on unmount
             return () => clearTimeout(timeoutId);
         }
-    }, [secondaryPopup.show, secondaryPopup.tokenData?.tokenAddress, settings.globalSnipeSettings.soundNotification]);
+    }, [secondaryPopup.show, secondaryPopup.tokenData?.tokenAddress, settings.globalSnipeSettings?.soundNotification]);
 
     const fetchUsedCommunities = async () => {
         try {
@@ -1593,52 +1595,52 @@ function App() {
     };
 
     const updateFilterSettings = async () => {
-    try {
-        const response = await fetch(`${API_BASE}/filter-settings`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                enableAdminFilter: settings.enableAdminFilter,
-                enableCommunityReuse: settings.enableCommunityReuse,
-                snipeAllTokens: settings.snipeAllTokens,
-                detectionOnlyMode: settings.detectionOnlyMode,
-                bonkTokensOnly: settings.bonkTokensOnly
-            })
-        });
+        try {
+            const response = await fetch(`${API_BASE}/filter-settings`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    enableAdminFilter: settings.enableAdminFilter,
+                    enableCommunityReuse: settings.enableCommunityReuse,
+                    snipeAllTokens: settings.snipeAllTokens,
+                    detectionOnlyMode: settings.detectionOnlyMode,
+                    bonkTokensOnly: settings.bonkTokensOnly
+                })
+            });
 
-        const data = await response.json();
-        
-        if (data.success) {
-            // ✅ ADD THIS - Save to localStorage
-            localStorage.setItem(STORAGE_KEYS.FILTER_SETTINGS, JSON.stringify({
-                enableAdminFilter: settings.enableAdminFilter,
-                enableCommunityReuse: settings.enableCommunityReuse,
-                snipeAllTokens: settings.snipeAllTokens,
-                detectionOnlyMode: settings.detectionOnlyMode,
-                bonkTokensOnly: settings.bonkTokensOnly
-            }));
-            
-            setOriginalSettings(prev => ({
-                ...prev,
-                enableAdminFilter: settings.enableAdminFilter,
-                enableCommunityReuse: settings.enableCommunityReuse,
-                snipeAllTokens: settings.snipeAllTokens,
-                detectionOnlyMode: settings.detectionOnlyMode
-            }));
-            
+            const data = await response.json();
+
+            if (data.success) {
+                // ✅ ADD THIS - Save to localStorage
+                localStorage.setItem(STORAGE_KEYS.FILTER_SETTINGS, JSON.stringify({
+                    enableAdminFilter: settings.enableAdminFilter,
+                    enableCommunityReuse: settings.enableCommunityReuse,
+                    snipeAllTokens: settings.snipeAllTokens,
+                    detectionOnlyMode: settings.detectionOnlyMode,
+                    bonkTokensOnly: settings.bonkTokensOnly
+                }));
+
+                setOriginalSettings(prev => ({
+                    ...prev,
+                    enableAdminFilter: settings.enableAdminFilter,
+                    enableCommunityReuse: settings.enableCommunityReuse,
+                    snipeAllTokens: settings.snipeAllTokens,
+                    detectionOnlyMode: settings.detectionOnlyMode
+                }));
+
+                setButtonMessages(prev => ({
+                    ...prev,
+                    filterSettings: '✅ Filter settings saved!'
+                }));
+            }
+        } catch (error) {
+            console.error('Failed to update filter settings:', error);
             setButtonMessages(prev => ({
                 ...prev,
-                filterSettings: '✅ Filter settings saved!'
+                filterSettings: '❌ Failed to save filter settings'
             }));
         }
-    } catch (error) {
-        console.error('Failed to update filter settings:', error);
-        setButtonMessages(prev => ({
-            ...prev,
-            filterSettings: '❌ Failed to save filter settings'
-        }));
-    }
-};
+    };
 
     const addListItem = async (listType, item) => {
         try {
