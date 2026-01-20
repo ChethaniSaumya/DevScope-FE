@@ -46,7 +46,7 @@ function App() {
 
     const [originalSettings, setOriginalSettings] = useState({
         privateKey: '',
-        tokenPageDestination: 'axiom',
+        tokenPageDestination: 'neo_bullx',
         enableAdminFilter: true,
         enableCommunityReuse: true,
         snipeAllTokens: false,
@@ -133,7 +133,7 @@ function App() {
         // Load settings from localStorage on app start
         const savedSettings = loadFromLocalStorage(STORAGE_KEYS.SETTINGS, {
             privateKey: '',
-            tokenPageDestination: 'axiom',
+            tokenPageDestination: 'neo_bullx',
             enableAdminFilter: true,
             enableCommunityReuse: true,
             snipeAllTokens: false,
@@ -671,12 +671,10 @@ function App() {
             console.log('🔔 Secondary popup opened, auto-playing notification sound...');
             console.log('🔔 Token data:', secondaryPopup.tokenData);
             console.log('🔔 Token config:', secondaryPopup.tokenData.config);
-            console.log('🔔 Global sound setting:', settings.globalSnipeSettings?.soundNotification);
+            console.log('🔔 Global sound setting:', settings.globalSnipeSettings.soundNotification);
 
-            // ✅ FIX: Add proper null checking with fallback to 'default.wav'
-            const soundToPlay = secondaryPopup.tokenData.config?.soundNotification ||
-                settings.globalSnipeSettings?.soundNotification ||
-                'default.wav';
+            // Use the token's specific sound notification or fall back to global setting
+            const soundToPlay = secondaryPopup.tokenData.config?.soundNotification || settings.globalSnipeSettings.soundNotification;
             console.log('🔔 Sound selected to auto-play:', soundToPlay);
 
             // Small delay to ensure popup is fully rendered
@@ -688,7 +686,7 @@ function App() {
             // Cleanup timeout on unmount
             return () => clearTimeout(timeoutId);
         }
-    }, [secondaryPopup.show, secondaryPopup.tokenData?.tokenAddress, settings.globalSnipeSettings?.soundNotification]);
+    }, [secondaryPopup.show, secondaryPopup.tokenData?.tokenAddress, settings.globalSnipeSettings.soundNotification]);
 
     const fetchUsedCommunities = async () => {
         try {
@@ -1349,29 +1347,50 @@ function App() {
 
         let url;
 
-        // ✅ ALWAYS USE AXIOM NOW - NO IF/ELSE NEEDED
-        if (token.bondingCurveAddress) {
-            console.log(`✅ Using stored bonding curve: ${token.bondingCurveAddress}`);
-            url = `https://axiom.trade/meme/${token.bondingCurveAddress}`;
+        // Check user's preference for token page destination
+        if (settings.tokenPageDestination === 'axiom') {
+            // 🔥 OPTIMIZED: Use stored bonding curve directly (no backend call)
+            if (token.bondingCurveAddress) {
+                console.log(`✅ Using stored bonding curve: ${token.bondingCurveAddress}`);
+                url = `https://axiom.trade/meme/${token.bondingCurveAddress}`;
 
-            const urlGenerationTime = performance.now() - viewTokenStart;
-            console.log(`⚡ INSTANT URL GENERATION: ${urlGenerationTime.toFixed(2)}ms (from stored bonding curve)`);
+                const urlGenerationTime = performance.now() - viewTokenStart;
+                console.log(`⚡ INSTANT URL GENERATION: ${urlGenerationTime.toFixed(2)}ms (from stored bonding curve)`);
+            } else {
+                // Fallback: use token address directly
+                console.log(`⚠️ No stored bonding curve, using token address`);
+                url = `https://axiom.trade/meme/${token.tokenAddress}`;
+            }
         } else {
-            // Fallback: use token address directly
-            console.log(`⚠️ No stored bonding curve, using token address`);
-            url = `https://axiom.trade/meme/${token.tokenAddress}`;
+            // Neo BullX
+            url = `https://neo.bullx.io/terminal?chainId=1399811149&address=${token.tokenAddress}`;
         }
 
-        // Open the URL
+        // Platform-specific overrides
+        if (token.pool === 'bonk' && settings.tokenPageDestination !== 'axiom') {
+            url = `https://letsbonk.fun/token/${token.tokenAddress}`;
+        } else if (token.pool === 'pump' && settings.tokenPageDestination !== 'axiom') {
+            url = `https://pump.fun/${token.tokenAddress}`;
+        }
+
         const browserOpenStart = performance.now();
+
+        // Open the URL
         if (window.electronAPI && window.electronAPI.openExternalURL) {
             window.electronAPI.openExternalURL(url);
         } else {
             window.open(url, '_blank');
         }
-        const browserOpenTime = performance.now() - browserOpenStart;
 
-        console.log(`🌐 Axiom opened in ${browserOpenTime.toFixed(2)}ms`);
+        const browserOpenTime = performance.now() - browserOpenStart;
+        const totalTime = performance.now() - viewTokenStart;
+
+        console.log(`⏱️ COMPLETE MANUAL TOKEN OPEN TIMING:`);
+        console.log(`   URL Generation: ${(browserOpenStart - viewTokenStart).toFixed(2)}ms`);
+        console.log(`   Browser Open: ${browserOpenTime.toFixed(2)}ms`);
+        console.log(`   TOTAL: ${totalTime.toFixed(2)}ms`);
+
+        addNotification('success', `🌐 Opening token page: ${url}`);
     };
 
     const viewTokenPageFromPopup = async (token) => {
@@ -1559,86 +1578,61 @@ function App() {
 
     const updateSettings = async (newSettings) => {
         try {
-            const response = await fetch(`${API_BASE}/settings`, {
+            await apiCall('/settings', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(newSettings)
             });
 
-            const data = await response.json();
+            const updatedSettings = { ...settings, ...newSettings };
+            setSettings(updatedSettings);
 
-            if (data.success) {
-                // ✅ ADD THIS - Save to localStorage immediately
-                localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify({
-                    ...settings,
-                    ...newSettings
-                }));
+            // Save to localStorage
+            saveToLocalStorage(STORAGE_KEYS.SETTINGS, updatedSettings);
 
-                setOriginalSettings(prev => ({ ...prev, ...newSettings }));
-                setSettings(prev => ({ ...prev, ...newSettings }));
-                setButtonMessages(prev => ({
-                    ...prev,
-                    basicSettings: '✅ Settings saved successfully!'
-                }));
-
-                setTimeout(() => {
-                    setButtonMessages(prev => ({ ...prev, basicSettings: '' }));
-                }, 3000);
-            }
-        } catch (error) {
-            console.error('Failed to update settings:', error);
-            setButtonMessages(prev => ({
+            // ✅ UPDATE ORIGINAL SETTINGS
+            setOriginalSettings(prev => ({
                 ...prev,
-                basicSettings: '❌ Failed to save settings'
+                ...newSettings
             }));
+
+            addNotification('success', '✅ Settings updated and saved locally');
+            setButtonMessages(prev => ({ ...prev, basicSettings: '✅ Settings saved successfully!' }));
+            clearButtonMessage('basicSettings');
+        } catch (error) {
+            addNotification('error', '❌ Failed to update settings');
+            setButtonMessages(prev => ({ ...prev, basicSettings: '❌ Failed to save settings' }));
+            clearButtonMessage('basicSettings');
         }
     };
 
-    const updateFilterSettings = async () => {
+    const updateFilterSettings = async (filterSettings) => {
         try {
-            const response = await fetch(`${API_BASE}/filter-settings`, {
+            await apiCall('/filter-settings', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    enableAdminFilter: settings.enableAdminFilter,
-                    enableCommunityReuse: settings.enableCommunityReuse,
-                    snipeAllTokens: settings.snipeAllTokens,
-                    detectionOnlyMode: settings.detectionOnlyMode,
-                    bonkTokensOnly: settings.bonkTokensOnly
-                })
+                body: JSON.stringify(filterSettings)
             });
 
-            const data = await response.json();
+            const updatedSettings = { ...settings, ...filterSettings };
+            setSettings(updatedSettings);
 
-            if (data.success) {
-                // ✅ ADD THIS - Save to localStorage
-                localStorage.setItem(STORAGE_KEYS.FILTER_SETTINGS, JSON.stringify({
-                    enableAdminFilter: settings.enableAdminFilter,
-                    enableCommunityReuse: settings.enableCommunityReuse,
-                    snipeAllTokens: settings.snipeAllTokens,
-                    detectionOnlyMode: settings.detectionOnlyMode,
-                    bonkTokensOnly: settings.bonkTokensOnly
-                }));
+            // Save filter settings separately
+            saveToLocalStorage(STORAGE_KEYS.FILTER_SETTINGS, filterSettings);
+            // Save complete settings
+            saveToLocalStorage(STORAGE_KEYS.SETTINGS, updatedSettings);
 
-                setOriginalSettings(prev => ({
-                    ...prev,
-                    enableAdminFilter: settings.enableAdminFilter,
-                    enableCommunityReuse: settings.enableCommunityReuse,
-                    snipeAllTokens: settings.snipeAllTokens,
-                    detectionOnlyMode: settings.detectionOnlyMode
-                }));
-
-                setButtonMessages(prev => ({
-                    ...prev,
-                    filterSettings: '✅ Filter settings saved!'
-                }));
-            }
-        } catch (error) {
-            console.error('Failed to update filter settings:', error);
-            setButtonMessages(prev => ({
+            // ✅ UPDATE ORIGINAL SETTINGS TO REFLECT SAVED STATE
+            setOriginalSettings(prev => ({
                 ...prev,
-                filterSettings: '❌ Failed to save filter settings'
+                ...filterSettings
             }));
+
+            addNotification('success', '✅ Filter settings updated and saved locally');
+            setButtonMessages(prev => ({ ...prev, filterSettings: '✅ Filter settings saved successfully!' }));
+            clearButtonMessage('filterSettings');
+        } catch (error) {
+            addNotification('error', '❌ Failed to update filter settings');
+            setButtonMessages(prev => ({ ...prev, filterSettings: '❌ Failed to save filter settings' }));
+            clearButtonMessage('filterSettings');
         }
     };
 
@@ -1680,41 +1674,33 @@ function App() {
     };
 
     useEffect(() => {
-        // ✅ STEP 1: Load from localStorage FIRST (immediate)
-        const localSettings = loadFromLocalStorage(STORAGE_KEYS.SETTINGS);
-        if (localSettings) {
-            setSettings(prev => ({ ...prev, ...localSettings }));
-            setOriginalSettings(prev => ({ ...prev, ...localSettings }));
-            console.log('✅ Loaded settings from localStorage');
-        }
-
-        // ✅ STEP 2: Then sync with server (background)
         const fetchCurrentSettings = async () => {
             try {
-                const response = await fetch(`${API_BASE}/settings`);
-                if (response.ok) {
-                    const data = await response.json();
-                    if (data.success && data.settings) {
-                        const serverSettings = {
-                            privateKey: data.settings.privateKey || '',
-                            tokenPageDestination: data.settings.tokenPageDestination || 'axiom',
-                            enableAdminFilter: data.settings.enableAdminFilter ?? true,
-                            enableCommunityReuse: data.settings.enableCommunityReuse ?? true,
-                            snipeAllTokens: data.settings.snipeAllTokens ?? false,
-                            detectionOnlyMode: data.settings.detectionOnlyMode ?? true,
-                        };
+                const response = await fetch(`${"https://devscope-be.onrender.com"}/api/status`);
+                const data = await response.json();
 
-                        // Update both state and localStorage
-                        setSettings(prev => ({ ...prev, ...serverSettings }));
-                        setOriginalSettings(prev => ({ ...prev, ...serverSettings }));
-                        localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(serverSettings));
+                if (data.settings) {
+                    const serverSettings = {
+                        privateKey: data.settings.privateKey || '',                              // ✅ ADD
+                        tokenPageDestination: data.settings.tokenPageDestination || 'neo_bullx', // ✅ ADD
+                        enableAdminFilter: data.settings.enableAdminFilter ?? true,
+                        enableCommunityReuse: data.settings.enableCommunityReuse ?? true,
+                        snipeAllTokens: data.settings.snipeAllTokens ?? false,
+                        detectionOnlyMode: data.settings.detectionOnlyMode ?? true,
+                        bonkTokensOnly: data.settings.bonkTokensOnly ?? false,
+                        enablePrimaryDetection: data.settings.enablePrimaryDetection ?? true,
+                        enableSecondaryDetection: data.settings.enableSecondaryDetection ?? true
+                    };
 
-                        console.log('✅ Synced with server settings');
-                    }
+                    // Update both settings and originalSettings
+                    setSettings(prev => ({ ...prev, ...serverSettings }));
+                    setOriginalSettings(prev => ({ ...prev, ...serverSettings }));
+
+                    console.log('✅ Synced with server settings:', serverSettings);
                 }
             } catch (error) {
-                console.error('⚠️ Could not sync with server, using localStorage');
-                // Don't show error - localStorage is already loaded
+                console.error('❌ Failed to fetch server settings:', error);
+                addNotification('warning', '⚠️ Could not sync with server settings');
             }
         };
 
@@ -4458,7 +4444,13 @@ function App() {
                                                 className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center justify-center space-x-2"
                                             >
                                                 <ExternalLink size={16} />
-                                                <span>View on Axiom</span>
+                                                <span>
+                                                    {settings.tokenPageDestination === 'axiom'
+                                                        ? 'View on Axiom'
+                                                        : token.pool === 'bonk'
+                                                            ? 'View on LetsBonk.fun'
+                                                            : 'View on Neo BullX'}
+                                                </span>
                                             </button>
 
                                             {/* Axiom Direct Link Button */}
@@ -4592,17 +4584,18 @@ function App() {
                             onChange={(e) => setSettings(prev => ({ ...prev, tokenPageDestination: e.target.value }))}
                             className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                         >
+                            <option value="neo_bullx">Neo BullX</option>
                             <option value="axiom">Axiom</option>
                         </select>
                         <div className="flex items-center space-x-4 mt-2 text-xs">
                             <span className="text-gray-400">
                                 Current: <span className="font-semibold text-blue-400">
-                                    Axiom  {/* ✅ ALWAYS AXIOM NOW */}
+                                    {settings.tokenPageDestination === 'neo_bullx' ? 'Neo BullX' : 'Axiom'}
                                 </span>
                             </span>
                             <span className="text-gray-500">
                                 Server: <span className="font-semibold text-blue-400">
-                                    Axiom  {/* ✅ ALWAYS AXIOM NOW */}
+                                    {originalSettings.tokenPageDestination === 'neo_bullx' ? 'Neo BullX' : 'Axiom'}
                                 </span>
                             </span>
                         </div>
