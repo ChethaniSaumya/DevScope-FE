@@ -1049,9 +1049,10 @@ function App() {
                                 console.log(`🧪 Demo Primary: Opening Axiom with token address`);
                             }
                             else if (token.platform === 'pumpfun' || token.pool === 'pump') {
-                                if (token.bondingCurveAddress) {
-                                    autoOpenUrl = `https://axiom.trade/meme/${token.bondingCurveAddress}`;
-                                    console.log(`✅ Primary: Opening Axiom with bonding curve`);
+                                const bondingCurve = token.bondingCurveAddress || token.bondingCurve;
+                                if (bondingCurve) {
+                                    autoOpenUrl = `https://axiom.trade/meme/${bondingCurve}`;
+                                    console.log(`✅ SECONDARY: Opening Axiom with bonding curve`);
                                 } else {
                                     autoOpenUrl = `https://axiom.trade/meme/${token.tokenAddress}`;
                                     console.log(`⚠️ Primary: No bonding curve, using token address`);
@@ -1134,8 +1135,9 @@ function App() {
 
                     if (settings.tokenPageDestination === 'axiom') {
                         if (token.platform === 'pumpfun' || token.pool === 'pump') {
-                            if (token.bondingCurveAddress) {
-                                autoOpenUrl = `https://axiom.trade/meme/${token.bondingCurveAddress}`;
+                            const bondingCurve = token.bondingCurveAddress || token.bondingCurve;
+                            if (bondingCurve) {
+                                autoOpenUrl = `https://axiom.trade/meme/${bondingCurve}`;
                                 console.log(`✅ SECONDARY: Opening Axiom with bonding curve`);
                             } else {
                                 autoOpenUrl = `https://axiom.trade/meme/${token.tokenAddress}`;
@@ -3718,8 +3720,9 @@ function App() {
 
     // Simple bonding curve status check (no auto-retry, no auto-open)
     const checkBondingCurveStatus = (token) => {
-        if (token.bondingCurveAddress) {
-            console.log(`✅ Bonding curve available: ${token.bondingCurveAddress}`);
+        const bondingCurve = token.bondingCurveAddress || token.bondingCurve;
+        if (bondingCurve) {
+            console.log(`✅ Bonding curve available: ${bondingCurve}`);
             return 'found';
         } else {
             console.log(`⚠️ No bonding curve stored for token`);
@@ -4467,9 +4470,10 @@ function App() {
                                                     let axiomUrl;
 
                                                     // Check if bonding curve is already stored
-                                                    if (token.bondingCurveAddress) {
-                                                        axiomUrl = `https://axiom.trade/meme/${token.bondingCurveAddress}`;
-                                                        console.log(`✅ Using stored bonding curve: ${token.bondingCurveAddress}`);
+                                                    const bondingCurve = token.bondingCurveAddress || token.bondingCurve;
+                                                    if (bondingCurve) {
+                                                        axiomUrl = `https://axiom.trade/meme/${bondingCurve}`;
+                                                        console.log(`✅ Using stored bonding curve: ${bondingCurve}`);
                                                     } else {
                                                         // Fetch from backend (will get bonding curve for pump.fun or pair address for bonk)
                                                         console.log(`🔍 No stored bonding curve, fetching from backend...`);
