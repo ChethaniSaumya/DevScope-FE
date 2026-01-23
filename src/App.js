@@ -1048,32 +1048,34 @@ function App() {
                                 autoOpenUrl = `https://axiom.trade/meme/${token.tokenAddress}`;
                                 console.log(`🧪 Demo Primary: Opening Axiom with token address`);
                             }
-                            else if (token.platform === 'pumpfun' || token.pool === 'pump') {
+                            else {
+                                // First priority: Use bonding curve if available (for pump.fun tokens)
                                 const bondingCurve = token.bondingCurveAddress || token.bondingCurve;
                                 if (bondingCurve) {
                                     autoOpenUrl = `https://axiom.trade/meme/${bondingCurve}`;
-                                    console.log(`✅ SECONDARY: Opening Axiom with bonding curve`);
-                                } else {
-                                    autoOpenUrl = `https://axiom.trade/meme/${token.tokenAddress}`;
-                                    console.log(`⚠️ Primary: No bonding curve, using token address`);
+                                    console.log(`✅ PRIMARY: Opening Axiom with bonding curve`);
                                 }
-                            }
-                            else if (token.platform === 'raydium' || token.platform === 'launchlab') {
-                                try {
-                                    const response = await apiCall(`/pair-address/${token.tokenAddress}`);
-                                    if (response.success && response.pairData && response.pairData.pairAddress) {
-                                        autoOpenUrl = `https://axiom.trade/meme/${response.pairData.pairAddress}`;
-                                        console.log(`✅ Primary: Opening Axiom with pair address`);
-                                    } else {
+                                // Second priority: For Raydium/Launchlab, try to get pair address
+                                else if (token.platform === 'raydium' || token.platform === 'launchlab') {
+                                    try {
+                                        const response = await apiCall(`/pair-address/${token.tokenAddress}`);
+                                        if (response.success && response.pairData && response.pairData.pairAddress) {
+                                            autoOpenUrl = `https://axiom.trade/meme/${response.pairData.pairAddress}`;
+                                            console.log(`✅ PRIMARY: Opening Axiom with pair address`);
+                                        } else {
+                                            autoOpenUrl = `https://axiom.trade/meme/${token.tokenAddress}`;
+                                            console.log(`⚠️ PRIMARY: No pair address, using token address`);
+                                        }
+                                    } catch (error) {
+                                        console.error(`❌ PRIMARY: Error fetching pair:`, error);
                                         autoOpenUrl = `https://axiom.trade/meme/${token.tokenAddress}`;
-                                        console.log(`⚠️ Primary: No pair address, using token address`);
                                     }
-                                } catch (error) {
-                                    console.error(`❌ Error fetching address:`, error);
-                                    autoOpenUrl = `https://axiom.trade/meme/${token.tokenAddress}`;
                                 }
-                            } else {
-                                autoOpenUrl = `https://axiom.trade/meme/${token.tokenAddress}`;
+                                // Final fallback: Use token address
+                                else {
+                                    autoOpenUrl = `https://axiom.trade/meme/${token.tokenAddress}`;
+                                    console.log(`⚠️ PRIMARY: Using token address (no bonding curve/pair)`);
+                                }
                             }
                         } else {
                             autoOpenUrl = `https://neo.bullx.io/terminal?chainId=1399811149&address=${token.tokenAddress}`;
@@ -1134,16 +1136,13 @@ function App() {
                     const token = tokenData;
 
                     if (settings.tokenPageDestination === 'axiom') {
-                        if (token.platform === 'pumpfun' || token.pool === 'pump') {
-                            const bondingCurve = token.bondingCurveAddress || token.bondingCurve;
-                            if (bondingCurve) {
-                                autoOpenUrl = `https://axiom.trade/meme/${bondingCurve}`;
-                                console.log(`✅ SECONDARY: Opening Axiom with bonding curve`);
-                            } else {
-                                autoOpenUrl = `https://axiom.trade/meme/${token.tokenAddress}`;
-                                console.log(`⚠️ SECONDARY: No bonding curve, using token address`);
-                            }
+                        // First priority: Use bonding curve if available (for pump.fun tokens)
+                        const bondingCurve = token.bondingCurveAddress || token.bondingCurve;
+                        if (bondingCurve) {
+                            autoOpenUrl = `https://axiom.trade/meme/${bondingCurve}`;
+                            console.log(`✅ SECONDARY: Opening Axiom with bonding curve`);
                         }
+                        // Second priority: For Raydium/Launchlab, try to get pair address
                         else if (token.platform === 'raydium' || token.platform === 'launchlab') {
                             try {
                                 const response = await apiCall(`/pair-address/${token.tokenAddress}`);
@@ -1159,9 +1158,10 @@ function App() {
                                 autoOpenUrl = `https://axiom.trade/meme/${token.tokenAddress}`;
                             }
                         }
+                        // Final fallback: Use token address
                         else {
                             autoOpenUrl = `https://axiom.trade/meme/${token.tokenAddress}`;
-                            console.log(`⚠️ SECONDARY: Unknown platform, using token address`);
+                            console.log(`⚠️ SECONDARY: Using token address (no bonding curve/pair)`);
                         }
                     } else {
                         autoOpenUrl = `https://neo.bullx.io/terminal?chainId=1399811149&address=${token.tokenAddress}`;
