@@ -20,7 +20,8 @@ import {
     Clock,
     AlertCircle,
     CheckCircle2,
-    Info
+    Info,
+    X
 } from 'lucide-react';
 
 import './App.css';
@@ -795,11 +796,40 @@ function App() {
             case 'snipe_error':
                 console.log('❌ Snipe error received:', data.data);
 
-                // Check for slippage error specifically
-                if (data.data.error && data.data.error.includes('Too much SOL required') ||
-                    data.data.error.includes('custom program error: 6002')) {
+                // ═══════════════════════════════════════════════════════════════════
+                // ✅ CHECK FOR INSUFFICIENT FUNDS ERROR
+                // ═══════════════════════════════════════════════════════════════════
+                if (data.data.errorType === 'insufficient_funds' ||
+                    (data.data.error && (
+                        data.data.error.includes('insufficient funds') ||
+                        data.data.error.includes('Insufficient funds') ||
+                        data.data.error.includes('insufficient funds for rent')
+                    ))) {
+                    
+                    console.log('💰 INSUFFICIENT FUNDS - Showing modal');
+                    
+                    setInsufficientFundsModal({
+                        show: true,
+                        tokenAddress: data.data.tokenAddress || '',
+                        needed: data.data.totalNeeded || (data.data.requiredAmount + data.data.priorityFee + 0.002) || 0,
+                        available: data.data.walletBalance || 0,
+                        shortfall: (data.data.totalNeeded || 0) - (data.data.walletBalance || 0),
+                        error: data.data.error
+                    });
 
-                    // Show slippage error popup
+                    addNotification('error',
+                        `💰 Insufficient Funds!\n` +
+                        `Need: ${(data.data.totalNeeded || 0).toFixed(4)} SOL\n` +
+                        `Have: ${(data.data.walletBalance || 0).toFixed(4)} SOL`
+                    );
+                }
+                // Check for slippage error
+                else if (data.data.errorType === 'slippage_error' ||
+                    (data.data.error && (
+                        data.data.error.includes('Too much SOL required') ||
+                        data.data.error.includes('custom program error: 6002')
+                    ))) {
+
                     setSlippageErrorPopup({
                         show: true,
                         tokenAddress: data.data.tokenAddress,
@@ -810,16 +840,16 @@ function App() {
                     });
 
                     addNotification('error',
-                        `💰 Slippage Error: ${data.data.tokenAddress.substring(0, 8)}...\n` +
+                        `💰 Slippage Error: ${data.data.tokenAddress?.substring(0, 8)}...\n` +
                         `Token price moved too fast!`
                     );
-
-                } else if (data.data.errorType === 'insufficient_funds') {
-                    // Existing insufficient funds handling...
-                } else if (data.data.errorType === 'detection_only_mode') {
-                    // Existing detection only mode handling...
-                } else {
-                    // Generic error handling
+                }
+                // Detection only mode
+                else if (data.data.errorType === 'detection_only_mode') {
+                    addNotification('info', `🔍 Detection Only: ${data.data.tokenAddress?.substring(0, 8)}...`);
+                }
+                // Generic error
+                else {
                     addNotification('error', `❌ Snipe failed: ${data.data.error}`);
                 }
                 break;
@@ -4910,6 +4940,93 @@ function App() {
         </div>
     );
 
+    // ═══════════════════════════════════════════════════════════════════
+    // INSUFFICIENT FUNDS MODAL
+    // ═══════════════════════════════════════════════════════════════════
+    const renderInsufficientFundsModal = () => {
+        if (!insufficientFundsModal.show) return null;
+
+        return (
+            <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
+                <div className="bg-gray-800 rounded-xl p-6 max-w-md w-full mx-4 border border-red-500 shadow-2xl">
+                    {/* Header */}
+                    <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center gap-3">
+                            <div className="w-12 h-12 rounded-full bg-red-500/20 flex items-center justify-center">
+                                <AlertTriangle className="w-6 h-6 text-red-500" />
+                            </div>
+                            <div>
+                                <h3 className="text-xl font-bold text-red-500">Insufficient Funds</h3>
+                                <p className="text-gray-400 text-sm">Cannot complete transaction</p>
+                            </div>
+                        </div>
+                        <button
+                            onClick={() => setInsufficientFundsModal({ show: false, tokenAddress: '', needed: 0, available: 0, shortfall: 0 })}
+                            className="text-gray-400 hover:text-white transition-colors"
+                        >
+                            <X className="w-6 h-6" />
+                        </button>
+                    </div>
+
+                    {/* Content */}
+                    <div className="space-y-4">
+                        {/* Balance Info */}
+                        <div className="bg-gray-900/50 rounded-lg p-4 space-y-3">
+                            <div className="flex justify-between items-center">
+                                <span className="text-gray-400">Required:</span>
+                                <span className="text-white font-mono font-bold">
+                                    {insufficientFundsModal.needed?.toFixed(4) || '0.0000'} SOL
+                                </span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                                <span className="text-gray-400">Available:</span>
+                                <span className="text-yellow-500 font-mono font-bold">
+                                    {insufficientFundsModal.available?.toFixed(4) || '0.0000'} SOL
+                                </span>
+                            </div>
+                            <div className="border-t border-gray-700 pt-3">
+                                <div className="flex justify-between items-center">
+                                    <span className="text-gray-400">Shortfall:</span>
+                                    <span className="text-red-500 font-mono font-bold">
+                                        {insufficientFundsModal.shortfall > 0 
+                                            ? insufficientFundsModal.shortfall.toFixed(4) 
+                                            : '0.0000'} SOL
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Token Info */}
+                        {insufficientFundsModal.tokenAddress && (
+                            <div className="bg-gray-900/50 rounded-lg p-3">
+                                <p className="text-gray-400 text-sm">Token:</p>
+                                <p className="text-white font-mono text-sm break-all">
+                                    {insufficientFundsModal.tokenAddress}
+                                </p>
+                            </div>
+                        )}
+
+                        {/* Error Message */}
+                        {insufficientFundsModal.error && (
+                            <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3">
+                                <p className="text-red-400 text-sm font-mono break-all">
+                                    {insufficientFundsModal.error}
+                                </p>
+                            </div>
+                        )}
+
+                        {/* Help Text */}
+                        <div className="text-center text-gray-400 text-sm">
+                            <p>Please add more SOL to your wallet to continue trading.</p>
+                            
+                        </div>
+                    </div>
+ 
+                </div>
+            </div>
+        );
+    };
+
     const renderTwitterSession = () => (
         <div className="space-y-4 md:space-y-6">
             {/* Twitter Session Status */}
@@ -5673,6 +5790,7 @@ function App() {
             {renderSecondaryPopup()}
             {renderPopupBlockerModal()}
             {renderSlippageErrorPopup()}
+            {renderInsufficientFundsModal()}
 
 
             {/* Footer Info */}
